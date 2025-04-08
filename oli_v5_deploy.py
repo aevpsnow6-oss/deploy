@@ -22,261 +22,9 @@ openai.api_key = openai_api_key
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+# ============= VISUALIZATION FUNCTIONS =============
 
-# Load data - use relative paths for deployment
-# Define paths as relative to the current directory or using st.secrets for Streamlit Cloud
-@st.cache_data
-def load_extended_data():
-    """
-    Load and prepare additional data for enhanced visualizations.
-    This extends the existing load_data function with new data processing.
-    """
-    # First load the original data
-    df, df_raw = load_data()
-    
-    # Load additional analysis data if available
-    try:
-        if os.getenv("STREAMLIT_ENV") == "production":
-            analyzed_path = st.secrets["analyzed_recommendations_path"]
-        else:
-            # Use a relative or absolute path based on your setup
-            analyzed_path = "./analyzed_recommendations_plans.csv"
-        
-        # Load the analyzed recommendations with pipe separator
-        analyzed_df = pd.read_csv(analyzed_path, sep='|')
-        
-        # Convert dates and ensure year column
-        analyzed_df['Recommendation date'] = pd.to_datetime(analyzed_df['Recommendation date'])
-        analyzed_df['year'] = analyzed_df['Recommendation date'].dt.year
-        
-        # Change years prior to 2018 to 2018 to match the original analysis
-        analyzed_df.loc[analyzed_df['year'] < 2018, 'year'] = 2018
-        
-        # Prepare additional columns needed for the visualizations
-        analyzed_df = prepare_additional_data(analyzed_df)
-        
-        # Merge with the original dataframe if needed (based on a common key)
-        # This depends on how your data is structured
-        # Example: merge on 'index_df' if that's a common identifier
-        if 'index_df' in df.columns and 'index_df' in analyzed_df.columns:
-            # Select only new columns from analyzed_df to avoid duplicates
-            new_cols = [col for col in analyzed_df.columns if col not in df.columns]
-            # Include the key column
-            merge_cols = ['index_df'] + new_cols
-            
-            # Merge the new data
-            df = pd.merge(df, analyzed_df[merge_cols], on='index_df', how='left')
-        else:
-            # If we can't merge, just add the analyzed dataframe to the result
-            st.session_state['analyzed_df'] = analyzed_df
-        
-    except Exception as e:
-        st.warning(f"Note: Additional analysis data could not be loaded. Some visualizations may not be available. Error: {str(e)}")
-        st.session_state['analyzed_df'] = None
-    
-    # Process the main dataframe with the additional preparation
-    df = prepare_additional_data(df)
-    
-    # Processes
-    df['year'] = pd.to_datetime(df['Recommendation_date'], format='%Y-%m-%d').dt.year
-    df['year'] = df['year'].fillna(2023).astype(int)
-    df['year'] = df['year'].astype(int)
-    df['dimension'] = df['dimension'].fillna('Sin Clasificar')
-    df['subdim'] = df['subdim'].fillna('Sin Clasificar')
-    df['Management_response'] = df['Management_response'].fillna('Sin respuesta')
-    df['Management_response'] = df['Management_response'].replace('Partially completed', 'Partially Completed')
-    
-    return df, df_raw
-
-# Load embeddings
-@st.cache_data
-def load_embeddings():
-    if os.getenv("STREAMLIT_ENV") == "production":
-        embeddings_path = st.secrets["embeddings_path"]
-        structured_embeddings_path = st.secrets["structured_embeddings_path"]
-    else:
-        embeddings_path = "./emb_Recomm_rec_cl_4.pt"
-        structured_embeddings_path = "./Recommendation_RAG_Metadata.pt"
-    
-    doc_embeddings = torch.load(embeddings_path)
-    doc_embeddings = np.array(doc_embeddings)
-    
-    structured_embeddings = torch.load(structured_embeddings_path)
-    
-    # Create a FAISS index
-    dimension = doc_embeddings.shape[1]
-    index = faiss.IndexFlatIP(dimension)
-    index.add(doc_embeddings)
-    
-    return doc_embeddings, structured_embeddings, index
-
-# Initialize data and embeddings - wrap in try/except for better error handling
-try:
-    df, df_raw = load_extended_data()
-    doc_embeddings, structured_embeddings, index = load_embeddings()
-    doc_texts = df_raw['Recommendation_description'].tolist()
-except Exception as e:
-    st.error(f"Error loading data: {str(e)}")
-    st.stop()
-
-# Function to get embeddings from OpenAI
-def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
-    if not openai_api_key:
-        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
-        return None
-        
-    for attempt in range(max_retries):
-        try:
-            # Use older OpenAI SDK
-            response = openai.Embedding.create(input=text, model=model)
-            return np.array(response['data'][0]['embedding'])
-        except Exception as e:
-            st.warning(f"Attempt {attempt + 1} failed: {str(e)}")
-            time.sleep(delay)
-    return None
-
-def find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold=0.5, top_n=20):
-    # Normalize query embedding for cosine similarity
-    query_embedding = np.array(query_embedding).reshape(1, -1)
-    # Search the index
-    try:
-        distances, indices = index.search(query_embedding, index.ntotal)
-
-        # Filter results based on the score threshold
-        filtered_recommendations = []
-        for idx, dist in zip(indices[0], distances[0]):
-            if idx < len(structured_embeddings) and dist >= score_threshold:
-                metadata = structured_embeddings[idx]
-                recommendation = {
-                    "recommendation": metadata["text"],
-                    "similarity": float(dist),  # Convert to float for JSON serialization
-                    "country": metadata["country"],
-                    "year": metadata["year"],
-                    "eval_id": metadata["eval_id"]
-                }
-                filtered_recommendations.append(recommendation)
-            if len(filtered_recommendations) >= top_n:
-                break
-        
-        return filtered_recommendations
-    except Exception as e:
-        st.error(f"Error in similarity search: {str(e)}")
-        return []
-
-def find_recommendations_by_term_matching(query, doc_texts, structured_embeddings, top_n=10):
-    try:
-        matched_recommendations = []
-        query_lower = query.lower()
-        
-        for idx, text in enumerate(doc_texts):
-            if isinstance(text, str) and query_lower in text.lower():
-                if idx < len(structured_embeddings):
-                    metadata = structured_embeddings[idx]
-                    matched_recommendations.append({
-                        "recommendation": text,
-                        "country": metadata["country"],
-                        "year": metadata["year"],
-                        "eval_id": metadata["eval_id"]
-                    })
-        
-        # Sort recommendations by length or relevance if needed
-        matched_recommendations = sorted(matched_recommendations, key=lambda x: len(str(x["recommendation"])))
-        
-        return matched_recommendations[:top_n]
-    except Exception as e:
-        st.error(f"Error in term matching: {str(e)}")
-        return []
-
-def summarize_text(text, prompt_template):
-    if not openai_api_key:
-        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
-        return None
-        
-    prompt = prompt_template.format(text=text)
-    try:
-        # Use only the older OpenAI SDK (<1.0.0)
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        st.error(f"Error calling OpenAI API: {e}")
-        return None
-
-def split_text(text, max_length=1500):
-    words = text.split()
-    chunks = []
-    current_chunk = []
-    current_length = 0
-
-    for word in words:
-        current_length += len(word) + 1
-        if current_length > max_length:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = [word]
-            current_length = len(word) + 1
-        else:
-            current_chunk.append(word)
-    
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-    return chunks
-
-def process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part):
-    if not combined_text:
-        return None
-        
-    text_chunks = split_text(combined_text)
-    chunk_summaries = []
-    
-    for chunk in text_chunks:
-        summary = summarize_text(chunk, map_template)
-        if summary:
-            chunk_summaries.append(summary)
-            time.sleep(1)  # Rate limiting
-    
-    if chunk_summaries:
-        combined_summaries = " ".join(chunk_summaries)
-        final_template = combine_template_prefix + user_template_part
-        return summarize_text(combined_summaries, final_template)
-    
-    return None
-
-def build_combined_text(df, selections):
-    texts = []
-    if selections['recommendations']:
-        texts.append(" ".join(df['Recommendation_description'].astype(str).dropna().unique()))
-    if selections['lessons']:
-        texts.append(" ".join(df['Lessons_learned_description'].astype(str).dropna().unique()))
-    if selections['practices']:
-        texts.append(" ".join(df['Good_practices_description'].astype(str).dropna().unique()))
-    if selections['plans']:
-        texts.append(" ".join(df['Action_plan'].astype(str).dropna().unique()))
-    return " ".join(texts)
-
-# Function to convert dataframe to Excel for download
-def to_excel(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Filtered Data')
-    processed_data = output.getvalue()
-    return processed_data
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
-import plotly.graph_objects as go
-from io import BytesIO
-
-# This function needs to be called during data loading to prepare additional columns needed for the new visualizations
+# Function to prepare additional data for new visualizations
 def prepare_additional_data(df):
     """
     Prepare additional columns needed for the new visualizations.
@@ -754,8 +502,135 @@ def add_advanced_visualization_section(filtered_df):
                 st.plotly_chart(diff_fig, use_container_width=True)
         else:
             st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+
+# ============= DATA LOADING FUNCTIONS =============
+
+# Load data - use relative paths for deployment
+# Define paths as relative to the current directory or using st.secrets for Streamlit Cloud
+@st.cache_data
+def load_data():
+    # Replace with a check for environment, use st.secrets for paths in production
+    if os.getenv("STREAMLIT_ENV") == "production":
+        # Use st.secrets for file paths in production
+        df_path = st.secrets["df_path"]
+        df_raw_path = st.secrets["df_raw_path"]
+        embeddings_path = st.secrets["embeddings_path"]
+    else:
+        # Use relative paths for local development
+        df_path = "./df_complete_all_full.xlsx"
+        df_raw_path = "./df_split_actions.xlsx"
+        embeddings_path = "./emb_Recomm_rec_cl_4.pt"
+    
+    df = pd.read_excel(df_path)
+    df['index_df'] = df['ID_Recomendacion']
+    # Replace spaces and dots with underscore in column names
+    df.columns = df.columns.str.replace(' ', '_').str.replace('.', '_')
+    df.rename(columns={'Dimension': 'dimension', 
+                       'Subdimension': 'subdim'}, inplace=True)
+
+    # Raw data
+    df_raw = pd.read_excel(df_raw_path)
+    df_raw['year'] = pd.to_datetime(df_raw['Recommendation date'], format='%Y-%m-%d').dt.year
+    df_raw.columns = df_raw.columns.str.replace(' ', '_').str.replace('.', '_')
+    missing_index_df = df_raw[~df_raw['index_df'].isin(df['index_df'])]
+    
+    # Reset index of both DataFrames before concatenation
+    df = df.reset_index(drop=True)
+    
+    # Concatenate with ignore_index=True to avoid index conflicts
+    df = pd.concat([df, missing_index_df], axis=0)
+    
+    # Processes
+    df['year'] = pd.to_datetime(df['Recommendation_date'], format='%Y-%m-%d').dt.year
+    df['year'] = df['year'].fillna(2023).astype(int)
+    df['year'] = df['year'].astype(int)
+    df['dimension'] = df['dimension'].fillna('Sin Clasificar')
+    df['subdim'] = df['subdim'].fillna('Sin Clasificar')
+    df['Management_response'] = df['Management_response'].fillna('Sin respuesta')
+    df['Management_response'] = df['Management_response'].replace('Partially completed', 'Partially Completed')
+    
+    return df, df_raw
+
+@st.cache_data
+def load_extended_data():
+    """
+    Load and prepare additional data for enhanced visualizations.
+    This extends the existing load_data function with new data processing.
+    """
+    # First load the original data
+    df, df_raw = load_data()
+    
+    # Load additional analysis data if available
+    try:
+        if os.getenv("STREAMLIT_ENV") == "production":
+            analyzed_path = st.secrets.get("analyzed_recommendations_path", None)
+        else:
+            # Use a relative or absolute path based on your setup
+            analyzed_path = "./analyzed_recommendations_plans.csv"
+        
+        if analyzed_path and os.path.exists(analyzed_path):
+            # Load the analyzed recommendations with pipe separator
+            analyzed_df = pd.read_csv(analyzed_path, sep='|')
             
-#::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+            # Convert dates and ensure year column
+            analyzed_df['Recommendation date'] = pd.to_datetime(analyzed_df['Recommendation date'])
+            analyzed_df['year'] = analyzed_df['Recommendation date'].dt.year
+            
+            # Change years prior to 2018 to 2018 to match the original analysis
+            analyzed_df.loc[analyzed_df['year'] < 2018, 'year'] = 2018
+            
+            # Prepare additional columns needed for the visualizations
+            analyzed_df = prepare_additional_data(analyzed_df)
+            
+            # Merge with the original dataframe if needed (based on a common key)
+            if 'index_df' in df.columns and 'index_df' in analyzed_df.columns:
+                # Select only new columns from analyzed_df to avoid duplicates
+                new_cols = [col for col in analyzed_df.columns if col not in df.columns]
+                if new_cols:  # Only proceed if there are new columns to add
+                    # Include the key column
+                    merge_cols = ['index_df'] + new_cols
+                    
+                    # Merge the new data
+                    df = pd.merge(df, analyzed_df[merge_cols], on='index_df', how='left')
+            
+            # Store the analyzed dataframe in session state for potential use elsewhere
+            st.session_state['analyzed_df'] = analyzed_df
+        else:
+            st.warning("Additional analysis data file not found. Some visualizations may not be available.")
+            st.session_state['analyzed_df'] = None
+            
+    except Exception as e:
+        st.warning(f"Note: Additional analysis data could not be loaded. Some visualizations may not be available. Error: {str(e)}")
+        st.session_state['analyzed_df'] = None
+    
+    # Process the main dataframe with the additional preparation
+    df = prepare_additional_data(df)
+    
+    return df, df_raw
+
+# Load embeddings
+@st.cache_data
+def load_embeddings():
+    if os.getenv("STREAMLIT_ENV") == "production":
+        embeddings_path = st.secrets["embeddings_path"]
+        structured_embeddings_path = st.secrets["structured_embeddings_path"]
+    else:
+        embeddings_path = "./emb_Recomm_rec_cl_4.pt"
+        structured_embeddings_path = "./Recommendation_RAG_Metadata.pt"
+    
+    doc_embeddings = torch.load(embeddings_path)
+    doc_embeddings = np.array(doc_embeddings)
+    
+    structured_embeddings = torch.load(structured_embeddings_path)
+    
+    # Create a FAISS index
+    dimension = doc_embeddings.shape[1]
+    index = faiss.IndexFlatIP(dimension)
+    index.add(doc_embeddings)
+    
+    return doc_embeddings, structured_embeddings, index
+
+# ============= MAIN APP CODE =============
 
 # Set page config
 st.markdown("<h3 style='text-align: center;'>Oli: Análisis Automatizado de Recomendaciones</h3>", unsafe_allow_html=True)
@@ -769,6 +644,16 @@ if not openai_api_key:
 # Initialize session state if not already set
 if 'similar_df' not in st.session_state:
     st.session_state['similar_df'] = pd.DataFrame()
+
+# Initialize data and embeddings - wrap in try/except for better error handling
+try:
+    # Use the extended data loading function that includes the new visualizations data
+    df, df_raw = load_extended_data()
+    doc_embeddings, structured_embeddings, index = load_embeddings()
+    doc_texts = df_raw['Recommendation_description'].tolist()
+except Exception as e:
+    st.error(f"Error loading data: {str(e)}")
+    st.stop()
 
 # Tabs
 tab1, tab2 = st.tabs(["Análisis de Textos y Recomendaciones Similares", "Búsqueda de Recomendaciones"])
@@ -981,11 +866,9 @@ with tab1:
         st.plotly_chart(fig3)
         st.plotly_chart(fig4)
         
-        # Check if there's data in the filtered dataframe
-        if not filtered_df.empty:
-            # Add an expander for advanced visualizations to keep the UI clean
-            with st.expander("Visualizaciones Avanzadas", expanded=False):
-                add_advanced_visualization_section(filtered_df)
+        # Add the advanced visualization section
+        with st.expander("Visualizaciones Avanzadas", expanded=False):
+            add_advanced_visualization_section(filtered_df)
     else:
         st.write("No data available for the selected filters.")
 
