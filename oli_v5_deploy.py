@@ -650,6 +650,33 @@ def load_embeddings():
     
     return doc_embeddings, structured_embeddings, index
 
+def build_combined_text(df, selections):
+    """
+    Build combined text from selected text sources.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing the text columns
+    selections : dict
+        Dictionary indicating which text sources to include
+        
+    Returns:
+    --------
+    str
+        Combined text from all selected sources
+    """
+    texts = []
+    if selections['recommendations']:
+        texts.append(" ".join(df['Recommendation_description'].astype(str).dropna().unique()))
+    if selections['lessons']:
+        texts.append(" ".join(df['Lessons_learned_description'].astype(str).dropna().unique()))
+    if selections['practices']:
+        texts.append(" ".join(df['Good_practices_description'].astype(str).dropna().unique()))
+    if selections['plans']:
+        texts.append(" ".join(df['Action_plan'].astype(str).dropna().unique()))
+    return " ".join(texts)
+
 # ============= MAIN APP CODE =============
 
 # Set page config
