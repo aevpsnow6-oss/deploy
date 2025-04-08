@@ -499,20 +499,20 @@ def add_advanced_visualization_section(filtered_df):
         else:
             st.warning("No se encontraron variables de composición en los datos filtrados.")
     
-    # Tab 3: Tag Composition
-    with viz_tabs[2]:
-        st.markdown("##### Evolución de la Composición de Etiquetas")
+    # # Tab 3: Tag Composition
+    # with viz_tabs[2]:
+    #     st.markdown("##### Evolución de la Composición de Etiquetas")
         
-        if 'tags' in filtered_df.columns:
-            top_n = st.slider("Número de etiquetas principales a mostrar:", min_value=3, max_value=15, value=8)
-            tag_fig = create_tag_composition_plot(filtered_df, top_n)
-            if tag_fig:
-                st.plotly_chart(tag_fig, use_container_width=True)
-        else:
-            st.warning("No se encontraron datos de etiquetas en los datos filtrados.")
+    #     if 'tags' in filtered_df.columns:
+    #         top_n = st.slider("Número de etiquetas principales a mostrar:", min_value=3, max_value=15, value=8)
+    #         tag_fig = create_tag_composition_plot(filtered_df, top_n)
+    #         if tag_fig:
+    #             st.plotly_chart(tag_fig, use_container_width=True)
+    #     else:
+    #         st.warning("No se encontraron datos de etiquetas en los datos filtrados.")
     
     # Tab 4: Difficulty Classification
-    with viz_tabs[3]:
+    with viz_tabs[2]:
         st.markdown("##### Clasificación de Dificultad de Rechazo")
         
         if 'clean_tags' in filtered_df.columns:
