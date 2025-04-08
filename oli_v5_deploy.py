@@ -96,58 +96,50 @@ def prepare_additional_data(df):
     
     return df
 
-# Function to plot score evolution over time
-# Function to plot score evolution over time - fixed version
+# Function to plot score evolution over time - simpler fix
 def plot_score_evolution(filtered_df):
     """
     Creates a line plot showing the evolution of scores over time.
-    Fixed to handle non-numeric score columns properly.
+    Fixed to handle potential string concatenation issues.
     """
-    # Only include columns that end with '_score' and don't include 'clean_tags'
+    # Only include columns that end with '_score' and exclude any problematic columns
     score_columns = [col for col in filtered_df.columns if col.endswith('_score') and col != 'clean_tags']
     
     if not score_columns or filtered_df.empty:
         st.warning("No score data available for the selected filters.")
         return
     
-    # Filter out non-numeric columns before calculating means
-    numeric_score_columns = []
-    for col in score_columns:
-        # Try to convert a sample to float to test if it's numeric
-        try:
-            # Use a copy to avoid SettingWithCopyWarning
-            temp_df = filtered_df[col].copy()
-            # First ensure we're working with strings to handle all cases
-            temp_df = temp_df.astype(str)
-            # If a column contains strings like 'High', 'Medium', 'Low', skip it
-            if temp_df.str.contains('High|Medium|Low').any():
-                continue
-            # Try numeric conversion
-            pd.to_numeric(temp_df, errors='raise')
-            numeric_score_columns.append(col)
-        except (ValueError, TypeError):
-            st.info(f"Skipping non-numeric column: {col}")
-            continue
+    # Create a copy of the filtered dataframe to avoid modifying the original
+    df_scores = filtered_df.copy()
     
-    if not numeric_score_columns:
-        st.warning("No numeric score columns found for visualization.")
-        return
+    # Clean up each score column to handle possible string concatenation issues
+    for col in score_columns:
+        # Check if the column contains long concatenated strings (like 'MediumMediumMedium...')
+        mask = df_scores[col].astype(str).str.len() > 15
+        if mask.any():
+            # Set problematic values to NaN
+            df_scores.loc[mask, col] = np.nan
+        
+        # Try to convert to numeric, coercing errors to NaN
+        df_scores[col] = pd.to_numeric(df_scores[col], errors='coerce')
     
     # Calculate yearly averages for each score type
-    yearly_scores = filtered_df.groupby('year')[numeric_score_columns].apply(
-        lambda x: x.apply(pd.to_numeric, errors='coerce').mean()
-    ).reset_index()
+    yearly_scores = df_scores.groupby('year')[score_columns].mean().reset_index()
     
     # Only proceed if we have data
-    if yearly_scores.empty:
-        st.warning("No score data available for the selected years.")
+    if yearly_scores.empty or yearly_scores[score_columns].isna().all().all():
+        st.warning("No usable score data available for the selected years.")
         return
     
     # Create a Plotly line chart
     fig = go.Figure()
     
     # Add a line for each score
-    for column in numeric_score_columns:
+    for column in score_columns:
+        # Skip columns with all NaN values
+        if yearly_scores[column].isna().all():
+            continue
+            
         # Create a more readable label
         label = column.replace('_score', '').replace('_', ' ').title()
         
