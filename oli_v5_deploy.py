@@ -438,7 +438,7 @@ def add_advanced_visualization_section(filtered_df):
     viz_tabs = st.tabs([
         "Evolución de Puntuaciones", 
         "Composición por Variable", 
-        "Composición de Etiquetas",
+        # "Composición de Etiquetas",
         "Clasificación de Dificultad"
     ])
     
