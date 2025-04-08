@@ -750,6 +750,41 @@ def build_combined_text(df, selections):
         texts.append(" ".join(df['Action_plan'].astype(str).dropna().unique()))
     return " ".join(texts)
 
+def summarize_text(text, prompt_template):
+    """
+    Summarize text using OpenAI API.
+    
+    Parameters:
+    -----------
+    text : str
+        The text to summarize
+    prompt_template : str
+        Template for the prompt
+        
+    Returns:
+    --------
+    str
+        Summarized text
+    """
+    if not openai_api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        return None
+        
+    prompt = prompt_template.format(text=text)
+    try:
+        # Use only the older OpenAI SDK (<1.0.0)
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # or whatever model you're using
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        st.error(f"Error calling OpenAI API: {e}")
+        return None
+
 # ============= MAIN APP CODE =============
 
 # Set page config
