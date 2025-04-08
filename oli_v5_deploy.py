@@ -566,7 +566,7 @@ def load_extended_data():
             analyzed_path = st.secrets.get("analyzed_recommendations_path", None)
         else:
             # Use a relative or absolute path based on your setup
-            analyzed_path = "./analyzed_recommendations_plans.csv"
+            analyzed_path = "./analyzed_recommendations_plans_v5.csv"
         
         if analyzed_path and os.path.exists(analyzed_path):
             # Load the analyzed recommendations with pipe separator
