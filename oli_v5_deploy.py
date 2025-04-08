@@ -650,6 +650,79 @@ def load_embeddings():
     
     return doc_embeddings, structured_embeddings, index
 
+def process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part):
+    """
+    Process text analysis in chunks and combine results.
+    
+    Parameters:
+    -----------
+    combined_text : str
+        The combined text to analyze
+    map_template : str
+        Template for the initial summarization of chunks
+    combine_template_prefix : str
+        Prefix for the template used to combine summaries
+    user_template_part : str
+        User-defined part of the template for final analysis
+        
+    Returns:
+    --------
+    str
+        Analyzed and summarized text
+    """
+    if not combined_text:
+        return None
+        
+    text_chunks = split_text(combined_text)
+    chunk_summaries = []
+    
+    for chunk in text_chunks:
+        summary = summarize_text(chunk, map_template)
+        if summary:
+            chunk_summaries.append(summary)
+            time.sleep(1)  # Rate limiting
+    
+    if chunk_summaries:
+        combined_summaries = " ".join(chunk_summaries)
+        final_template = combine_template_prefix + user_template_part
+        return summarize_text(combined_summaries, final_template)
+    
+    return None
+
+def split_text(text, max_length=1500):
+    """
+    Split text into chunks of specified maximum length.
+    
+    Parameters:
+    -----------
+    text : str
+        The text to split
+    max_length : int, optional
+        Maximum length of each chunk (default: 1500)
+        
+    Returns:
+    --------
+    list
+        List of text chunks
+    """
+    words = text.split()
+    chunks = []
+    current_chunk = []
+    current_length = 0
+
+    for word in words:
+        current_length += len(word) + 1
+        if current_length > max_length:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [word]
+            current_length = len(word) + 1
+        else:
+            current_chunk.append(word)
+    
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    return chunks
+
 def build_combined_text(df, selections):
     """
     Build combined text from selected text sources.
