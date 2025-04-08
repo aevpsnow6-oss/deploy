@@ -97,18 +97,46 @@ def prepare_additional_data(df):
     return df
 
 # Function to plot score evolution over time
+# Function to plot score evolution over time - fixed version
 def plot_score_evolution(filtered_df):
     """
     Creates a line plot showing the evolution of scores over time.
+    Fixed to handle non-numeric score columns properly.
     """
+    # Only include columns that end with '_score' and don't include 'clean_tags'
     score_columns = [col for col in filtered_df.columns if col.endswith('_score') and col != 'clean_tags']
     
     if not score_columns or filtered_df.empty:
         st.warning("No score data available for the selected filters.")
         return
     
+    # Filter out non-numeric columns before calculating means
+    numeric_score_columns = []
+    for col in score_columns:
+        # Try to convert a sample to float to test if it's numeric
+        try:
+            # Use a copy to avoid SettingWithCopyWarning
+            temp_df = filtered_df[col].copy()
+            # First ensure we're working with strings to handle all cases
+            temp_df = temp_df.astype(str)
+            # If a column contains strings like 'High', 'Medium', 'Low', skip it
+            if temp_df.str.contains('High|Medium|Low').any():
+                continue
+            # Try numeric conversion
+            pd.to_numeric(temp_df, errors='raise')
+            numeric_score_columns.append(col)
+        except (ValueError, TypeError):
+            st.info(f"Skipping non-numeric column: {col}")
+            continue
+    
+    if not numeric_score_columns:
+        st.warning("No numeric score columns found for visualization.")
+        return
+    
     # Calculate yearly averages for each score type
-    yearly_scores = filtered_df.groupby('year')[score_columns].mean().reset_index()
+    yearly_scores = filtered_df.groupby('year')[numeric_score_columns].apply(
+        lambda x: x.apply(pd.to_numeric, errors='coerce').mean()
+    ).reset_index()
     
     # Only proceed if we have data
     if yearly_scores.empty:
@@ -119,7 +147,7 @@ def plot_score_evolution(filtered_df):
     fig = go.Figure()
     
     # Add a line for each score
-    for column in score_columns:
+    for column in numeric_score_columns:
         # Create a more readable label
         label = column.replace('_score', '').replace('_', ' ').title()
         
