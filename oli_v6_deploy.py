@@ -28,7 +28,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 def parse_docx_with_tables(docx_file):
     """
     Parse a DOCX file and extract text content with section information,
-    including text from tables. Better detection of heading levels.
+    including text from tables. Improved handling of tables within sections.
     
     Returns:
         dict: A dictionary where keys are section names and values are lists of paragraphs
@@ -47,15 +47,8 @@ def parse_docx_with_tables(docx_file):
         heading_level_map[f'Header {i}'] = i
         heading_level_map[f'Title {i}'] = i
     
-    # First identify all headings and their content
-    sections = {}
-    current_heading = None
-    current_level = 0
-    current_content = []
-    
-    # Add a special entry for content before any heading
-    sections["DOCUMENT_START"] = []
-    
+    # First scan to identify all headings in the document
+    headings = []
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
@@ -71,61 +64,98 @@ def parse_docx_with_tables(docx_file):
         
         # Some documents use bold text or numbering for headings without proper styles
         # Try to detect these by checking for common patterns
-        if level == 0 and (text.isupper() or text.startswith(('1.', '2.', '3.', '4.', '5.', 'I.', 'II.', 'III.', 'IV.', 'V.'))):
-            # Check if the text is a potential heading (all caps or starts with a number)
-            if text.isupper() and len(text.split()) <= 5:  # Short, all-caps text is likely a heading
+        if level == 0:
+            # Check for all-caps text (common for section headers)
+            if text.isupper() and len(text.split()) <= 5:
                 level = 1
-            elif text.split('.')[0].strip().isdigit():  # Numbered heading
+            
+            # Check for numbered headings (e.g., "1. INTRODUCTION")
+            elif len(text.split('.')) > 1 and text.split('.')[0].strip().isdigit():
                 level = 1
         
-        if level > 0:  # It's a heading
-            # Save the previous section if there was one
-            if current_heading is not None:
-                sections[current_heading] = current_content
-            
-            # Start a new section
-            current_heading = text
-            current_level = level
-            current_content = []
-            
-            # Add to TOC
-            toc.append((current_heading, current_level))
-        else:
-            # Regular paragraph, add to current content
-            if current_heading is not None:
-                current_content.append(text)
-            else:
-                # Add to the document start section
-                sections["DOCUMENT_START"].append(text)
+        if level > 0:
+            headings.append((text, level))
+            toc.append((text, level))
     
-    # Add the last section
-    if current_heading is not None:
-        sections[current_heading] = current_content
+    # Now process the content of the document, associating it with headings
+    sections = {"DOCUMENT_START": []}
+    current_section = "DOCUMENT_START"
     
-    # Now process tables and add them to the appropriate sections
+    # Track the position in the document
+    current_position = 0
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            current_position += 1
+            continue
+        
+        # Check if this paragraph is a heading
+        is_heading = False
+        for heading, level in headings:
+            if text == heading:
+                is_heading = True
+                current_section = heading
+                if current_section not in sections:
+                    sections[current_section] = []
+                break
+        
+        if not is_heading:
+            # It's content, add to the current section
+            sections[current_section].append(text)
+        
+        current_position += 1
+    
+    # Now process tables and associate them with the correct section
     for table in doc.tables:
-        table_text = []
-        for row in table.rows:
-            row_text = []
-            for cell in row.cells:
-                cell_text = ' '.join(paragraph.text.strip() for paragraph in cell.paragraphs if paragraph.text.strip())
-                if cell_text:
-                    row_text.append(cell_text)
-            if row_text:
-                table_text.append(' | '.join(row_text))
+        # Determine which section this table belongs to
+        # We'll check what heading comes before this table
+        table_position = doc.element.body.index(table._element)
         
-        if table_text:
-            table_content = '\n'.join(table_text)
-            formatted_table = f"[TABLE]\n{table_content}"
+        # Find the most recent heading before this table
+        table_section = "DOCUMENT_START"
+        max_heading_position = -1
+        
+        for para in doc.paragraphs:
+            para_position = doc.element.body.index(para._element)
             
-            # This is a bit simplistic - add the table to the last heading section
-            if current_heading is not None:
-                sections[current_heading].append(formatted_table)
+            if para_position < table_position:
+                text = para.text.strip()
+                for heading, _ in headings:
+                    if text == heading and para_position > max_heading_position:
+                        table_section = heading
+                        max_heading_position = para_position
+        
+        # Extract table content
+        table_data = []
+        for row in table.rows:
+            row_data = []
+            for cell in row.cells:
+                cell_text = ' '.join(p.text.strip() for p in cell.paragraphs if p.text.strip())
+                row_data.append(cell_text)
+            if any(cell for cell in row_data):  # Only add non-empty rows
+                table_data.append(row_data)
+        
+        # Format the table as a string while preserving structure
+        if table_data:
+            # Create a proper table representation
+            table_content = ["[TABLE_START]"]
+            
+            # Add header row with special formatting
+            if len(table_data) > 0:
+                table_content.append("[TABLE_HEADER]" + "|".join(table_data[0]))
+            
+            # Add data rows
+            for row in table_data[1:]:
+                table_content.append("[TABLE_ROW]" + "|".join(row))
+            
+            table_content.append("[TABLE_END]")
+            
+            # Add the table to the appropriate section
+            if table_section in sections:
+                sections[table_section].extend(table_content)
             else:
-                sections["DOCUMENT_START"].append(formatted_table)
-    
-    # Remove empty sections
-    sections = {k: v for k, v in sections.items() if v}
+                # If section doesn't exist yet, create it
+                sections[table_section] = table_content
     
     # Create a hierarchical structure of the TOC for filtering
     toc_hierarchy = {}
@@ -133,6 +163,9 @@ def parse_docx_with_tables(docx_file):
         if level not in toc_hierarchy:
             toc_hierarchy[level] = []
         toc_hierarchy[level].append(heading)
+    
+    # Remove empty sections
+    sections = {k: v for k, v in sections.items() if v}
     
     return sections, toc, toc_hierarchy
 
@@ -176,9 +209,9 @@ def add_document_upload_tab():
                 total_chars = 0
                 
                 for section, paragraphs in sections_content.items():
-                    total_paragraphs += len(paragraphs)
                     for para in paragraphs:
-                        if not para.startswith('[TABLE]'):  # Don't count table markup in word/char count
+                        if not para.startswith('[TABLE'):  # Skip table markup in word/char count
+                            total_paragraphs += 1
                             words = para.split()
                             total_words += len(words)
                             total_chars += len(para)
@@ -237,54 +270,77 @@ def add_document_upload_tab():
                                 with section_tabs[i]:
                                     content = tab_sections[section]
                                     
-                                    # Display content with proper formatting
-                                    for j, paragraph in enumerate(content):
-                                        if paragraph.startswith('[TABLE]'):
-                                            st.markdown("**Table content:**")
-                                            table_lines = paragraph[7:].strip().split('\n')  # Remove [TABLE] prefix
-                                            
-                                            # Convert to DataFrame for better display
-                                            table_data = []
-                                            for line in table_lines:
-                                                table_data.append(line.split(' | '))
-                                            
-                                            # Check if all rows have the same number of columns
-                                            if table_data:
-                                                max_cols = max(len(row) for row in table_data)
-                                                for row in table_data:
-                                                    while len(row) < max_cols:
-                                                        row.append("")
+                                    # Check if this section contains a table
+                                    contains_table = any(para.startswith('[TABLE') for para in content)
+                                    
+                                    if contains_table:
+                                        # Process and display table content
+                                        table_rows = []
+                                        in_table = False
+                                        header_row = None
+                                        
+                                        for para in content:
+                                            if para == '[TABLE_START]':
+                                                in_table = True
+                                            elif para == '[TABLE_END]':
+                                                in_table = False
                                                 
-                                                # Create DataFrame and display
-                                                table_df = pd.DataFrame(table_data)
-                                                st.dataframe(table_df)
-                                        else:
+                                                # Display the table as DataFrame
+                                                if table_rows:
+                                                    st.markdown(f"**Table in section {section}:**")
+                                                    
+                                                    # Convert to DataFrame
+                                                    df = pd.DataFrame(table_rows)
+                                                    
+                                                    # If we have a header row, use it for column names
+                                                    if header_row:
+                                                        df.columns = header_row
+                                                    
+                                                    # Display the DataFrame
+                                                    st.dataframe(df)
+                                                
+                                                # Reset for potential next table
+                                                table_rows = []
+                                                header_row = None
+                                            elif para.startswith('[TABLE_HEADER]'):
+                                                # Process header row
+                                                cells = para[14:].split('|')
+                                                header_row = cells
+                                            elif para.startswith('[TABLE_ROW]'):
+                                                # Process data row
+                                                cells = para[11:].split('|')
+                                                table_rows.append(cells)
+                                            elif not in_table:
+                                                # Regular paragraph outside table
+                                                st.write(para)
+                                    else:
+                                        # Regular paragraphs (no table)
+                                        for j, paragraph in enumerate(content):
                                             st.write(f"{j+1}. {paragraph}")
                                     
                                     # Show summary for this section
-                                    section_paragraphs = len(content)
-                                    section_words = sum(len(para.split()) for para in content if not para.startswith('[TABLE]'))
-                                    section_chars = sum(len(para) for para in content if not para.startswith('[TABLE]'))
+                                    section_paragraphs = sum(1 for para in content if not para.startswith('[TABLE'))
+                                    section_words = sum(len(para.split()) for para in content if not para.startswith('[TABLE'))
+                                    section_chars = sum(len(para) for para in content if not para.startswith('[TABLE'))
                                     st.info(f"This section contains {section_paragraphs} paragraphs, {section_words} words, and {section_chars} characters.")
                         
                         # Section filtering functionality
                         st.markdown("### Filter Sections")
                         st.write("Select sections to include in the filtered output. When a section is selected, all its content (including subsections) will be included:")
                         
-                        # Create a hierarchical section selection
-                        selected_sections = []
+                        # Get main level sections (usually level 1 but could vary by document)
+                        main_sections = []
+                        for level, headings in sorted(toc_hierarchy.items()):
+                            if headings:  # If we have headings at this level
+                                if not main_sections:  # If main_sections is still empty
+                                    main_sections = headings
                         
-                        # Create multiselect for each level, starting with level 1
-                        for level in sorted(toc_hierarchy.keys()):
-                            if level <= 5:  # Only show up to level 5
-                                level_headings = toc_hierarchy[level]
-                                
-                                selected = st.multiselect(
-                                    f"Level {level} Sections:",
-                                    options=level_headings,
-                                    default=level_headings if level == 1 else None  # Select all level 1 headings by default
-                                )
-                                selected_sections.extend(selected)
+                        # Create multiselect for the main sections
+                        selected_sections = st.multiselect(
+                            "Select sections to include:",
+                            options=main_sections,
+                            default=main_sections  # Select all main sections by default
+                        )
                         
                         # Filter button
                         if st.button("Create Filtered Output"):
@@ -307,22 +363,47 @@ def add_document_upload_tab():
                                             section_level = level
                                             break
                                     
-                                    for i, text in enumerate(paragraphs):
-                                        filtered_data.append({
-                                            'section': section,
-                                            'level': section_level,
-                                            'paragraph_id': i,
-                                            'text': text
-                                        })
+                                    # Process paragraphs based on content type
+                                    in_table = False
+                                    table_content = []
+                                    
+                                    for text in paragraphs:
+                                        if text == '[TABLE_START]':
+                                            in_table = True
+                                            table_content = []
+                                        elif text == '[TABLE_END]':
+                                            in_table = False
+                                            
+                                            # Process collected table content
+                                            if table_content:
+                                                # Add as a single entry to preserve table structure
+                                                filtered_data.append({
+                                                    'section': section,
+                                                    'level': section_level,
+                                                    'content_type': 'table',
+                                                    'text': json.dumps(table_content)  # Store as JSON to preserve structure
+                                                })
+                                        elif text.startswith('[TABLE_HEADER]') or text.startswith('[TABLE_ROW]'):
+                                            # Collect table rows for processing
+                                            if in_table:
+                                                table_content.append(text)
+                                        else:
+                                            # Regular paragraph
+                                            filtered_data.append({
+                                                'section': section,
+                                                'level': section_level,
+                                                'content_type': 'paragraph',
+                                                'text': text
+                                            })
                                 
                                 filtered_df = pd.DataFrame(filtered_data)
                                 
                                 if not filtered_df.empty:
-                                    st.success(f"Created filtered output with {len(filtered_df)} paragraphs from {len(filtered_sections)} sections.")
+                                    st.success(f"Created filtered output with {len(filtered_df)} items from {len(filtered_sections)} sections.")
                                     
                                     # Show a preview
                                     with st.expander("Preview Filtered Content"):
-                                        st.dataframe(filtered_df)
+                                        st.dataframe(filtered_df[['section', 'level', 'content_type', 'text']])
                                     
                                     # Download button for the filtered document
                                     excel_data = BytesIO()
@@ -354,13 +435,38 @@ def add_document_upload_tab():
                                     section_level = level
                                     break
                             
-                            for i, text in enumerate(paragraphs):
-                                all_data.append({
-                                    'section': section,
-                                    'level': section_level,
-                                    'paragraph_id': i,
-                                    'text': text
-                                })
+                            # Process paragraphs and tables
+                            in_table = False
+                            table_content = []
+                            
+                            for text in paragraphs:
+                                if text == '[TABLE_START]':
+                                    in_table = True
+                                    table_content = []
+                                elif text == '[TABLE_END]':
+                                    in_table = False
+                                    
+                                    # Process collected table content
+                                    if table_content:
+                                        # Add as a single entry to preserve table structure
+                                        all_data.append({
+                                            'section': section,
+                                            'level': section_level,
+                                            'content_type': 'table',
+                                            'text': json.dumps(table_content)  # Store as JSON to preserve structure
+                                        })
+                                elif text.startswith('[TABLE_HEADER]') or text.startswith('[TABLE_ROW]'):
+                                    # Collect table rows for processing
+                                    if in_table:
+                                        table_content.append(text)
+                                else:
+                                    # Regular paragraph
+                                    all_data.append({
+                                        'section': section,
+                                        'level': section_level,
+                                        'content_type': 'paragraph',
+                                        'text': text
+                                    })
                         
                         complete_df = pd.DataFrame(all_data)
                         
@@ -385,6 +491,34 @@ def add_document_upload_tab():
                 st.error(f"Error processing document: {str(e)}")
                 import traceback
                 st.error(traceback.format_exc())
+                
+                # In case of error, directly read the document and extract tables
+                try:
+                    st.markdown("### Emergency Table Extraction")
+                    st.write("Attempting direct table extraction...")
+                    
+                    doc = docx.Document(tmp_file_path)
+                    
+                    # Find all tables in the document
+                    for i, table in enumerate(doc.tables):
+                        st.markdown(f"**Table {i+1}:**")
+                        
+                        # Create DataFrame from table
+                        table_data = []
+                        for row in table.rows:
+                            row_data = [cell.text for cell in row.cells]
+                            table_data.append(row_data)
+                        
+                        # Display the DataFrame
+                        if table_data:
+                            df = pd.DataFrame(table_data)
+                            if len(df) > 0:
+                                # Use first row as header
+                                df.columns = df.iloc[0]
+                                df = df[1:]
+                                st.dataframe(df)
+                except Exception as table_error:
+                    st.error(f"Error in emergency table extraction: {str(table_error)}")
     else:
         st.info("Please upload a DOCX file to begin.")
 
