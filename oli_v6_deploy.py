@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import json
 import tempfile
 import docx
 import numpy as np
@@ -533,13 +534,19 @@ def add_document_upload_tab():
             
             except Exception as e:
                 st.error(f"Error processing document: {str(e)}")
-                import traceback
+                traceback.print_exc()  # Print full traceback for debugging
                 st.error(traceback.format_exc())
                 
                 # In case of error, directly read the document and extract tables
                 try:
                     st.markdown("### Emergency Table Extraction")
                     st.write("Attempting direct table extraction...")
+                    
+                    # Create a new temporary file if needed
+                    if not os.path.exists(tmp_file_path):
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as new_tmp_file:
+                            new_tmp_file.write(uploaded_file.getvalue())
+                            tmp_file_path = new_tmp_file.name
                     
                     doc = docx.Document(tmp_file_path)
                     
@@ -574,6 +581,11 @@ def add_document_upload_tab():
                                 if len(df.columns) == len(unique_headers):
                                     df.columns = unique_headers
                                 st.dataframe(df)
+                    
+                    # Make sure to clean up the temporary file
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+                        
                 except Exception as table_error:
                     st.error(f"Error in emergency table extraction: {str(table_error)}")
     else:
