@@ -88,11 +88,49 @@ def add_document_upload_tab():
                 # Parse the document
                 sections_content = parse_docx_with_tables(tmp_file_path)
                 
+                # Get file size
+                file_size_bytes = len(uploaded_file.getvalue())
+                file_size_kb = file_size_bytes / 1024
+                file_size_mb = file_size_kb / 1024
+                
+                # Count statistics
+                total_sections = len(sections_content)
+                total_paragraphs = sum(len(paragraphs) for paragraphs in sections_content.values())
+                
+                # Count words and characters
+                all_text = ""
+                for section, paragraphs in sections_content.items():
+                    for para in paragraphs:
+                        all_text += para + " "
+                
+                total_words = len(all_text.split())
+                total_chars = len(all_text)
+                
+                # Count subsections (assuming sections that aren't "Default" and don't have a heading level)
+                subsections = 0
+                for section in sections_content.keys():
+                    if section != "Default" and any(s.startswith(section + ".") for s in sections_content.keys()):
+                        subsections += 1
+                
                 # Clean up the temporary file
                 os.unlink(tmp_file_path)
                 
-                # Show document info
-                st.write(f"Document processed successfully. Found {len(sections_content)} sections.")
+                # Show document summary
+                st.success("Document processed successfully!")
+                
+                # Display summary in a nice format
+                st.markdown("### Document Summary")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric("File Size", f"{file_size_mb:.2f} MB" if file_size_mb >= 1 else f"{file_size_kb:.2f} KB")
+                    st.metric("Total Sections", total_sections)
+                    st.metric("Subsections", subsections)
+                
+                with col2:
+                    st.metric("Total Paragraphs", total_paragraphs)
+                    st.metric("Total Words", total_words)
+                    st.metric("Total Characters", total_chars)
                 
                 # Convert to DataFrame for easier handling and eventual analysis
                 all_paragraphs = []
@@ -139,7 +177,9 @@ def add_document_upload_tab():
                                     st.write(f"{j+1}. {paragraph}")
                             
                             # Show summary for this section
-                            st.info(f"Total paragraphs in this section: {len(content)}")
+                            section_words = sum(len(para.split()) for para in content)
+                            section_chars = sum(len(para) for para in content)
+                            st.info(f"This section contains {len(content)} paragraphs, {section_words} words, and {section_chars} characters.")
                     
                     # Add a tab for the full document dataframe
                     with st.expander("View as DataFrame"):
