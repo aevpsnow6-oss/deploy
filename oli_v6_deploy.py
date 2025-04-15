@@ -21,6 +21,158 @@ openai.api_key = openai_api_key
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+# ============= DOCX PARSING FUNCTIONS =============
+
+def parse_docx_with_tables(docx_file):
+    """
+    Parse a DOCX file and extract text content with section information,
+    including text from tables.
+    
+    Returns:
+        dict: A dictionary where keys are section names and values are lists of paragraphs
+    """
+    doc = docx.Document(docx_file)
+    sections = {"Default": []}  # Start with a default section
+    current_section = "Default"
+    
+    # Function to extract text from a table
+    def extract_table_text(table):
+        table_text = []
+        for i, row in enumerate(table.rows):
+            row_text = []
+            for j, cell in enumerate(row.cells):
+                cell_text = ' '.join(paragraph.text for paragraph in cell.paragraphs if paragraph.text.strip())
+                if cell_text:
+                    row_text.append(f"{cell_text}")
+            if row_text:
+                table_text.append(' | '.join(row_text))
+        return '\n'.join(table_text)
+    
+    # Process each paragraph and table in the document
+    for element in doc.element.body:
+        if element.tag.endswith('p'):  # It's a paragraph
+            paragraph = docx.text.paragraph.Paragraph(element, doc)
+            text = paragraph.text.strip()
+            
+            # Check if it's a heading (potential section)
+            if paragraph.style.name.startswith('Heading'):
+                current_section = text
+                if current_section not in sections:
+                    sections[current_section] = []
+            elif text:  # Only add non-empty paragraphs
+                sections[current_section].append(text)
+                
+        elif element.tag.endswith('tbl'):  # It's a table
+            table = docx.table._Table(element, doc)
+            table_text = extract_table_text(table)
+            if table_text:
+                sections[current_section].append(f"[TABLE]\n{table_text}")
+    
+    # Remove empty sections
+    return {k: v for k, v in sections.items() if v}
+
+def add_document_upload_tab():
+    """Add a new tab for document upload and parsing"""
+    st.header("Document Upload and Parsing")
+    
+    # File uploader for DOCX
+    uploaded_file = st.file_uploader("Upload a DOCX file", type=['docx'])
+    
+    if uploaded_file:
+        with st.spinner("Processing document..."):
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # Parse the document
+                sections_content = parse_docx_with_tables(tmp_file_path)
+                
+                # Clean up the temporary file
+                os.unlink(tmp_file_path)
+                
+                # Show document info
+                st.write(f"Document processed successfully. Found {len(sections_content)} sections.")
+                
+                # Convert to DataFrame for easier handling and eventual analysis
+                all_paragraphs = []
+                for section, paragraphs in sections_content.items():
+                    for i, text in enumerate(paragraphs):
+                        all_paragraphs.append({
+                            'section': section,
+                            'paragraph_id': i,
+                            'text': text
+                        })
+                
+                df = pd.DataFrame(all_paragraphs)
+                
+                # Store in session state for later use
+                st.session_state['parsed_document'] = df
+                
+                # Create tabs for each section
+                if sections_content:
+                    section_tabs = st.tabs(list(sections_content.keys()))
+                    
+                    for i, (section, content) in enumerate(sections_content.items()):
+                        with section_tabs[i]:
+                            # Display content with proper formatting
+                            for j, paragraph in enumerate(content):
+                                if paragraph.startswith('[TABLE]'):
+                                    st.markdown("**Table content:**")
+                                    table_lines = paragraph[7:].strip().split('\n')  # Remove [TABLE] prefix
+                                    
+                                    # Convert to DataFrame for better display
+                                    table_data = []
+                                    for line in table_lines:
+                                        table_data.append(line.split(' | '))
+                                    
+                                    # Check if all rows have the same number of columns
+                                    max_cols = max(len(row) for row in table_data)
+                                    for row in table_data:
+                                        while len(row) < max_cols:
+                                            row.append("")
+                                    
+                                    # Create DataFrame and display
+                                    table_df = pd.DataFrame(table_data)
+                                    st.dataframe(table_df)
+                                else:
+                                    st.write(f"{j+1}. {paragraph}")
+                            
+                            # Show summary for this section
+                            st.info(f"Total paragraphs in this section: {len(content)}")
+                    
+                    # Add a tab for the full document dataframe
+                    with st.expander("View as DataFrame"):
+                        st.dataframe(df)
+                    
+                    # Download button for the parsed document
+                    excel_data = BytesIO()
+                    df.to_excel(excel_data, index=False)
+                    excel_data.seek(0)
+                    
+                    st.download_button(
+                        label="Download Parsed Document",
+                        data=excel_data,
+                        file_name="parsed_document.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                else:
+                    st.warning("No content found in the document.")
+            
+            except Exception as e:
+                st.error(f"Error processing document: {str(e)}")
+                import traceback
+                st.error(traceback.format_exc())
+    else:
+        st.info("Please upload a DOCX file to begin.")
+Now, let's modify the main Streamlit app to include our new tab:
+python# Modify the tabs in oli_v5_deploy.py
+tab1, tab2, tab3 = st.tabs(["Análisis de Textos y Recomendaciones Similares", 
+                           "Búsqueda de Recomendaciones",
+                           "Subir y Procesar Documentos"])
+
+
 # ============= VISUALIZATION FUNCTIONS =============
 
 # Function to prepare additional data for new visualizations
@@ -1111,3 +1263,8 @@ with tab2:
                     display_results(results)
         else:
             st.warning("Introduzca una consulta para buscar recomendaciones.")
+            
+#==============================================================================================
+# Tab 3: Document Upload and Parsing
+with tab3:
+    add_document_upload_tab()
