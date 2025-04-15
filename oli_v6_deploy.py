@@ -282,6 +282,7 @@ def add_document_upload_tab():
                                         for para in content:
                                             if para == '[TABLE_START]':
                                                 in_table = True
+                                                table_rows = []
                                             elif para == '[TABLE_END]':
                                                 in_table = False
                                                 
@@ -289,18 +290,31 @@ def add_document_upload_tab():
                                                 if table_rows:
                                                     st.markdown(f"**Table in section {section}:**")
                                                     
-                                                    # Convert to DataFrame
-                                                    df = pd.DataFrame(table_rows)
-                                                    
-                                                    # If we have a header row, use it for column names
+                                                    # Convert to DataFrame with unique column handling
                                                     if header_row:
-                                                        df.columns = header_row
+                                                        # Create unique headers
+                                                        unique_headers = []
+                                                        header_counts = {}
+                                                        
+                                                        for header in header_row:
+                                                            if header in header_counts:
+                                                                header_counts[header] += 1
+                                                                unique_headers.append(f"{header}_{header_counts[header]}")
+                                                            else:
+                                                                header_counts[header] = 0
+                                                                unique_headers.append(header)
+                                                        
+                                                        # Create DataFrame with unique column names
+                                                        df = pd.DataFrame(table_rows)
+                                                        if len(df.columns) == len(unique_headers):
+                                                            df.columns = unique_headers
+                                                    else:
+                                                        df = pd.DataFrame(table_rows)
                                                     
                                                     # Display the DataFrame
                                                     st.dataframe(df)
                                                 
                                                 # Reset for potential next table
-                                                table_rows = []
                                                 header_row = None
                                             elif para.startswith('[TABLE_HEADER]'):
                                                 # Process header row
@@ -366,27 +380,42 @@ def add_document_upload_tab():
                                     # Process paragraphs based on content type
                                     in_table = False
                                     table_content = []
+                                    table_rows = []
+                                    header_row = None
                                     
                                     for text in paragraphs:
                                         if text == '[TABLE_START]':
                                             in_table = True
                                             table_content = []
+                                            table_rows = []
+                                            header_row = None
                                         elif text == '[TABLE_END]':
                                             in_table = False
                                             
-                                            # Process collected table content
-                                            if table_content:
-                                                # Add as a single entry to preserve table structure
+                                            # Process collected table content - store the processed table
+                                            if table_rows:
+                                                # Create a JSON representation of the table
+                                                table_data = {
+                                                    'header': header_row if header_row else [],
+                                                    'rows': table_rows
+                                                }
+                                                
                                                 filtered_data.append({
                                                     'section': section,
                                                     'level': section_level,
                                                     'content_type': 'table',
-                                                    'text': json.dumps(table_content)  # Store as JSON to preserve structure
+                                                    'text': json.dumps(table_data)
                                                 })
-                                        elif text.startswith('[TABLE_HEADER]') or text.startswith('[TABLE_ROW]'):
-                                            # Collect table rows for processing
-                                            if in_table:
-                                                table_content.append(text)
+                                        elif text.startswith('[TABLE_HEADER]'):
+                                            # Process header row
+                                            cells = text[14:].split('|')
+                                            header_row = cells
+                                            table_content.append(text)
+                                        elif text.startswith('[TABLE_ROW]'):
+                                            # Process data row
+                                            cells = text[11:].split('|')
+                                            table_rows.append(cells)
+                                            table_content.append(text)
                                         else:
                                             # Regular paragraph
                                             filtered_data.append({
@@ -438,27 +467,42 @@ def add_document_upload_tab():
                             # Process paragraphs and tables
                             in_table = False
                             table_content = []
+                            table_rows = []
+                            header_row = None
                             
                             for text in paragraphs:
                                 if text == '[TABLE_START]':
                                     in_table = True
                                     table_content = []
+                                    table_rows = []
+                                    header_row = None
                                 elif text == '[TABLE_END]':
                                     in_table = False
                                     
                                     # Process collected table content
-                                    if table_content:
-                                        # Add as a single entry to preserve table structure
+                                    if table_rows:
+                                        # Create a JSON representation of the table
+                                        table_data = {
+                                            'header': header_row if header_row else [],
+                                            'rows': table_rows
+                                        }
+                                        
                                         all_data.append({
                                             'section': section,
                                             'level': section_level,
                                             'content_type': 'table',
-                                            'text': json.dumps(table_content)  # Store as JSON to preserve structure
+                                            'text': json.dumps(table_data)
                                         })
-                                elif text.startswith('[TABLE_HEADER]') or text.startswith('[TABLE_ROW]'):
-                                    # Collect table rows for processing
-                                    if in_table:
-                                        table_content.append(text)
+                                elif text.startswith('[TABLE_HEADER]'):
+                                    # Process header row
+                                    cells = text[14:].split('|')
+                                    header_row = cells
+                                    table_content.append(text)
+                                elif text.startswith('[TABLE_ROW]'):
+                                    # Process data row
+                                    cells = text[11:].split('|')
+                                    table_rows.append(cells)
+                                    table_content.append(text)
                                 else:
                                     # Regular paragraph
                                     all_data.append({
@@ -509,13 +553,26 @@ def add_document_upload_tab():
                             row_data = [cell.text for cell in row.cells]
                             table_data.append(row_data)
                         
-                        # Display the DataFrame
+                        # Display the DataFrame with handling for duplicate column names
                         if table_data:
-                            df = pd.DataFrame(table_data)
-                            if len(df) > 0:
-                                # Use first row as header
-                                df.columns = df.iloc[0]
-                                df = df[1:]
+                            # Create a list of column names with uniqueness handling
+                            if len(table_data) > 0:
+                                headers = table_data[0]
+                                unique_headers = []
+                                header_counts = {}
+                                
+                                for header in headers:
+                                    if header in header_counts:
+                                        header_counts[header] += 1
+                                        unique_headers.append(f"{header}_{header_counts[header]}")
+                                    else:
+                                        header_counts[header] = 0
+                                        unique_headers.append(header)
+                                
+                                # Create DataFrame with unique columns
+                                df = pd.DataFrame(table_data[1:])
+                                if len(df.columns) == len(unique_headers):
+                                    df.columns = unique_headers
                                 st.dataframe(df)
                 except Exception as table_error:
                     st.error(f"Error in emergency table extraction: {str(table_error)}")
