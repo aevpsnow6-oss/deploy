@@ -166,12 +166,6 @@ def add_document_upload_tab():
                 st.error(traceback.format_exc())
     else:
         st.info("Please upload a DOCX file to begin.")
-Now, let's modify the main Streamlit app to include our new tab:
-python# Modify the tabs in oli_v5_deploy.py
-tab1, tab2, tab3 = st.tabs(["Análisis de Textos y Recomendaciones Similares", 
-                           "Búsqueda de Recomendaciones",
-                           "Subir y Procesar Documentos"])
-
 
 # ============= VISUALIZATION FUNCTIONS =============
 
@@ -962,7 +956,10 @@ except Exception as e:
     st.stop()
 
 # Tabs
-tab1, tab2 = st.tabs(["Análisis de Textos y Recomendaciones Similares", "Búsqueda de Recomendaciones"])
+# Modify the tabs in oli_v5_deploy.py
+tab1, tab2, tab3 = st.tabs(["Análisis de Textos y Recomendaciones Similares", 
+                           "Búsqueda de Recomendaciones",
+                           "Subir y Procesar Documentos"])
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
