@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import tempfile
+import docx
 import numpy as np
 import faiss
 import os
