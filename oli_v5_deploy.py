@@ -21,6 +21,9 @@ openai.api_key = openai_api_key
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+#-----------------------------------
+# this is a test for commit
+#------------------------------------
 # ============= VISUALIZATION FUNCTIONS =============
 
 # Function to prepare additional data for new visualizations
