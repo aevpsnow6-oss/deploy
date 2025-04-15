@@ -28,30 +28,67 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 def parse_docx_with_tables(docx_file):
     """
     Parse a DOCX file and extract text content with section information,
-    including text from tables.
+    including text from tables. Better detection of heading levels.
     
     Returns:
         dict: A dictionary where keys are section names and values are lists of paragraphs
+        list: A list of section headings with their levels for TOC
     """
     doc = docx.Document(docx_file)
-    sections = {"Default": []}  # Start with a default section
-    current_section = "Default"
+    sections = {"main": []}  # Start with a main section
+    current_section = "main"
+    toc = []  # For table of contents
     
-    # First, process paragraphs to identify sections
+    # Create a mapping of heading style names to their level
+    heading_level_map = {}
+    for i in range(1, 10):  # Check for heading levels 1-9
+        heading_level_map[f'Heading {i}'] = i
+        # Also check for custom heading styles that might include numbers
+        heading_level_map[f'heading {i}'] = i
+        heading_level_map[f'Header {i}'] = i
+        heading_level_map[f'Title {i}'] = i
+    
+    # First scan to identify sections by heading levels
+    section_stack = [("main", 0)]  # (section_name, level)
+    
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
             
-        # Check if it's a heading (potential section)
-        if para.style.name.startswith('Heading'):
-            current_section = text
-            if current_section not in sections:
-                sections[current_section] = []
+        # Check if it's a heading
+        level = 0
+        if para.style and para.style.name:
+            for heading_style, heading_level in heading_level_map.items():
+                if para.style.name.startswith(heading_style) or para.style.name == heading_style:
+                    level = heading_level
+                    break
+        
+        if level > 0:  # It's a heading
+            # Add to table of contents
+            toc.append((text, level))
+            
+            # Pop sections from stack if this heading is at the same or higher level
+            while section_stack and section_stack[-1][1] >= level:
+                section_stack.pop()
+            
+            # Create a section name based on parent sections
+            parent_prefix = section_stack[-1][0] if section_stack[-1][0] != "main" else ""
+            section_name = f"{parent_prefix}{'/' if parent_prefix else ''}{text}"
+            
+            # Push this section to the stack
+            section_stack.append((section_name, level))
+            
+            # Create the section if it doesn't exist
+            if section_name not in sections:
+                sections[section_name] = []
+            
+            current_section = section_name
         else:
+            # Regular paragraph, add to current section
             sections[current_section].append(text)
     
-    # Then process tables separately
+    # Process tables and add them to the appropriate sections
     for table in doc.tables:
         table_text = []
         for row in table.rows:
@@ -68,10 +105,12 @@ def parse_docx_with_tables(docx_file):
             sections[current_section].append(f"[TABLE]\n{table_content}")
     
     # Remove empty sections
-    return {k: v for k, v in sections.items() if v}
+    sections = {k: v for k, v in sections.items() if v}
+    
+    return sections, toc
 
 def add_document_upload_tab():
-    """Add a new tab for document upload and parsing"""
+    """Add a new tab for document upload and parsing with improved section detection and filtering"""
     st.header("Document Upload and Parsing")
     
     # File uploader for DOCX
@@ -86,7 +125,7 @@ def add_document_upload_tab():
             
             try:
                 # Parse the document
-                sections_content = parse_docx_with_tables(tmp_file_path)
+                sections_content, toc = parse_docx_with_tables(tmp_file_path)
                 
                 # Get file size
                 file_size_bytes = len(uploaded_file.getvalue())
@@ -95,22 +134,28 @@ def add_document_upload_tab():
                 
                 # Count statistics
                 total_sections = len(sections_content)
-                total_paragraphs = sum(len(paragraphs) for paragraphs in sections_content.values())
                 
-                # Count words and characters
-                all_text = ""
+                # Group the TOC by levels for better display
+                toc_by_level = {}
+                for heading, level in toc:
+                    if level <= 5:  # Only include up to level 5
+                        if level not in toc_by_level:
+                            toc_by_level[level] = []
+                        toc_by_level[level].append(heading)
+                
+                total_subsections = sum(len(headings) for level, headings in toc_by_level.items() if level > 1)
+                
+                # Count paragraphs, words, and characters
+                total_paragraphs = 0
+                total_words = 0
+                total_chars = 0
+                
                 for section, paragraphs in sections_content.items():
+                    total_paragraphs += len(paragraphs)
                     for para in paragraphs:
-                        all_text += para + " "
-                
-                total_words = len(all_text.split())
-                total_chars = len(all_text)
-                
-                # Count subsections (assuming sections that aren't "Default" and don't have a heading level)
-                subsections = 0
-                for section in sections_content.keys():
-                    if section != "Default" and any(s.startswith(section + ".") for s in sections_content.keys()):
-                        subsections += 1
+                        words = para.split()
+                        total_words += len(words)
+                        total_chars += len(para)
                 
                 # Clean up the temporary file
                 os.unlink(tmp_file_path)
@@ -120,24 +165,44 @@ def add_document_upload_tab():
                 
                 # Display summary in a nice format
                 st.markdown("### Document Summary")
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     st.metric("File Size", f"{file_size_mb:.2f} MB" if file_size_mb >= 1 else f"{file_size_kb:.2f} KB")
                     st.metric("Total Sections", total_sections)
-                    st.metric("Subsections", subsections)
                 
                 with col2:
+                    st.metric("Total Subsections", total_subsections)
                     st.metric("Total Paragraphs", total_paragraphs)
+                
+                with col3:
                     st.metric("Total Words", total_words)
                     st.metric("Total Characters", total_chars)
+                
+                # Display table of contents
+                st.markdown("### Table of Contents")
+                
+                for level in sorted(toc_by_level.keys()):
+                    if level <= 5:  # Only show up to level 5
+                        with st.expander(f"Level {level} Headings ({len(toc_by_level[level])})"):
+                            for i, heading in enumerate(toc_by_level[level]):
+                                st.markdown(f"{i+1}. {heading}")
                 
                 # Convert to DataFrame for easier handling and eventual analysis
                 all_paragraphs = []
                 for section, paragraphs in sections_content.items():
+                    # Extract heading level from TOC
+                    level = 0
+                    section_name = section.split('/')[-1] if '/' in section else section
+                    for heading, lvl in toc:
+                        if heading == section_name:
+                            level = lvl
+                            break
+                    
                     for i, text in enumerate(paragraphs):
                         all_paragraphs.append({
                             'section': section,
+                            'level': level,
                             'paragraph_id': i,
                             'text': text
                         })
@@ -146,13 +211,20 @@ def add_document_upload_tab():
                 
                 # Store in session state for later use
                 st.session_state['parsed_document'] = df
+                st.session_state['document_toc'] = toc
                 
                 # Create tabs for each section
                 if sections_content:
-                    section_tabs = st.tabs(list(sections_content.keys()))
+                    # Sort sections by their natural order in the document
+                    sorted_sections = sorted(sections_content.keys(), 
+                                            key=lambda x: list(sections_content.keys()).index(x))
                     
-                    for i, (section, content) in enumerate(sections_content.items()):
+                    section_tabs = st.tabs([s.split('/')[-1] for s in sorted_sections])
+                    
+                    for i, section in enumerate(sorted_sections):
                         with section_tabs[i]:
+                            content = sections_content[section]
+                            
                             # Display content with proper formatting
                             for j, paragraph in enumerate(content):
                                 if paragraph.startswith('[TABLE]'):
@@ -181,21 +253,90 @@ def add_document_upload_tab():
                             section_chars = sum(len(para) for para in content)
                             st.info(f"This section contains {len(content)} paragraphs, {section_words} words, and {section_chars} characters.")
                     
-                    # Add a tab for the full document dataframe
-                    with st.expander("View as DataFrame"):
-                        st.dataframe(df)
+                    # Section filtering functionality
+                    st.markdown("### Filter Sections")
+                    st.write("Select sections to include in the filtered output:")
                     
-                    # Download button for the parsed document
-                    excel_data = BytesIO()
-                    df.to_excel(excel_data, index=False)
-                    excel_data.seek(0)
+                    # Group sections by level for better organized selection
+                    sections_by_level = {}
+                    for section in sorted_sections:
+                        # Skip the main section
+                        if section == "main":
+                            continue
+                            
+                        # Get the last part of the section path as the display name
+                        display_name = section.split('/')[-1]
+                        
+                        # Determine level from TOC
+                        level = 0
+                        for heading, lvl in toc:
+                            if heading == display_name:
+                                level = lvl
+                                break
+                        
+                        if level not in sections_by_level:
+                            sections_by_level[level] = []
+                        
+                        sections_by_level[level].append((section, display_name))
                     
-                    st.download_button(
-                        label="Download Parsed Document",
-                        data=excel_data,
-                        file_name="parsed_document.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    # Create multiselect widgets for each level
+                    selected_sections = []
+                    
+                    for level in sorted(sections_by_level.keys()):
+                        if level <= 5:  # Only show up to level 5
+                            level_sections = sections_by_level[level]
+                            section_options = [section for section, _ in level_sections]
+                            section_labels = [display_name for _, display_name in level_sections]
+                            
+                            selected = st.multiselect(
+                                f"Level {level} Sections:",
+                                options=section_options,
+                                format_func=lambda x: x.split('/')[-1],
+                                default=section_options if level == 1 else None  # Select all level 1 headings by default
+                            )
+                            selected_sections.extend(selected)
+                    
+                    # Filter button
+                    if st.button("Create Filtered Output"):
+                        if selected_sections:
+                            # Filter the DataFrame to include only the selected sections
+                            filtered_df = df[df['section'].isin(selected_sections)]
+                            
+                            if not filtered_df.empty:
+                                st.success(f"Created filtered output with {len(filtered_df)} paragraphs from {len(selected_sections)} sections.")
+                                
+                                # Show a preview
+                                with st.expander("Preview Filtered Content"):
+                                    st.dataframe(filtered_df)
+                                
+                                # Download button for the filtered document
+                                excel_data = BytesIO()
+                                filtered_df.to_excel(excel_data, index=False)
+                                excel_data.seek(0)
+                                
+                                st.download_button(
+                                    label="Download Filtered Document",
+                                    data=excel_data,
+                                    file_name="filtered_document.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                            else:
+                                st.warning("The filtered output is empty. Please select at least one section with content.")
+                        else:
+                            st.warning("Please select at least one section to create a filtered output.")
+                    
+                    # Download button for the complete parsed document
+                    with st.expander("Download Complete Parsed Document"):
+                        excel_data = BytesIO()
+                        df.to_excel(excel_data, index=False)
+                        excel_data.seek(0)
+                        
+                        st.download_button(
+                            label="Download Complete Document",
+                            data=excel_data,
+                            file_name="complete_document.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
                 else:
                     st.warning("No content found in the document.")
             
