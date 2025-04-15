@@ -37,38 +37,35 @@ def parse_docx_with_tables(docx_file):
     sections = {"Default": []}  # Start with a default section
     current_section = "Default"
     
-    # Function to extract text from a table
-    def extract_table_text(table):
+    # First, process paragraphs to identify sections
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+            
+        # Check if it's a heading (potential section)
+        if para.style.name.startswith('Heading'):
+            current_section = text
+            if current_section not in sections:
+                sections[current_section] = []
+        else:
+            sections[current_section].append(text)
+    
+    # Then process tables separately
+    for table in doc.tables:
         table_text = []
-        for i, row in enumerate(table.rows):
+        for row in table.rows:
             row_text = []
-            for j, cell in enumerate(row.cells):
-                cell_text = ' '.join(paragraph.text for paragraph in cell.paragraphs if paragraph.text.strip())
+            for cell in row.cells:
+                cell_text = ' '.join(paragraph.text.strip() for paragraph in cell.paragraphs if paragraph.text.strip())
                 if cell_text:
-                    row_text.append(f"{cell_text}")
+                    row_text.append(cell_text)
             if row_text:
                 table_text.append(' | '.join(row_text))
-        return '\n'.join(table_text)
-    
-    # Process each paragraph and table in the document
-    for element in doc.element.body:
-        if element.tag.endswith('p'):  # It's a paragraph
-            paragraph = docx.text.paragraph.Paragraph(element, doc)
-            text = paragraph.text.strip()
-            
-            # Check if it's a heading (potential section)
-            if paragraph.style.name.startswith('Heading'):
-                current_section = text
-                if current_section not in sections:
-                    sections[current_section] = []
-            elif text:  # Only add non-empty paragraphs
-                sections[current_section].append(text)
-                
-        elif element.tag.endswith('tbl'):  # It's a table
-            table = docx.table._Table(element, doc)
-            table_text = extract_table_text(table)
-            if table_text:
-                sections[current_section].append(f"[TABLE]\n{table_text}")
+        
+        if table_text:
+            table_content = '\n'.join(table_text)
+            sections[current_section].append(f"[TABLE]\n{table_content}")
     
     # Remove empty sections
     return {k: v for k, v in sections.items() if v}
