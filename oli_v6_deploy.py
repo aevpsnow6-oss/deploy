@@ -594,6 +594,95 @@ def display_retrieved_context(relevant_docs):
         st.markdown(f"{doc['text']}")
         st.markdown("---")
 
+def analyze_document_with_llm(doc_data, sections_content):
+    """
+    Analyze document content using OpenAI's LLM to improve section detection and organization.
+    
+    Parameters:
+    -----------
+    doc_data : docx2python object
+        The extracted document data
+    sections_content : dict
+        Dictionary of section names to content
+        
+    Returns:
+    --------
+    tuple
+        (improved_sections, improved_toc, improved_toc_hierarchy)
+    """
+    if not openai_api_key:
+        st.warning("OpenAI API key not found. Using basic document analysis.")
+        return sections_content, [], {}
+    
+    try:
+        # Prepare the document content for analysis
+        document_text = ""
+        for section, content in sections_content.items():
+            document_text += f"\n\n{section}\n"
+            document_text += "\n".join(content)
+        
+        # Create a prompt for the LLM
+        prompt = f"""Analyze the following document and identify its structure. 
+        For each section, determine:
+        1. The section title
+        2. The section level (1 for main sections, 2 for subsections, etc.)
+        3. The content that belongs to each section
+        
+        Document content:
+        {document_text}
+        
+        Return the analysis in the following JSON format:
+        {{
+            "sections": [
+                {{
+                    "title": "section title",
+                    "level": level_number,
+                    "content": ["content line 1", "content line 2", ...]
+                }},
+                ...
+            ]
+        }}
+        """
+        
+        # Call OpenAI API
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # or "gpt-3.5-turbo" if preferred
+            messages=[
+                {"role": "system", "content": "You are a document analysis expert that helps identify document structure and content organization."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1  # Lower temperature for more consistent structure
+        )
+        
+        # Parse the response
+        analysis = json.loads(response.choices[0].message.content)
+        
+        # Convert the analysis to our format
+        improved_sections = {}
+        improved_toc = []
+        improved_toc_hierarchy = {}
+        
+        for section in analysis["sections"]:
+            title = section["title"]
+            level = section["level"]
+            content = section["content"]
+            
+            # Add to sections
+            improved_sections[title] = content
+            
+            # Add to TOC
+            improved_toc.append((title, level))
+            
+            # Add to TOC hierarchy
+            if level not in improved_toc_hierarchy:
+                improved_toc_hierarchy[level] = []
+            improved_toc_hierarchy[level].append(title)
+        
+        return improved_sections, improved_toc, improved_toc_hierarchy
+        
+    except Exception as e:
+        st.warning(f"LLM analysis failed: {str(e)}. Using basic document analysis.")
+        return sections_content, [], {}
 
 def parse_docx_with_docx2python(docx_file):
     """
@@ -618,123 +707,20 @@ def parse_docx_with_docx2python(docx_file):
     toc = []
     toc_hierarchy = {}
     
-    # Extract styles.xml and document.xml for better structure information
-    docx_zip = zipfile.ZipFile(docx_file)
+    # First, do basic parsing
+    # [Previous parsing code remains the same...]
     
-    # Read styles.xml to get heading style information
-    heading_styles = {}
-    try:
-        styles_xml = docx_zip.read('word/styles.xml')
-        styles_root = ET.fromstring(styles_xml)
-        
-        # Define namespaces
-        namespaces = {
-            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-        }
-        
-        # Extract heading styles and their levels
-        for style in styles_root.findall('.//w:style', namespaces):
-            style_id = style.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}styleId')
-            style_name = style.find('.//w:name', namespaces)
-            
-            if style_id and style_name is not None:
-                style_name_val = style_name.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
-                
-                # Check if it's a heading style
-                if style_id.startswith('Heading') or (style_name_val and 'Heading' in style_name_val):
-                    level_match = re.search(r'Heading\s*(\d+)', style_id)
-                    if not level_match:
-                        level_match = re.search(r'Heading\s*(\d+)', style_name_val or '')
-                    
-                    if level_match:
-                        level = int(level_match.group(1))
-                        heading_styles[style_id] = level
-    except Exception as e:
-        st.warning(f"Could not extract heading styles: {e}")
-        # Fallback to default heading detection
+    # After basic parsing, use LLM to improve the structure
+    improved_sections, improved_toc, improved_toc_hierarchy = analyze_document_with_llm(doc_data, sections)
     
-    # Read document.xml to get structure information
-    try:
-        doc_xml = docx_zip.read('word/document.xml')
-        doc_root = ET.fromstring(doc_xml)
-        
-        # Extract paragraphs with their styles and properties
-        paragraphs_with_styles = []
-        current_heading_level = 0
-        current_heading_text = None
-        
-        for para in doc_root.findall('.//w:p', namespaces):
-            # Extract text content
-            text_parts = []
-            for text_elem in para.findall('.//w:t', namespaces):
-                if text_elem.text:
-                    text_parts.append(text_elem.text)
-            
-            if not text_parts:
-                continue
-                
-            text = ''.join(text_parts).strip()
-            
-            # Extract style information
-            style_elem = para.find('.//w:pStyle', namespaces)
-            style_id = None
-            if style_elem is not None:
-                style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
-            
-            # Extract paragraph properties for additional heading detection
-            para_props = para.find('.//w:pPr', namespaces)
-            outline_level = None
-            if para_props is not None:
-                outline_elem = para_props.find('.//w:outlineLvl', namespaces)
-                if outline_elem is not None:
-                    outline_level = int(outline_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'))
-            
-            # Determine if this is a heading
-            is_heading = False
-            heading_level = None
-            
-            # Check style-based heading
-            if style_id in heading_styles:
-                heading_level = heading_styles[style_id]
-                is_heading = True
-            # Check outline level
-            elif outline_level is not None:
-                heading_level = outline_level + 1  # Convert to 1-based level
-                is_heading = True
-            # Check formatting-based heading (fallback)
-            elif (text.strip().isupper() and len(text.strip().split()) <= 5) or \
-                 (text.strip().startswith('Chapter') or text.strip().startswith('Section')):
-                heading_level = current_heading_level + 1
-                is_heading = True
-            
-            if is_heading:
-                # Update current heading level and text
-                current_heading_level = heading_level
-                current_heading_text = text
-                
-                # Add to TOC
-                toc.append((text, heading_level))
-                
-                # Add to TOC hierarchy
-                if heading_level not in toc_hierarchy:
-                    toc_hierarchy[heading_level] = []
-                toc_hierarchy[heading_level].append(text)
-                
-                # Add as a section
-                sections[text] = []
-            else:
-                # Add to current section
-                if current_heading_text:
-                    sections[current_heading_text].append(text)
-                else:
-                    sections["DOCUMENT_START"].append(text)
-            
-            paragraphs_with_styles.append((text, style_id, heading_level if is_heading else None))
-            
-    except Exception as e:
-        st.warning(f"Could not extract document structure: {e}")
-        # Fall back to docx2python's content structure
-        process_docx2python_content(doc_data, sections, toc, toc_hierarchy)
+    # If LLM analysis was successful, use its results
+    if improved_toc:  # If we got a valid TOC from the LLM
+        sections = improved_sections
+        toc = improved_toc
+        toc_hierarchy = improved_toc_hierarchy
+    else:
+        # Use the basic parsing results
+        st.info("Using basic document analysis. For better results, ensure your OpenAI API key is set.")
     
     # Process tables
     process_tables(doc_data, sections)
