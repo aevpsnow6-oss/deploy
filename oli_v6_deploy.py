@@ -219,7 +219,7 @@ def load_engagement_rubric():
             return st.session_state.engagement_rubric
             
         # Otherwise load from file
-        df_rubric_engagement = pd.read_excel('G:/My Drive/RAG/Actores_rúbricas de participación.xlsx', 
+        df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', 
                                          sheet_name='rubric_engagement')
         df_rubric_engagement.rename(columns={'Indicador': 'Criterion'}, inplace=True)
         
@@ -250,7 +250,7 @@ def load_performance_rubric():
             return st.session_state.performance_rubric
             
         # Otherwise load from file
-        df_rubric_performance = pd.read_excel('G:/My Drive/RAG/Matriz_scores_meta analisis_ESP_v2.xlsx')
+        df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
         
         # Clean up dimension column - remove digits
         df_rubric_performance['dimension'] = df_rubric_performance['dimension'].str.replace(r'\d+', '', regex=True).str.strip()
