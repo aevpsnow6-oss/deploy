@@ -20,15 +20,35 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import zipfile
-
-# Use environment variables for API keys
-# For local development - use .env file or set environment variables
-# For Streamlit Cloud - set these in the app settings
-openai_api_key = os.getenv("OPENAI_API_KEY")
-# Initialize OpenAI - use only the older API version
 import openai
-openai.api_key = openai_api_key
 
+# Initialize OpenAI API key
+def initialize_openai():
+    """Initialize OpenAI API key from environment variables or Streamlit secrets."""
+    global openai_api_key
+    try:
+        # Try to get API key from environment variables
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        
+        # If not in environment, try Streamlit secrets
+        if not openai_api_key and hasattr(st, 'secrets'):
+            openai_api_key = st.secrets.get("OPENAI_API_KEY")
+        
+        # Initialize OpenAI
+        if openai_api_key:
+            openai.api_key = openai_api_key
+            return True
+        else:
+            st.warning("OpenAI API key not found. Some features may be limited.")
+            return False
+    except Exception as e:
+        st.error(f"Error initializing OpenAI: {str(e)}")
+        return False
+
+# Initialize OpenAI at module level
+openai_initialized = initialize_openai()
+
+# Set environment variable for KMP
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 # ============= DOCX PARSING FUNCTIONS =============
@@ -610,7 +630,7 @@ def analyze_document_with_llm(doc_data, sections_content):
     tuple
         (improved_sections, improved_toc, improved_toc_hierarchy)
     """
-    if not openai_api_key:
+    if not openai_initialized:
         st.warning("OpenAI API key not found. Using basic document analysis.")
         return sections_content, [], {}
     
@@ -646,12 +666,12 @@ def analyze_document_with_llm(doc_data, sections_content):
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",  # or "gpt-3.5-turbo" if preferred
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a document analysis expert that helps identify document structure and content organization."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1  # Lower temperature for more consistent structure
+            temperature=0.1
         )
         
         # Parse the response
@@ -1928,8 +1948,8 @@ def summarize_text(text, prompt_template):
     str
         Summarized text
     """
-    if not openai_api_key:
-        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+    if not openai_initialized:
+        st.error("OpenAI API key not found. Some features may be limited.")
         return None
         
     prompt = prompt_template.format(text=text)
@@ -1953,8 +1973,8 @@ def summarize_text(text, prompt_template):
 st.markdown("<h3 style='text-align: center;'>Oli: Análisis Automatizado de Recomendaciones</h3>", unsafe_allow_html=True)
 
 # Check for API key before running the app
-if not openai_api_key:
-    st.warning("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable in Streamlit Cloud.")
+if not openai_initialized:
+    st.warning("OpenAI API key not found. Some features may be limited.")
     st.info("For local development, you can use a .env file or set the environment variable.")
     # Continue with limited functionality or show instructions on setup
 
