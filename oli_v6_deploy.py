@@ -581,11 +581,12 @@ def display_retrieved_context(relevant_docs):
 def parse_docx_with_tables(docx_file):
     """
     Parse a DOCX file and extract text content with section information,
-    including text from tables. Improved handling of tables within sections.
+    respecting the document's heading styles and properly handling tables.
     
     Returns:
         dict: A dictionary where keys are section names and values are lists of paragraphs
         list: A list of section headings with their levels for TOC
+        dict: A hierarchical structure of the TOC for filtering
     """
     doc = docx.Document(docx_file)
     
@@ -593,39 +594,41 @@ def parse_docx_with_tables(docx_file):
     toc = []
     
     # Create a mapping of heading style names to their level
-    heading_level_map = {}
-    for i in range(1, 10):  # Check for heading levels 1-9
-        heading_level_map[f'Heading {i}'] = i
-        heading_level_map[f'heading {i}'] = i
-        heading_level_map[f'Header {i}'] = i
-        heading_level_map[f'Title {i}'] = i
+    heading_style_patterns = [
+        ('Heading', r'Heading\s+(\d+)'),
+        ('heading', r'heading\s+(\d+)'),
+        ('Header', r'Header\s+(\d+)'),
+        ('Title', r'Title\s+(\d+)')
+    ]
     
     # First scan to identify all headings in the document
     headings = []
+    
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
         
-        # Check if it's a heading
         level = 0
+        
+        # Look for standard heading styles
         if para.style and para.style.name:
-            for heading_style, heading_level in heading_level_map.items():
-                if para.style.name.startswith(heading_style) or para.style.name == heading_style:
-                    level = heading_level
+            # For styles like "Heading 1", "heading 2", etc.
+            for prefix, pattern in heading_style_patterns:
+                if para.style.name.startswith(prefix):
+                    match = re.search(pattern, para.style.name)
+                    if match:
+                        try:
+                            level = int(match.group(1))
+                        except ValueError:
+                            # If we can't parse the number, assume it's level 1
+                            level = 1
+                    else:
+                        # If no number in the style, assume it's level 1
+                        level = 1
                     break
         
-        # Some documents use bold text or numbering for headings without proper styles
-        # Try to detect these by checking for common patterns
-        if level == 0:
-            # Check for all-caps text (common for section headers)
-            if text.isupper() and len(text.split()) <= 5:
-                level = 1
-            
-            # Check for numbered headings (e.g., "1. INTRODUCTION")
-            elif len(text.split('.')) > 1 and text.split('.')[0].strip().isdigit():
-                level = 1
-        
+        # Only add to headings if it's a proper heading based on style
         if level > 0:
             headings.append((text, level))
             toc.append((text, level))
@@ -634,12 +637,10 @@ def parse_docx_with_tables(docx_file):
     sections = {"DOCUMENT_START": []}
     current_section = "DOCUMENT_START"
     
-    # Track the position in the document
-    current_position = 0
+    # Process paragraphs
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
-            current_position += 1
             continue
         
         # Check if this paragraph is a heading
@@ -655,10 +656,8 @@ def parse_docx_with_tables(docx_file):
         if not is_heading:
             # It's content, add to the current section
             sections[current_section].append(text)
-        
-        current_position += 1
     
-    # Now process tables and associate them with the correct section
+    # Process tables and associate them with the correct section
     for table in doc.tables:
         # Determine which section this table belongs to
         # We'll check what heading comes before this table
