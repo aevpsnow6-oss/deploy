@@ -71,11 +71,21 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
             if not main_sections:  # If main_sections is still empty
                 main_sections = headings
     
+    # Filter out any selected sections that don't exist in the current document
+    valid_selected_sections = [
+        section for section in st.session_state.selected_sections_for_eval 
+        if section in main_sections
+    ]
+    
+    # If no valid sections are selected, use the first section as default
+    if not valid_selected_sections and main_sections:
+        valid_selected_sections = [main_sections[0]]
+    
     # Allow users to select sections for evaluation
     selected_sections = st.multiselect(
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
-        default=st.session_state.selected_sections_for_eval if st.session_state.selected_sections_for_eval else main_sections
+        default=valid_selected_sections
     )
     
     # Button to confirm section selection
