@@ -726,25 +726,50 @@ def parse_docx_with_docx2python(docx_file):
         # Extract content with docx2python
         doc_data = docx2python(docx_file)
         
-        # Initialize structures with default content
+        # Initialize structures
         sections = {"DOCUMENT_START": []}
         toc = []
         toc_hierarchy = {}
         
-        # Process paragraphs from docx2python
+        # Extract raw text content first as a fallback
+        all_text = []
+        for para_list in doc_data.document:
+            for para in para_list:
+                if isinstance(para, list):
+                    for text in para:
+                        if isinstance(text, str) and text.strip():
+                            all_text.append(text.strip())
+        
+        # If no structured content is found, at least add the raw text
+        if all_text:
+            sections["DOCUMENT_START"] = all_text
+        
+        # Try to extract structure
+        current_section = "DOCUMENT_START"
         for i, paragraph_list in enumerate(doc_data.document):
             for paragraph in paragraph_list:
                 if isinstance(paragraph, list):
                     for text in paragraph:
                         if isinstance(text, str) and text.strip():
                             # Simple heuristic for heading detection
-                            if len(text) < 100 and text.strip().isupper():
+                            if (len(text.strip()) < 100 and 
+                                (text.strip().isupper() or 
+                                 text.strip().endswith(':') or
+                                 any(heading_term in text.lower() for heading_term in 
+                                     ['capítulo', 'sección', 'título', 'parte', 'anexo']))):
                                 # Looks like a heading
                                 current_section = text.strip()
-                                sections[current_section] = []
+                                if current_section not in sections:
+                                    sections[current_section] = []
                                 
                                 # Add to TOC with basic level estimation
-                                level = 1
+                                level = 1  # Default level
+                                # Estimate level based on indentation or other heuristics
+                                if text.startswith('  '):
+                                    level = 2
+                                elif text.startswith('    '):
+                                    level = 3
+                                
                                 toc.append((current_section, level))
                                 
                                 # Add to TOC hierarchy
@@ -752,31 +777,54 @@ def parse_docx_with_docx2python(docx_file):
                                     toc_hierarchy[level] = []
                                 toc_hierarchy[level].append(current_section)
                             else:
-                                # Regular paragraph
-                                sections["DOCUMENT_START"].append(text.strip())
-        
-        # After basic parsing, use LLM to improve structure only if we have content
-        if sections and len(sections) > 1:
-            improved_sections, improved_toc, improved_toc_hierarchy = analyze_document_with_llm(doc_data, sections)
-            
-            # If LLM analysis was successful, use its results
-            if improved_toc:  # If we got a valid TOC from the LLM
-                toc = improved_toc
-                toc_hierarchy = improved_toc_hierarchy
+                                # Regular paragraph - add to current section
+                                sections[current_section].append(text.strip())
         
         # Process tables
-        process_tables(doc_data, sections)
+        try:
+            process_tables(doc_data, sections)
+        except Exception as table_error:
+            st.warning(f"Table extraction had issues: {str(table_error)}")
         
         # Clean up empty sections and normalize content
         sections = {k: [item for item in v if isinstance(item, str) and item.strip()] 
                    for k, v in sections.items() if v}
+        
+        # As a final check, if we still have no content, try a direct tables-only extraction
+        if not sections or all(len(content) == 0 for content in sections.values()):
+            try:
+                table_section = {"TABLES": []}
+                for i, table in enumerate(doc_data.tables):
+                    if table:
+                        table_section["TABLES"].append(f"[TABLE_START] Table {i+1}")
+                        for row in table:
+                            table_section["TABLES"].append("[TABLE_ROW] " + " | ".join([str(cell) for cell in row]))
+                        table_section["TABLES"].append("[TABLE_END]")
+                
+                if table_section["TABLES"]:
+                    sections = table_section
+            except Exception as direct_table_error:
+                st.error(f"Direct table extraction failed: {str(direct_table_error)}")
+        
+        # If still no content, try reading text using alternative method
+        if not sections or all(len(content) == 0 for content in sections.values()):
+            try:
+                # Try to access the raw text property
+                raw_text = doc_data.text
+                if raw_text:
+                    # Split by newlines and filter out empty lines
+                    text_lines = [line.strip() for para in raw_text for line in para if line.strip()]
+                    if text_lines:
+                        sections = {"DOCUMENT_TEXT": text_lines}
+            except Exception as raw_text_error:
+                st.error(f"Raw text extraction failed: {str(raw_text_error)}")
         
         return sections, toc, toc_hierarchy
     
     except Exception as e:
         st.error(f"Error in document parsing: {str(e)}")
         # Return minimal default structure on error
-        return {"DOCUMENT_START": ["Document parsing failed."]}, [], {}
+        return {"DOCUMENT_START": ["Document parsing failed due to error: " + str(e)]}, [], {}
 
 def process_docx2python_content(doc_data, sections, toc, toc_hierarchy):
     """
@@ -846,47 +894,49 @@ def process_content_with_structure(doc_data, paragraphs_with_styles, sections):
 def process_tables(doc_data, sections):
     """
     Process tables from docx2python and add them to the appropriate sections.
-    
-    Parameters:
-    -----------
-    doc_data : docx2python object
-        The extracted document data
-    sections : dict
-        Dictionary with sections to add tables to
     """
-    # Check if doc_data has a body attribute which contains the tables
-    if not hasattr(doc_data, 'body'):
+    # Check if doc_data has tables attribute
+    if not hasattr(doc_data, 'tables'):
         return
     
-    # Find the section each table belongs to
-    current_section = "DOCUMENT_START"
-    section_keys = list(sections.keys())
+    # Create a TABLE section if none exists
+    if "TABLES" not in sections:
+        sections["TABLES"] = []
     
     # Process each table in the document
-    for table_idx, table_data in enumerate(doc_data.body):
-        if not isinstance(table_data, list) or not table_data:
+    for table_idx, table_data in enumerate(doc_data.tables):
+        if not table_data:
             continue
-            
-        # Check if this is a table (tables are represented as lists of lists)
-        if all(isinstance(row, list) for row in table_data):
-            # Convert table data to our format
-            table_content = ["[TABLE_START]"]
-            
-            # Add header row if available
-            if table_data and table_data[0]:
-                header_row = table_data[0]
-                table_content.append("[TABLE_HEADER]" + "|".join(str(cell) for cell in header_row))
+        
+        # Mark the start of a table
+        sections["TABLES"].append(f"[TABLE_START] Table {table_idx + 1}")
+        
+        # Process each row in the table
+        for row_idx, row in enumerate(table_data):
+            if not row:
+                continue
                 
-                # Add data rows
-                for row in table_data[1:]:
-                    if row:  # Skip empty rows
-                        table_content.append("[TABLE_ROW]" + "|".join(str(cell) for cell in row))
-                        
-            table_content.append("[TABLE_END]")
-            
-            # Add the table to the current section
-            if current_section in sections:
-                sections[current_section].extend(table_content)
+            # Format row data
+            row_text = "[TABLE_ROW] " + " | ".join([str(cell) for cell in row])
+            sections["TABLES"].append(row_text)
+        
+        # Mark the end of a table
+        sections["TABLES"].append("[TABLE_END]")
+    
+    # Process any tables in the body if they exist
+    if hasattr(doc_data, 'body'):
+        for body_idx, body_item in enumerate(doc_data.body):
+            if isinstance(body_item, list) and body_item:
+                # Check if this looks like a table (list of lists)
+                if all(isinstance(row, list) for row in body_item):
+                    sections["TABLES"].append(f"[TABLE_START] Body Table {body_idx + 1}")
+                    
+                    for row in body_item:
+                        if row:
+                            row_text = "[TABLE_ROW] " + " | ".join([str(cell) for cell in row])
+                            sections["TABLES"].append(row_text)
+                            
+                    sections["TABLES"].append("[TABLE_END]")
 
 def add_document_upload_tab():
     """Add a new tab for document upload and parsing with improved docx2python implementation"""
@@ -908,16 +958,43 @@ def add_document_upload_tab():
                 
                 # Check if we got valid content
                 if not sections_content or all(not content for content in sections_content.values()):
-                    st.warning("Could not extract content from the document. Using emergency extraction...")
+                    st.warning("Regular document parsing did not extract content. Trying direct extraction method...")
                     
-                    # Emergency text extraction
                     try:
-                        doc = docx2python(tmp_file_path)
-                        text = " ".join([p for para in doc.text for p in para if p])
-                        sections_content = {"DOCUMENT_START": [text]}
-                    except Exception as text_error:
-                        st.error(f"Emergency text extraction failed: {str(text_error)}")
-                        sections_content = {"DOCUMENT_START": ["Failed to extract content."]}
+                        # Direct extraction using python-docx as a last resort
+                        import docx
+                        doc = docx.Document(tmp_file_path)
+                        
+                        direct_text = []
+                        for para in doc.paragraphs:
+                            if para.text.strip():
+                                direct_text.append(para.text.strip())
+                        
+                        # Extract tables using python-docx
+                        direct_tables = []
+                        for table in doc.tables:
+                            table_content = []
+                            for row in table.rows:
+                                row_content = []
+                                for cell in row.cells:
+                                    row_content.append(cell.text.strip())
+                                if any(cell for cell in row_content):
+                                    table_content.append("[TABLE_ROW] " + " | ".join(row_content))
+                            
+                            if table_content:
+                                direct_tables.append("[TABLE_START]")
+                                direct_tables.extend(table_content)
+                                direct_tables.append("[TABLE_END]")
+                        
+                        # Use the direct extraction content
+                        if direct_text:
+                            sections_content = {"DIRECT_TEXT": direct_text}
+                            if direct_tables:
+                                sections_content["DIRECT_TABLES"] = direct_tables
+                                
+                            st.success("Content extracted using direct method.")
+                    except Exception as direct_error:
+                        st.error(f"Direct extraction also failed: {str(direct_error)}")
                 
                 # Get file size
                 file_size_bytes = len(uploaded_file.getvalue())
