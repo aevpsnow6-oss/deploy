@@ -648,8 +648,10 @@ def parse_docx_with_docx2python(docx_file):
         doc_xml = docx_zip.read('word/document.xml')
         doc_root = ET.fromstring(doc_xml)
         
-        # Extract paragraphs with their styles
+        # Extract paragraphs with their styles and properties
         paragraphs_with_styles = []
+        current_heading_level = 0
+        current_heading_text = None
         
         for para in doc_root.findall('.//w:p', namespaces):
             # Extract text content
@@ -669,35 +671,67 @@ def parse_docx_with_docx2python(docx_file):
             if style_elem is not None:
                 style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
             
-            paragraphs_with_styles.append((text, style_id))
+            # Extract paragraph properties for additional heading detection
+            para_props = para.find('.//w:pPr', namespaces)
+            outline_level = None
+            if para_props is not None:
+                outline_elem = para_props.find('.//w:outlineLvl', namespaces)
+                if outline_elem is not None:
+                    outline_level = int(outline_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'))
             
-            # Identify headings based on style
+            # Determine if this is a heading
+            is_heading = False
+            heading_level = None
+            
+            # Check style-based heading
             if style_id in heading_styles:
-                level = heading_styles[style_id]
-                toc.append((text, level))
+                heading_level = heading_styles[style_id]
+                is_heading = True
+            # Check outline level
+            elif outline_level is not None:
+                heading_level = outline_level + 1  # Convert to 1-based level
+                is_heading = True
+            # Check formatting-based heading (fallback)
+            elif (text.strip().isupper() and len(text.strip().split()) <= 5) or \
+                 (text.strip().startswith('Chapter') or text.strip().startswith('Section')):
+                heading_level = current_heading_level + 1
+                is_heading = True
+            
+            if is_heading:
+                # Update current heading level and text
+                current_heading_level = heading_level
+                current_heading_text = text
+                
+                # Add to TOC
+                toc.append((text, heading_level))
                 
                 # Add to TOC hierarchy
-                if level not in toc_hierarchy:
-                    toc_hierarchy[level] = []
-                toc_hierarchy[level].append(text)
+                if heading_level not in toc_hierarchy:
+                    toc_hierarchy[heading_level] = []
+                toc_hierarchy[heading_level].append(text)
                 
                 # Add as a section
                 sections[text] = []
+            else:
+                # Add to current section
+                if current_heading_text:
+                    sections[current_heading_text].append(text)
+                else:
+                    sections["DOCUMENT_START"].append(text)
+            
+            paragraphs_with_styles.append((text, style_id, heading_level if is_heading else None))
+            
     except Exception as e:
         st.warning(f"Could not extract document structure: {e}")
-    
-    # If no heading styles were found, fall back to docx2python's content structure
-    if not toc:
+        # Fall back to docx2python's content structure
         process_docx2python_content(doc_data, sections, toc, toc_hierarchy)
-    else:
-        # Process content based on extracted structure
-        process_content_with_structure(doc_data, paragraphs_with_styles, sections)
     
     # Process tables
     process_tables(doc_data, sections)
     
-    # Clean up empty sections
-    sections = {k: v for k, v in sections.items() if v}
+    # Clean up empty sections and normalize content
+    sections = {k: [item for item in v if item.strip()] for k, v in sections.items() if v}
+    sections = {k: v for k, v in sections.items() if v}  # Remove empty sections
     
     return sections, toc, toc_hierarchy
 
@@ -758,7 +792,7 @@ def process_content_with_structure(doc_data, paragraphs_with_styles, sections):
     current_section = "DOCUMENT_START"
     
     # Process each paragraph
-    for text, style_id in paragraphs_with_styles:
+    for text, style_id, heading_level in paragraphs_with_styles:
         if text in sections:
             # This is a heading/section
             current_section = text
