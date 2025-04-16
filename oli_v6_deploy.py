@@ -777,39 +777,39 @@ def process_tables(doc_data, sections):
     sections : dict
         Dictionary with sections to add tables to
     """
-    if not doc_data.tables:
+    # Check if doc_data has a body attribute which contains the tables
+    if not hasattr(doc_data, 'body'):
         return
     
     # Find the section each table belongs to
     current_section = "DOCUMENT_START"
     section_keys = list(sections.keys())
     
-    for table_idx, table_data in enumerate(doc_data.tables):
-        if not table_data:
+    # Process each table in the document
+    for table_idx, table_data in enumerate(doc_data.body):
+        if not isinstance(table_data, list) or not table_data:
             continue
             
-        # Find the appropriate section for this table
-        # In a real implementation, we would match table position to sections
-        # For now, use current_section
-        
-        # Convert table data to our format
-        table_content = ["[TABLE_START]"]
-        
-        # Add header row if available
-        if table_data and table_data[0]:
-            header_row = table_data[0]
-            table_content.append("[TABLE_HEADER]" + "|".join(str(cell) for cell in header_row))
+        # Check if this is a table (tables are represented as lists of lists)
+        if all(isinstance(row, list) for row in table_data):
+            # Convert table data to our format
+            table_content = ["[TABLE_START]"]
             
-            # Add data rows
-            for row in table_data[1:]:
-                if row:  # Skip empty rows
-                    table_content.append("[TABLE_ROW]" + "|".join(str(cell) for cell in row))
-                    
-        table_content.append("[TABLE_END]")
-        
-        # Add the table to the current section
-        if current_section in sections:
-            sections[current_section].extend(table_content)
+            # Add header row if available
+            if table_data and table_data[0]:
+                header_row = table_data[0]
+                table_content.append("[TABLE_HEADER]" + "|".join(str(cell) for cell in header_row))
+                
+                # Add data rows
+                for row in table_data[1:]:
+                    if row:  # Skip empty rows
+                        table_content.append("[TABLE_ROW]" + "|".join(str(cell) for cell in row))
+                        
+            table_content.append("[TABLE_END]")
+            
+            # Add the table to the current section
+            if current_section in sections:
+                sections[current_section].extend(table_content)
 
 def add_document_upload_tab():
     """Add a new tab for document upload and parsing with improved docx2python implementation"""
