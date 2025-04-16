@@ -20,35 +20,15 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import zipfile
+
+# Use environment variables for API keys
+# For local development - use .env file or set environment variables
+# For Streamlit Cloud - set these in the app settings
+openai_api_key = os.getenv("OPENAI_API_KEY")
+# Initialize OpenAI - use only the older API version
 import openai
+openai.api_key = openai_api_key
 
-# Initialize OpenAI API key
-def initialize_openai():
-    """Initialize OpenAI API key from environment variables or Streamlit secrets."""
-    global openai_api_key
-    try:
-        # Try to get API key from environment variables
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        
-        # If not in environment, try Streamlit secrets
-        if not openai_api_key and hasattr(st, 'secrets'):
-            openai_api_key = st.secrets.get("OPENAI_API_KEY")
-        
-        # Initialize OpenAI
-        if openai_api_key:
-            openai.api_key = openai_api_key
-            return True
-        else:
-            st.warning("OpenAI API key not found. Some features may be limited.")
-            return False
-    except Exception as e:
-        st.error(f"Error initializing OpenAI: {str(e)}")
-        return False
-
-# Initialize OpenAI at module level
-openai_initialized = initialize_openai()
-
-# Set environment variable for KMP
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 # ============= DOCX PARSING FUNCTIONS =============
@@ -614,217 +594,156 @@ def display_retrieved_context(relevant_docs):
         st.markdown(f"{doc['text']}")
         st.markdown("---")
 
-def analyze_document_with_llm(doc_data, sections_content):
-    """
-    Analyze document content using OpenAI's LLM to improve section detection and organization.
-    """
-    if not openai_initialized:
-        st.warning("OpenAI API key not found. Using basic document analysis.")
-        return sections_content, [], {}
-    
-    try:
-        # Prepare the document content for analysis - limit to prevent token overflow
-        document_text = ""
-        sample_text = ""
-        
-        # Get a sample of content from each section (first 1000 chars)
-        for section, content in sections_content.items():
-            section_text = f"\n\n{section}\n" + "\n".join(content[:5])
-            sample_text += section_text[:1000]
-            if len(sample_text) > 4000:  # Limit total sample
-                break
-        
-        # Use a more robust prompt with explicit JSON formatting instructions
-        prompt = f"""Analyze the following document sample and identify its structure. 
-        For each section, determine:
-        1. The section title
-        2. The section level (1 for main sections, 2 for subsections, etc.)
-        
-        Document sample:
-        {sample_text}
-        
-        Return ONLY a valid JSON object with the following structure:
-        {{
-            "sections": [
-                {{
-                    "title": "section title",
-                    "level": level_number
-                }},
-                ...
-            ]
-        }}
-        
-        DO NOT include any explanations or text outside the JSON structure.
-        """
-        
-        # Call OpenAI API with error handling
-        try:
-            # For older SDK (<1.0.0)
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a document analysis expert that produces valid JSON only."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            result = response.choices[0].message.content.strip()
-        except AttributeError:
-            # For newer SDK (>=1.0.0)
-            client = openai.OpenAI(api_key=openai_api_key)
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a document analysis expert that produces valid JSON only."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            result = response.choices[0].message.content.strip()
-        
-        # Extract JSON from the response (in case there's any surrounding text)
-        import re
-        json_match = re.search(r'({.*})', result, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-            analysis = json.loads(json_str)
-        else:
-            analysis = json.loads(result)  # Try to parse the whole response
-        
-        # Convert the analysis to our format
-        improved_sections = dict(sections_content)  # Start with existing sections
-        improved_toc = []
-        improved_toc_hierarchy = {}
-        
-        for section in analysis.get("sections", []):
-            title = section.get("title")
-            level = section.get("level")
-            
-            if title and level:
-                # Add to TOC
-                improved_toc.append((title, level))
-                
-                # Add to TOC hierarchy
-                if level not in improved_toc_hierarchy:
-                    improved_toc_hierarchy[level] = []
-                improved_toc_hierarchy[level].append(title)
-        
-        return improved_sections, improved_toc, improved_toc_hierarchy
-        
-    except Exception as e:
-        st.warning(f"LLM analysis failed: {str(e)}. Using basic document analysis.")
-        return sections_content, [], {}
 
 def parse_docx_with_docx2python(docx_file):
     """
     Parse a DOCX file using docx2python to extract text and tables
     with proper structure preservation.
-    """
-    try:
-        # Extract content with docx2python
-        doc_data = docx2python(docx_file)
-        
-        # Initialize structures
-        sections = {"DOCUMENT_START": []}
-        toc = []
-        toc_hierarchy = {}
-        
-        # Extract raw text content first as a fallback
-        all_text = []
-        for para_list in doc_data.document:
-            for para in para_list:
-                if isinstance(para, list):
-                    for text in para:
-                        if isinstance(text, str) and text.strip():
-                            all_text.append(text.strip())
-        
-        # If no structured content is found, at least add the raw text
-        if all_text:
-            sections["DOCUMENT_START"] = all_text
-        
-        # Try to extract structure
-        current_section = "DOCUMENT_START"
-        for i, paragraph_list in enumerate(doc_data.document):
-            for paragraph in paragraph_list:
-                if isinstance(paragraph, list):
-                    for text in paragraph:
-                        if isinstance(text, str) and text.strip():
-                            # Simple heuristic for heading detection
-                            if (len(text.strip()) < 100 and 
-                                (text.strip().isupper() or 
-                                 text.strip().endswith(':') or
-                                 any(heading_term in text.lower() for heading_term in 
-                                     ['capítulo', 'sección', 'título', 'parte', 'anexo']))):
-                                # Looks like a heading
-                                current_section = text.strip()
-                                if current_section not in sections:
-                                    sections[current_section] = []
-                                
-                                # Add to TOC with basic level estimation
-                                level = 1  # Default level
-                                # Estimate level based on indentation or other heuristics
-                                if text.startswith('  '):
-                                    level = 2
-                                elif text.startswith('    '):
-                                    level = 3
-                                
-                                toc.append((current_section, level))
-                                
-                                # Add to TOC hierarchy
-                                if level not in toc_hierarchy:
-                                    toc_hierarchy[level] = []
-                                toc_hierarchy[level].append(current_section)
-                            else:
-                                # Regular paragraph - add to current section
-                                sections[current_section].append(text.strip())
-        
-        # Process tables
-        try:
-            process_tables(doc_data, sections)
-        except Exception as table_error:
-            st.warning(f"Table extraction had issues: {str(table_error)}")
-        
-        # Clean up empty sections and normalize content
-        sections = {k: [item for item in v if isinstance(item, str) and item.strip()] 
-                   for k, v in sections.items() if v}
-        
-        # As a final check, if we still have no content, try a direct tables-only extraction
-        if not sections or all(len(content) == 0 for content in sections.values()):
-            try:
-                table_section = {"TABLES": []}
-                for i, table in enumerate(doc_data.tables):
-                    if table:
-                        table_section["TABLES"].append(f"[TABLE_START] Table {i+1}")
-                        for row in table:
-                            table_section["TABLES"].append("[TABLE_ROW] " + " | ".join([str(cell) for cell in row]))
-                        table_section["TABLES"].append("[TABLE_END]")
-                
-                if table_section["TABLES"]:
-                    sections = table_section
-            except Exception as direct_table_error:
-                st.error(f"Direct table extraction failed: {str(direct_table_error)}")
-        
-        # If still no content, try reading text using alternative method
-        if not sections or all(len(content) == 0 for content in sections.values()):
-            try:
-                # Try to access the raw text property
-                raw_text = doc_data.text
-                if raw_text:
-                    # Split by newlines and filter out empty lines
-                    text_lines = [line.strip() for para in raw_text for line in para if line.strip()]
-                    if text_lines:
-                        sections = {"DOCUMENT_TEXT": text_lines}
-            except Exception as raw_text_error:
-                st.error(f"Raw text extraction failed: {str(raw_text_error)}")
-        
-        return sections, toc, toc_hierarchy
     
+    Parameters:
+    -----------
+    docx_file : str or file-like object
+        Path to the DOCX file or a file-like object
+        
+    Returns:
+    --------
+    tuple
+        (sections, toc, toc_hierarchy)
+    """
+    # Extract content with docx2python
+    doc_data = docx2python(docx_file)
+    
+    # Initialize structures
+    sections = {"DOCUMENT_START": []}
+    toc = []
+    toc_hierarchy = {}
+    
+    # Extract styles.xml and document.xml for better structure information
+    docx_zip = zipfile.ZipFile(docx_file)
+    
+    # Read styles.xml to get heading style information
+    heading_styles = {}
+    try:
+        styles_xml = docx_zip.read('word/styles.xml')
+        styles_root = ET.fromstring(styles_xml)
+        
+        # Define namespaces
+        namespaces = {
+            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        }
+        
+        # Extract heading styles and their levels
+        for style in styles_root.findall('.//w:style', namespaces):
+            style_id = style.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}styleId')
+            style_name = style.find('.//w:name', namespaces)
+            
+            if style_id and style_name is not None:
+                style_name_val = style_name.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+                
+                # Check if it's a heading style
+                if style_id.startswith('Heading') or (style_name_val and 'Heading' in style_name_val):
+                    level_match = re.search(r'Heading\s*(\d+)', style_id)
+                    if not level_match:
+                        level_match = re.search(r'Heading\s*(\d+)', style_name_val or '')
+                    
+                    if level_match:
+                        level = int(level_match.group(1))
+                        heading_styles[style_id] = level
     except Exception as e:
-        st.error(f"Error in document parsing: {str(e)}")
-        # Return minimal default structure on error
-        return {"DOCUMENT_START": ["Document parsing failed due to error: " + str(e)]}, [], {}
+        st.warning(f"Could not extract heading styles: {e}")
+        # Fallback to default heading detection
+    
+    # Read document.xml to get structure information
+    try:
+        doc_xml = docx_zip.read('word/document.xml')
+        doc_root = ET.fromstring(doc_xml)
+        
+        # Extract paragraphs with their styles and properties
+        paragraphs_with_styles = []
+        current_heading_level = 0
+        current_heading_text = None
+        
+        for para in doc_root.findall('.//w:p', namespaces):
+            # Extract text content
+            text_parts = []
+            for text_elem in para.findall('.//w:t', namespaces):
+                if text_elem.text:
+                    text_parts.append(text_elem.text)
+            
+            if not text_parts:
+                continue
+                
+            text = ''.join(text_parts).strip()
+            
+            # Extract style information
+            style_elem = para.find('.//w:pStyle', namespaces)
+            style_id = None
+            if style_elem is not None:
+                style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+            
+            # Extract paragraph properties for additional heading detection
+            para_props = para.find('.//w:pPr', namespaces)
+            outline_level = None
+            if para_props is not None:
+                outline_elem = para_props.find('.//w:outlineLvl', namespaces)
+                if outline_elem is not None:
+                    outline_level = int(outline_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'))
+            
+            # Determine if this is a heading
+            is_heading = False
+            heading_level = None
+            
+            # Check style-based heading
+            if style_id in heading_styles:
+                heading_level = heading_styles[style_id]
+                is_heading = True
+            # Check outline level
+            elif outline_level is not None:
+                heading_level = outline_level + 1  # Convert to 1-based level
+                is_heading = True
+            # Check formatting-based heading (fallback)
+            elif (text.strip().isupper() and len(text.strip().split()) <= 5) or \
+                 (text.strip().startswith('Chapter') or text.strip().startswith('Section')):
+                heading_level = current_heading_level + 1
+                is_heading = True
+            
+            if is_heading:
+                # Update current heading level and text
+                current_heading_level = heading_level
+                current_heading_text = text
+                
+                # Add to TOC
+                toc.append((text, heading_level))
+                
+                # Add to TOC hierarchy
+                if heading_level not in toc_hierarchy:
+                    toc_hierarchy[heading_level] = []
+                toc_hierarchy[heading_level].append(text)
+                
+                # Add as a section
+                sections[text] = []
+            else:
+                # Add to current section
+                if current_heading_text:
+                    sections[current_heading_text].append(text)
+                else:
+                    sections["DOCUMENT_START"].append(text)
+            
+            paragraphs_with_styles.append((text, style_id, heading_level if is_heading else None))
+            
+    except Exception as e:
+        st.warning(f"Could not extract document structure: {e}")
+        # Fall back to docx2python's content structure
+        process_docx2python_content(doc_data, sections, toc, toc_hierarchy)
+    
+    # Process tables
+    process_tables(doc_data, sections)
+    
+    # Clean up empty sections and normalize content
+    sections = {k: [item for item in v if item.strip()] for k, v in sections.items() if v}
+    sections = {k: v for k, v in sections.items() if v}  # Remove empty sections
+    
+    return sections, toc, toc_hierarchy
 
 def process_docx2python_content(doc_data, sections, toc, toc_hierarchy):
     """
@@ -894,49 +813,47 @@ def process_content_with_structure(doc_data, paragraphs_with_styles, sections):
 def process_tables(doc_data, sections):
     """
     Process tables from docx2python and add them to the appropriate sections.
+    
+    Parameters:
+    -----------
+    doc_data : docx2python object
+        The extracted document data
+    sections : dict
+        Dictionary with sections to add tables to
     """
-    # Check if doc_data has tables attribute
-    if not hasattr(doc_data, 'tables'):
+    # Check if doc_data has a body attribute which contains the tables
+    if not hasattr(doc_data, 'body'):
         return
     
-    # Create a TABLE section if none exists
-    if "TABLES" not in sections:
-        sections["TABLES"] = []
+    # Find the section each table belongs to
+    current_section = "DOCUMENT_START"
+    section_keys = list(sections.keys())
     
     # Process each table in the document
-    for table_idx, table_data in enumerate(doc_data.tables):
-        if not table_data:
+    for table_idx, table_data in enumerate(doc_data.body):
+        if not isinstance(table_data, list) or not table_data:
             continue
-        
-        # Mark the start of a table
-        sections["TABLES"].append(f"[TABLE_START] Table {table_idx + 1}")
-        
-        # Process each row in the table
-        for row_idx, row in enumerate(table_data):
-            if not row:
-                continue
+            
+        # Check if this is a table (tables are represented as lists of lists)
+        if all(isinstance(row, list) for row in table_data):
+            # Convert table data to our format
+            table_content = ["[TABLE_START]"]
+            
+            # Add header row if available
+            if table_data and table_data[0]:
+                header_row = table_data[0]
+                table_content.append("[TABLE_HEADER]" + "|".join(str(cell) for cell in header_row))
                 
-            # Format row data
-            row_text = "[TABLE_ROW] " + " | ".join([str(cell) for cell in row])
-            sections["TABLES"].append(row_text)
-        
-        # Mark the end of a table
-        sections["TABLES"].append("[TABLE_END]")
-    
-    # Process any tables in the body if they exist
-    if hasattr(doc_data, 'body'):
-        for body_idx, body_item in enumerate(doc_data.body):
-            if isinstance(body_item, list) and body_item:
-                # Check if this looks like a table (list of lists)
-                if all(isinstance(row, list) for row in body_item):
-                    sections["TABLES"].append(f"[TABLE_START] Body Table {body_idx + 1}")
-                    
-                    for row in body_item:
-                        if row:
-                            row_text = "[TABLE_ROW] " + " | ".join([str(cell) for cell in row])
-                            sections["TABLES"].append(row_text)
-                            
-                    sections["TABLES"].append("[TABLE_END]")
+                # Add data rows
+                for row in table_data[1:]:
+                    if row:  # Skip empty rows
+                        table_content.append("[TABLE_ROW]" + "|".join(str(cell) for cell in row))
+                        
+            table_content.append("[TABLE_END]")
+            
+            # Add the table to the current section
+            if current_section in sections:
+                sections[current_section].extend(table_content)
 
 def add_document_upload_tab():
     """Add a new tab for document upload and parsing with improved docx2python implementation"""
@@ -956,55 +873,15 @@ def add_document_upload_tab():
                 # Parse the document using docx2python
                 sections_content, toc, toc_hierarchy = parse_docx_with_docx2python(tmp_file_path)
                 
-                # Check if we got valid content
-                if not sections_content or all(not content for content in sections_content.values()):
-                    st.warning("Regular document parsing did not extract content. Trying direct extraction method...")
-                    
-                    try:
-                        # Direct extraction using python-docx as a last resort
-                        import docx
-                        doc = docx.Document(tmp_file_path)
-                        
-                        direct_text = []
-                        for para in doc.paragraphs:
-                            if para.text.strip():
-                                direct_text.append(para.text.strip())
-                        
-                        # Extract tables using python-docx
-                        direct_tables = []
-                        for table in doc.tables:
-                            table_content = []
-                            for row in table.rows:
-                                row_content = []
-                                for cell in row.cells:
-                                    row_content.append(cell.text.strip())
-                                if any(cell for cell in row_content):
-                                    table_content.append("[TABLE_ROW] " + " | ".join(row_content))
-                            
-                            if table_content:
-                                direct_tables.append("[TABLE_START]")
-                                direct_tables.extend(table_content)
-                                direct_tables.append("[TABLE_END]")
-                        
-                        # Use the direct extraction content
-                        if direct_text:
-                            sections_content = {"DIRECT_TEXT": direct_text}
-                            if direct_tables:
-                                sections_content["DIRECT_TABLES"] = direct_tables
-                                
-                            st.success("Content extracted using direct method.")
-                    except Exception as direct_error:
-                        st.error(f"Direct extraction also failed: {str(direct_error)}")
-                
                 # Get file size
                 file_size_bytes = len(uploaded_file.getvalue())
                 file_size_kb = file_size_bytes / 1024
                 file_size_mb = file_size_kb / 1024
                 
-                # Count statistics - with error handling for empty content
-                total_sections = max(0, len(sections_content) - 1)  # Don't count DOCUMENT_START
+                # Count statistics
+                total_sections = len(sections_content) - 1  # Don't count DOCUMENT_START
                 
-                # Count subsections safely
+                # Count subsections by level
                 subsections_count = {}
                 for level, headings in toc_hierarchy.items():
                     if level > 1:  # Level 1 headings are main sections
@@ -1012,14 +889,14 @@ def add_document_upload_tab():
                 
                 total_subsections = sum(subsections_count.values())
                 
-                # Count content statistics safely
+                # Count paragraphs, words, and characters
                 total_paragraphs = 0
                 total_words = 0
                 total_chars = 0
                 
                 for section, paragraphs in sections_content.items():
                     for para in paragraphs:
-                        if isinstance(para, str) and not para.startswith('[TABLE'):
+                        if not para.startswith('[TABLE'):  # Skip table markup in word/char count
                             total_paragraphs += 1
                             words = para.split()
                             total_words += len(words)
@@ -1028,11 +905,8 @@ def add_document_upload_tab():
                 # Clean up the temporary file
                 os.unlink(tmp_file_path)
                 
-                # Display success message only if we have real content
-                if total_words > 0:
-                    st.success("Document processed successfully!")
-                else:
-                    st.warning("Document processed, but no text content was extracted.")
+                # Show document summary
+                st.success("Document processed successfully!")
                 
                 # Create tabs for document summary, section viewing, and rubric evaluation
                 doc_tabs = st.tabs(["Resumen del Documento", "Secciones", "Evaluación por Rúbrica"])
@@ -2068,8 +1942,8 @@ def summarize_text(text, prompt_template):
     str
         Summarized text
     """
-    if not openai_initialized:
-        st.error("OpenAI API key not found. Some features may be limited.")
+    if not openai_api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
         return None
         
     prompt = prompt_template.format(text=text)
@@ -2093,8 +1967,8 @@ def summarize_text(text, prompt_template):
 st.markdown("<h3 style='text-align: center;'>Oli: Análisis Automatizado de Recomendaciones</h3>", unsafe_allow_html=True)
 
 # Check for API key before running the app
-if not openai_initialized:
-    st.warning("OpenAI API key not found. Some features may be limited.")
+if not openai_api_key:
+    st.warning("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable in Streamlit Cloud.")
     st.info("For local development, you can use a .env file or set the environment variable.")
     # Continue with limited functionality or show instructions on setup
 
