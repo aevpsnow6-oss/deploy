@@ -617,86 +617,99 @@ def display_retrieved_context(relevant_docs):
 def analyze_document_with_llm(doc_data, sections_content):
     """
     Analyze document content using OpenAI's LLM to improve section detection and organization.
-    
-    Parameters:
-    -----------
-    doc_data : docx2python object
-        The extracted document data
-    sections_content : dict
-        Dictionary of section names to content
-        
-    Returns:
-    --------
-    tuple
-        (improved_sections, improved_toc, improved_toc_hierarchy)
     """
     if not openai_initialized:
         st.warning("OpenAI API key not found. Using basic document analysis.")
         return sections_content, [], {}
     
     try:
-        # Prepare the document content for analysis
+        # Prepare the document content for analysis - limit to prevent token overflow
         document_text = ""
-        for section, content in sections_content.items():
-            document_text += f"\n\n{section}\n"
-            document_text += "\n".join(content)
+        sample_text = ""
         
-        # Create a prompt for the LLM
-        prompt = f"""Analyze the following document and identify its structure. 
+        # Get a sample of content from each section (first 1000 chars)
+        for section, content in sections_content.items():
+            section_text = f"\n\n{section}\n" + "\n".join(content[:5])
+            sample_text += section_text[:1000]
+            if len(sample_text) > 4000:  # Limit total sample
+                break
+        
+        # Use a more robust prompt with explicit JSON formatting instructions
+        prompt = f"""Analyze the following document sample and identify its structure. 
         For each section, determine:
         1. The section title
         2. The section level (1 for main sections, 2 for subsections, etc.)
-        3. The content that belongs to each section
         
-        Document content:
-        {document_text}
+        Document sample:
+        {sample_text}
         
-        Return the analysis in the following JSON format:
+        Return ONLY a valid JSON object with the following structure:
         {{
             "sections": [
                 {{
                     "title": "section title",
-                    "level": level_number,
-                    "content": ["content line 1", "content line 2", ...]
+                    "level": level_number
                 }},
                 ...
             ]
         }}
+        
+        DO NOT include any explanations or text outside the JSON structure.
         """
         
-        # Call OpenAI API
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a document analysis expert that helps identify document structure and content organization."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1
-        )
+        # Call OpenAI API with error handling
+        try:
+            # For older SDK (<1.0.0)
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a document analysis expert that produces valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=2000
+            )
+            result = response.choices[0].message.content.strip()
+        except AttributeError:
+            # For newer SDK (>=1.0.0)
+            client = openai.OpenAI(api_key=openai_api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a document analysis expert that produces valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=2000
+            )
+            result = response.choices[0].message.content.strip()
         
-        # Parse the response
-        analysis = json.loads(response.choices[0].message.content)
+        # Extract JSON from the response (in case there's any surrounding text)
+        import re
+        json_match = re.search(r'({.*})', result, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            analysis = json.loads(json_str)
+        else:
+            analysis = json.loads(result)  # Try to parse the whole response
         
         # Convert the analysis to our format
-        improved_sections = {}
+        improved_sections = dict(sections_content)  # Start with existing sections
         improved_toc = []
         improved_toc_hierarchy = {}
         
-        for section in analysis["sections"]:
-            title = section["title"]
-            level = section["level"]
-            content = section["content"]
+        for section in analysis.get("sections", []):
+            title = section.get("title")
+            level = section.get("level")
             
-            # Add to sections
-            improved_sections[title] = content
-            
-            # Add to TOC
-            improved_toc.append((title, level))
-            
-            # Add to TOC hierarchy
-            if level not in improved_toc_hierarchy:
-                improved_toc_hierarchy[level] = []
-            improved_toc_hierarchy[level].append(title)
+            if title and level:
+                # Add to TOC
+                improved_toc.append((title, level))
+                
+                # Add to TOC hierarchy
+                if level not in improved_toc_hierarchy:
+                    improved_toc_hierarchy[level] = []
+                improved_toc_hierarchy[level].append(title)
         
         return improved_sections, improved_toc, improved_toc_hierarchy
         
@@ -708,48 +721,62 @@ def parse_docx_with_docx2python(docx_file):
     """
     Parse a DOCX file using docx2python to extract text and tables
     with proper structure preservation.
-    
-    Parameters:
-    -----------
-    docx_file : str or file-like object
-        Path to the DOCX file or a file-like object
-        
-    Returns:
-    --------
-    tuple
-        (sections, toc, toc_hierarchy)
     """
-    # Extract content with docx2python
-    doc_data = docx2python(docx_file)
+    try:
+        # Extract content with docx2python
+        doc_data = docx2python(docx_file)
+        
+        # Initialize structures with default content
+        sections = {"DOCUMENT_START": []}
+        toc = []
+        toc_hierarchy = {}
+        
+        # Process paragraphs from docx2python
+        for i, paragraph_list in enumerate(doc_data.document):
+            for paragraph in paragraph_list:
+                if isinstance(paragraph, list):
+                    for text in paragraph:
+                        if isinstance(text, str) and text.strip():
+                            # Simple heuristic for heading detection
+                            if len(text) < 100 and text.strip().isupper():
+                                # Looks like a heading
+                                current_section = text.strip()
+                                sections[current_section] = []
+                                
+                                # Add to TOC with basic level estimation
+                                level = 1
+                                toc.append((current_section, level))
+                                
+                                # Add to TOC hierarchy
+                                if level not in toc_hierarchy:
+                                    toc_hierarchy[level] = []
+                                toc_hierarchy[level].append(current_section)
+                            else:
+                                # Regular paragraph
+                                sections["DOCUMENT_START"].append(text.strip())
+        
+        # After basic parsing, use LLM to improve structure only if we have content
+        if sections and len(sections) > 1:
+            improved_sections, improved_toc, improved_toc_hierarchy = analyze_document_with_llm(doc_data, sections)
+            
+            # If LLM analysis was successful, use its results
+            if improved_toc:  # If we got a valid TOC from the LLM
+                toc = improved_toc
+                toc_hierarchy = improved_toc_hierarchy
+        
+        # Process tables
+        process_tables(doc_data, sections)
+        
+        # Clean up empty sections and normalize content
+        sections = {k: [item for item in v if isinstance(item, str) and item.strip()] 
+                   for k, v in sections.items() if v}
+        
+        return sections, toc, toc_hierarchy
     
-    # Initialize structures
-    sections = {"DOCUMENT_START": []}
-    toc = []
-    toc_hierarchy = {}
-    
-    # First, do basic parsing
-    # [Previous parsing code remains the same...]
-    
-    # After basic parsing, use LLM to improve the structure
-    improved_sections, improved_toc, improved_toc_hierarchy = analyze_document_with_llm(doc_data, sections)
-    
-    # If LLM analysis was successful, use its results
-    if improved_toc:  # If we got a valid TOC from the LLM
-        sections = improved_sections
-        toc = improved_toc
-        toc_hierarchy = improved_toc_hierarchy
-    else:
-        # Use the basic parsing results
-        st.info("Using basic document analysis. For better results, ensure your OpenAI API key is set.")
-    
-    # Process tables
-    process_tables(doc_data, sections)
-    
-    # Clean up empty sections and normalize content
-    sections = {k: [item for item in v if item.strip()] for k, v in sections.items() if v}
-    sections = {k: v for k, v in sections.items() if v}  # Remove empty sections
-    
-    return sections, toc, toc_hierarchy
+    except Exception as e:
+        st.error(f"Error in document parsing: {str(e)}")
+        # Return minimal default structure on error
+        return {"DOCUMENT_START": ["Document parsing failed."]}, [], {}
 
 def process_docx2python_content(doc_data, sections, toc, toc_hierarchy):
     """
@@ -879,15 +906,28 @@ def add_document_upload_tab():
                 # Parse the document using docx2python
                 sections_content, toc, toc_hierarchy = parse_docx_with_docx2python(tmp_file_path)
                 
+                # Check if we got valid content
+                if not sections_content or all(not content for content in sections_content.values()):
+                    st.warning("Could not extract content from the document. Using emergency extraction...")
+                    
+                    # Emergency text extraction
+                    try:
+                        doc = docx2python(tmp_file_path)
+                        text = " ".join([p for para in doc.text for p in para if p])
+                        sections_content = {"DOCUMENT_START": [text]}
+                    except Exception as text_error:
+                        st.error(f"Emergency text extraction failed: {str(text_error)}")
+                        sections_content = {"DOCUMENT_START": ["Failed to extract content."]}
+                
                 # Get file size
                 file_size_bytes = len(uploaded_file.getvalue())
                 file_size_kb = file_size_bytes / 1024
                 file_size_mb = file_size_kb / 1024
                 
-                # Count statistics
-                total_sections = len(sections_content) - 1  # Don't count DOCUMENT_START
+                # Count statistics - with error handling for empty content
+                total_sections = max(0, len(sections_content) - 1)  # Don't count DOCUMENT_START
                 
-                # Count subsections by level
+                # Count subsections safely
                 subsections_count = {}
                 for level, headings in toc_hierarchy.items():
                     if level > 1:  # Level 1 headings are main sections
@@ -895,14 +935,14 @@ def add_document_upload_tab():
                 
                 total_subsections = sum(subsections_count.values())
                 
-                # Count paragraphs, words, and characters
+                # Count content statistics safely
                 total_paragraphs = 0
                 total_words = 0
                 total_chars = 0
                 
                 for section, paragraphs in sections_content.items():
                     for para in paragraphs:
-                        if not para.startswith('[TABLE'):  # Skip table markup in word/char count
+                        if isinstance(para, str) and not para.startswith('[TABLE'):
                             total_paragraphs += 1
                             words = para.split()
                             total_words += len(words)
@@ -911,8 +951,11 @@ def add_document_upload_tab():
                 # Clean up the temporary file
                 os.unlink(tmp_file_path)
                 
-                # Show document summary
-                st.success("Document processed successfully!")
+                # Display success message only if we have real content
+                if total_words > 0:
+                    st.success("Document processed successfully!")
+                else:
+                    st.warning("Document processed, but no text content was extracted.")
                 
                 # Create tabs for document summary, section viewing, and rubric evaluation
                 doc_tabs = st.tabs(["Resumen del Documento", "Secciones", "Evaluación por Rúbrica"])
