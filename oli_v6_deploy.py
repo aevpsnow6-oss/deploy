@@ -6,6 +6,7 @@ import docx
 import numpy as np
 import faiss
 import os
+import re
 from matplotlib import pyplot as plt
 import seaborn as sns
 from io import BytesIO
