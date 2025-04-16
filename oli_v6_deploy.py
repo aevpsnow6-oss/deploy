@@ -26,6 +26,387 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 # ============= DOCX PARSING FUNCTIONS =============
 
+def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
+    """
+    Add a new section for rubric-based evaluation of the document.
+    This allows users to choose a rubric type, view criteria, and evaluate the document.
+    
+    Parameters:
+    -----------
+    sections_content : dict
+        Dictionary of section names to content
+    toc : list
+        Table of contents as a list of (heading, level) tuples
+    toc_hierarchy : dict
+        Hierarchical structure of the TOC
+        
+    Returns:
+    --------
+    None
+    """
+    st.markdown("### Evaluación por Rúbrica")
+    
+    # Select rubric type
+    rubric_type = st.selectbox(
+        "Seleccione tipo de rúbrica para evaluación:",
+        ["Participación (Engagement)", "Desempeño (Performance)"],
+        index=0
+    )
+    
+    # Load the appropriate rubric based on selection
+    if rubric_type == "Participación (Engagement)":
+        rubric_df = load_engagement_rubric()
+        criteria_col = "Criterion"
+        short_col = "crit_short"
+        group_col = "Criterio"
+    else:  # Performance rubric
+        rubric_df = load_performance_rubric()
+        criteria_col = "subdim"
+        short_col = None  # Performance rubric might not have short names
+        group_col = "dimension"
+    
+    # Show the rubric structure
+    st.markdown(f"#### Estructura de la Rúbrica: {rubric_type}")
+    
+    # Group the rubric by category
+    rubric_groups = rubric_df.groupby(group_col)
+    
+    # Create columns to display the structure
+    cols = st.columns([1, 3])
+    
+    with cols[0]:
+        st.markdown("**Categorías**")
+        # Create radio buttons for categories
+        categories = list(rubric_groups.groups.keys())
+        selected_category = st.radio(
+            "Seleccione una categoría:",
+            categories,
+            label_visibility="collapsed"
+        )
+    
+    with cols[1]:
+        st.markdown("**Criterios**")
+        # Get criteria for the selected category
+        if selected_category:
+            category_criteria = rubric_df[rubric_df[group_col] == selected_category]
+            
+            # Create a list of criteria with checkboxes
+            st.markdown("Seleccione criterios para evaluar:")
+            
+            # Store selected criteria in session state if not already there
+            if 'selected_criteria' not in st.session_state:
+                st.session_state.selected_criteria = {}
+                
+            # Create checkboxes for each criterion
+            selected_criteria_ids = []
+            for _, criterion_row in category_criteria.iterrows():
+                criterion_id = criterion_row[criteria_col]
+                criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                
+                # Initialize this criterion in session state if not already there
+                if criterion_id not in st.session_state.selected_criteria:
+                    st.session_state.selected_criteria[criterion_id] = False
+                
+                # Create checkbox and update session state
+                is_selected = st.checkbox(
+                    criterion_name, 
+                    value=st.session_state.selected_criteria[criterion_id],
+                    key=f"criterion_{criterion_id}"
+                )
+                st.session_state.selected_criteria[criterion_id] = is_selected
+                
+                if is_selected:
+                    selected_criteria_ids.append(criterion_id)
+    
+    # Button to view detailed rubric for selected criteria
+    if st.button("Ver Detalles de Criterios Seleccionados"):
+        if not any(st.session_state.selected_criteria.values()):
+            st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
+        else:
+            st.markdown("#### Detalles de Criterios Seleccionados")
+            
+            # Get selected criteria
+            selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
+                [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+            )]
+            
+            for _, criterion_row in selected_criteria_df.iterrows():
+                criterion_id = criterion_row[criteria_col]
+                criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                
+                with st.expander(f"{criterion_name}", expanded=True):
+                    # Display the rubric levels for this criterion
+                    levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                    st.table(levels_df)
+    
+    # Button to start evaluation
+    if st.button("Iniciar Evaluación de Criterios Seleccionados"):
+        if not any(st.session_state.selected_criteria.values()):
+            st.warning("Por favor seleccione al menos un criterio para evaluar.")
+        else:
+            st.markdown("#### Evaluación de Criterios")
+            
+            # Get selected criteria IDs
+            selected_criteria_ids = [
+                cid for cid, selected in st.session_state.selected_criteria.items() if selected
+            ]
+            
+            # Process document for hierarchical retrieval
+            doc_store = process_document_for_evaluation(sections_content)
+            
+            # Evaluate each selected criterion
+            for criterion_id in selected_criteria_ids:
+                # Get criterion details
+                criterion_row = rubric_df[rubric_df[criteria_col] == criterion_id].iloc[0]
+                criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                
+                with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
+                    # Perform hierarchical retrieval for this criterion
+                    relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
+                    
+                    if relevant_docs:
+                        # Display retrieved context
+                        st.markdown("##### Contexto Relevante")
+                        display_retrieved_context(relevant_docs)
+                        
+                        # Display evaluation options
+                        st.markdown("##### Evaluación")
+                        # Get rubric levels for this criterion
+                        levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                        
+                        # Create radio buttons for scoring
+                        score_options = list(range(1, len(levels_df) + 1))
+                        score_labels = [f"{score} - {levels_df.loc[score-1, 'Description'][:50]}..." for score in score_options]
+                        
+                        selected_score = st.radio(
+                            "Seleccione un puntaje:",
+                            options=score_options,
+                            format_func=lambda x: score_labels[x-1],
+                            key=f"score_{criterion_id}"
+                        )
+                        
+                        # Justification text area
+                        justification = st.text_area(
+                            "Justificación (opcional):",
+                            key=f"justification_{criterion_id}"
+                        )
+                        
+                        # Store the evaluation in session state
+                        if 'evaluations' not in st.session_state:
+                            st.session_state.evaluations = {}
+                            
+                        st.session_state.evaluations[criterion_id] = {
+                            'criterion_name': criterion_name,
+                            'score': selected_score,
+                            'justification': justification,
+                            'context': [doc['text'] for doc in relevant_docs]
+                        }
+                    else:
+                        st.warning("No se encontró contexto relevante para este criterio.")
+
+def load_engagement_rubric():
+    """
+    Load the engagement rubric from the data file.
+    
+    Returns:
+    --------
+    pandas.DataFrame
+        Dataframe containing the engagement rubric
+    """
+    try:
+        # Try to load from the session state first
+        if 'engagement_rubric' in st.session_state:
+            return st.session_state.engagement_rubric
+            
+        # Otherwise load from file
+        df_rubric_engagement = pd.read_excel('G:/My Drive/RAG/Actores_rúbricas de participación.xlsx', 
+                                         sheet_name='rubric_engagement')
+        df_rubric_engagement.rename(columns={'Indicador': 'Criterion'}, inplace=True)
+        
+        # Store in session state for later use
+        st.session_state.engagement_rubric = df_rubric_engagement
+        return df_rubric_engagement
+    except Exception as e:
+        st.error(f"Error loading engagement rubric: {e}")
+        # Return a minimal rubric dataframe on error
+        return pd.DataFrame({
+            'Criterio': ['Error loading rubric'],
+            'Criterion': ['Error'],
+            'crit_short': ['Error']
+        })
+
+def load_performance_rubric():
+    """
+    Load the performance rubric from the data file.
+    
+    Returns:
+    --------
+    pandas.DataFrame
+        Dataframe containing the performance rubric
+    """
+    try:
+        # Try to load from the session state first
+        if 'performance_rubric' in st.session_state:
+            return st.session_state.performance_rubric
+            
+        # Otherwise load from file
+        df_rubric_performance = pd.read_excel('G:/My Drive/RAG/Matriz_scores_meta analisis_ESP_v2.xlsx')
+        
+        # Clean up dimension column - remove digits
+        df_rubric_performance['dimension'] = df_rubric_performance['dimension'].str.replace(r'\d+', '', regex=True).str.strip()
+        
+        # Store in session state for later use
+        st.session_state.performance_rubric = df_rubric_performance
+        return df_rubric_performance
+    except Exception as e:
+        st.error(f"Error loading performance rubric: {e}")
+        # Return a minimal rubric dataframe on error
+        return pd.DataFrame({
+            'dimension': ['Error loading rubric'],
+            'subdim': ['Error']
+        })
+
+def rubric_to_levels_df(criterion_row, criteria_col):
+    """
+    Convert a rubric criterion row to a dataframe of levels.
+    
+    Parameters:
+    -----------
+    criterion_row : pandas.Series
+        Row from the rubric dataframe
+    criteria_col : str
+        Name of the column containing criterion IDs
+        
+    Returns:
+    --------
+    pandas.DataFrame
+        Dataframe with level numbers and descriptions
+    """
+    # Extract all columns except the identifiers
+    level_columns = [col for col in criterion_row.index if col not in [criteria_col, 'Criterio', 'crit_short', 'dimension']]
+    
+    # Create a dataframe with level numbers and descriptions
+    levels = []
+    for i, col in enumerate(level_columns):
+        if pd.notna(criterion_row[col]) and criterion_row[col]:
+            levels.append({
+                'Level': i + 1,
+                'Description': criterion_row[col]
+            })
+    
+    return pd.DataFrame(levels)
+
+def process_document_for_evaluation(sections_content):
+    """
+    Process the document content for hierarchical retrieval evaluation.
+    
+    Parameters:
+    -----------
+    sections_content : dict
+        Dictionary of section names to content
+        
+    Returns:
+    --------
+    object
+        Document store object for hierarchical retrieval
+    """
+    # Initialize the document store
+    # This is a placeholder - in a real implementation, you would initialize
+    # your hierarchical retrieval system here
+    doc_store = {}
+    
+    # Process each section
+    for section_name, paragraphs in sections_content.items():
+        # Skip the DOCUMENT_START section
+        if section_name == "DOCUMENT_START":
+            continue
+        
+        # Add paragraphs to the document store with metadata
+        for i, paragraph in enumerate(paragraphs):
+            # Skip table markers
+            if paragraph.startswith('[TABLE'):
+                continue
+                
+            # Add paragraph to the document store
+            # This is a simplified version - in a real implementation,
+            # you would add the paragraph to your hierarchical retrieval system
+            if 'paragraphs' not in doc_store:
+                doc_store['paragraphs'] = []
+                
+            doc_store['paragraphs'].append({
+                'text': paragraph,
+                'metadata': {
+                    'section': section_name,
+                    'paragraph_id': i
+                }
+            })
+    
+    return doc_store
+
+def hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row):
+    """
+    Perform hierarchical retrieval for a specific criterion.
+    
+    Parameters:
+    -----------
+    doc_store : object
+        Document store object
+    criterion_id : str
+        ID of the criterion
+    criterion_row : pandas.Series
+        Row from the rubric dataframe containing the criterion
+        
+    Returns:
+    --------
+    list
+        List of relevant documents
+    """
+    # This is a placeholder - in a real implementation, you would use
+    # your hierarchical retrieval system to find relevant documents
+    
+    # For now, we'll return a subset of paragraphs for demonstration
+    if 'paragraphs' not in doc_store or not doc_store['paragraphs']:
+        return []
+        
+    # Extract criterion description for search
+    criterion_desc = criterion_id
+    if 'crit_short' in criterion_row and pd.notna(criterion_row['crit_short']):
+        criterion_desc = criterion_row['crit_short']
+    
+    # Simple term matching for demonstration
+    relevant_docs = []
+    for paragraph in doc_store['paragraphs']:
+        # Check if any word from the criterion description appears in the paragraph
+        if any(word.lower() in paragraph['text'].lower() 
+               for word in criterion_desc.split() 
+               if len(word) > 3):  # Only use words longer than 3 chars
+            relevant_docs.append(paragraph)
+            
+            # Limit to top 5 paragraphs for demonstration
+            if len(relevant_docs) >= 5:
+                break
+    
+    return relevant_docs
+
+def display_retrieved_context(relevant_docs):
+    """
+    Display the retrieved context for a criterion.
+    
+    Parameters:
+    -----------
+    relevant_docs : list
+        List of relevant documents
+        
+    Returns:
+    --------
+    None
+    """
+    for i, doc in enumerate(relevant_docs):
+        st.markdown(f"**Párrafo {i+1}:** _{doc['metadata'].get('section', 'Sección desconocida')}_")
+        st.markdown(f"{doc['text']}")
+        st.markdown("---")
+
+
 def parse_docx_with_tables(docx_file):
     """
     Parse a DOCX file and extract text content with section information,
@@ -171,7 +552,7 @@ def parse_docx_with_tables(docx_file):
     return sections, toc, toc_hierarchy
 
 def add_document_upload_tab():
-    """Add a new tab for document upload and parsing with improved section detection and filtering"""
+    """Add a new tab for document upload and parsing with improved section detection, filtering, and rubric evaluation"""
     st.header("Document Upload and Parsing")
     
     # File uploader for DOCX
@@ -223,315 +604,249 @@ def add_document_upload_tab():
                 # Show document summary
                 st.success("Document processed successfully!")
                 
-                # Display summary in a nice format
-                st.markdown("### Document Summary")
-                col1, col2, col3 = st.columns(3)
+                # Create tabs for document summary, section viewing, and rubric evaluation
+                doc_tabs = st.tabs(["Resumen del Documento", "Secciones", "Evaluación por Rúbrica"])
                 
-                with col1:
-                    st.metric("File Size", f"{file_size_mb:.2f} MB" if file_size_mb >= 1 else f"{file_size_kb:.2f} KB")
-                    st.metric("Total Sections", total_sections)
-                
-                with col2:
-                    st.metric("Total Subsections", total_subsections)
-                    st.metric("Total Paragraphs", total_paragraphs)
-                
-                with col3:
-                    st.metric("Total Words", total_words)
-                    st.metric("Total Characters", total_chars)
-                
-                # Display table of contents
-                st.markdown("### Table of Contents")
-                
-                # Group TOC by levels for display
-                for level in sorted(toc_hierarchy.keys()):
-                    if level <= 5:  # Only show up to level 5
-                        with st.expander(f"Level {level} Headings ({len(toc_hierarchy[level])})", level == 1):
-                            for i, heading in enumerate(toc_hierarchy[level]):
-                                st.markdown(f"{i+1}. {heading}")
-                
-                # Create tabs for sections, excluding DOCUMENT_START
-                if sections_content:
-                    # Filter out DOCUMENT_START for tabs
-                    tab_sections = {k: v for k, v in sections_content.items() if k != "DOCUMENT_START"}
+                # Tab 1: Document Summary
+                with doc_tabs[0]:
+                    st.markdown("### Resumen del Documento")
+                    col1, col2, col3 = st.columns(3)
                     
-                    if tab_sections:
-                        # Get ordered section names from TOC
-                        section_names = [heading for heading, _ in toc]
+                    with col1:
+                        st.metric("Tamaño del Archivo", f"{file_size_mb:.2f} MB" if file_size_mb >= 1 else f"{file_size_kb:.2f} KB")
+                        st.metric("Total de Secciones", total_sections)
+                    
+                    with col2:
+                        st.metric("Total de Subsecciones", total_subsections)
+                        st.metric("Total de Párrafos", total_paragraphs)
+                    
+                    with col3:
+                        st.metric("Total de Palabras", total_words)
+                        st.metric("Total de Caracteres", total_chars)
+                    
+                    # Display table of contents
+                    st.markdown("#### Tabla de Contenido")
+                    
+                    # Group TOC by levels for display
+                    for level in sorted(toc_hierarchy.keys()):
+                        if level <= 5:  # Only show up to level 5
+                            with st.expander(f"Encabezados Nivel {level} ({len(toc_hierarchy[level])})", level == 1):
+                                for i, heading in enumerate(toc_hierarchy[level]):
+                                    st.markdown(f"{i+1}. {heading}")
+                
+                # Tab 2: Document Sections
+                with doc_tabs[1]:
+                    st.markdown("### Secciones del Documento")
+                    # Create tabs for sections, excluding DOCUMENT_START
+                    if sections_content:
+                        # Filter out DOCUMENT_START for tabs
+                        tab_sections = {k: v for k, v in sections_content.items() if k != "DOCUMENT_START"}
                         
-                        # Add any sections not in TOC (shouldn't happen with our improved parsing)
-                        for section in tab_sections.keys():
-                            if section not in section_names:
-                                section_names.append(section)
-                        
-                        # Create tabs
-                        section_tabs = st.tabs(section_names)
-                        
-                        for i, section in enumerate(section_names):
-                            if section in tab_sections:
-                                with section_tabs[i]:
-                                    content = tab_sections[section]
+                        if tab_sections:
+                            # Get ordered section names from TOC
+                            section_names = [heading for heading, _ in toc]
+                            
+                            # Add any sections not in TOC (shouldn't happen with our improved parsing)
+                            for section in tab_sections.keys():
+                                if section not in section_names:
+                                    section_names.append(section)
+                            
+                            # Create tabs
+                            section_tabs = st.tabs(section_names)
+                            
+                            for i, section in enumerate(section_names):
+                                if section in tab_sections:
+                                    with section_tabs[i]:
+                                        content = tab_sections[section]
+                                        
+                                        # Check if this section contains a table
+                                        contains_table = any(para.startswith('[TABLE') for para in content)
+                                        
+                                        if contains_table:
+                                            # Process and display table content
+                                            table_rows = []
+                                            in_table = False
+                                            header_row = None
+                                            
+                                            for para in content:
+                                                if para == '[TABLE_START]':
+                                                    in_table = True
+                                                    table_rows = []
+                                                elif para == '[TABLE_END]':
+                                                    in_table = False
+                                                    
+                                                    # Display the table as DataFrame
+                                                    if table_rows:
+                                                        st.markdown(f"**Tabla en sección {section}:**")
+                                                        
+                                                        # Convert to DataFrame with unique column handling
+                                                        if header_row:
+                                                            # Create unique headers
+                                                            unique_headers = []
+                                                            header_counts = {}
+                                                            
+                                                            for header in header_row:
+                                                                if header in header_counts:
+                                                                    header_counts[header] += 1
+                                                                    unique_headers.append(f"{header}_{header_counts[header]}")
+                                                                else:
+                                                                    header_counts[header] = 0
+                                                                    unique_headers.append(header)
+                                                            
+                                                            # Create DataFrame with unique column names
+                                                            df = pd.DataFrame(table_rows)
+                                                            if len(df.columns) == len(unique_headers):
+                                                                df.columns = unique_headers
+                                                        else:
+                                                            df = pd.DataFrame(table_rows)
+                                                        
+                                                        # Display the DataFrame
+                                                        st.dataframe(df)
+                                                    
+                                                    # Reset for potential next table
+                                                    header_row = None
+                                                elif para.startswith('[TABLE_HEADER]'):
+                                                    # Process header row
+                                                    cells = para[14:].split('|')
+                                                    header_row = cells
+                                                elif para.startswith('[TABLE_ROW]'):
+                                                    # Process data row
+                                                    cells = para[11:].split('|')
+                                                    table_rows.append(cells)
+                                                elif not in_table:
+                                                    # Regular paragraph outside table
+                                                    st.write(para)
+                                        else:
+                                            # Regular paragraphs (no table)
+                                            for j, paragraph in enumerate(content):
+                                                st.write(f"{j+1}. {paragraph}")
+                                        
+                                        # Show summary for this section
+                                        section_paragraphs = sum(1 for para in content if not para.startswith('[TABLE'))
+                                        section_words = sum(len(para.split()) for para in content if not para.startswith('[TABLE'))
+                                        section_chars = sum(len(para) for para in content if not para.startswith('[TABLE'))
+                                        st.info(f"Esta sección contiene {section_paragraphs} párrafos, {section_words} palabras y {section_chars} caracteres.")
+                            
+                            # Section filtering functionality
+                            st.markdown("#### Filtrar Secciones")
+                            st.write("Seleccione secciones para incluir en la salida filtrada. Cuando se selecciona una sección, todo su contenido (incluyendo subsecciones) será incluido:")
+                            
+                            # Get main level sections (usually level 1 but could vary by document)
+                            main_sections = []
+                            for level, headings in sorted(toc_hierarchy.items()):
+                                if headings:  # If we have headings at this level
+                                    if not main_sections:  # If main_sections is still empty
+                                        main_sections = headings
+                            
+                            # Create multiselect for the main sections
+                            selected_sections = st.multiselect(
+                                "Seleccione secciones para incluir:",
+                                options=main_sections,
+                                default=main_sections  # Select all main sections by default
+                            )
+                            
+                            # Filter button
+                            if st.button("Crear Salida Filtrada"):
+                                if selected_sections:
+                                    # Create a filtered dictionary of sections
+                                    filtered_sections = {}
                                     
-                                    # Check if this section contains a table
-                                    contains_table = any(para.startswith('[TABLE') for para in content)
+                                    for section in selected_sections:
+                                        if section in sections_content:
+                                            filtered_sections[section] = sections_content[section]
                                     
-                                    if contains_table:
-                                        # Process and display table content
-                                        table_rows = []
+                                    # Convert to a dataframe for Excel export
+                                    filtered_data = []
+                                    
+                                    for section, paragraphs in filtered_sections.items():
+                                        # Get the section level from TOC
+                                        section_level = 0
+                                        for heading, level in toc:
+                                            if heading == section:
+                                                section_level = level
+                                                break
+                                        
+                                        # Process paragraphs based on content type
                                         in_table = False
+                                        table_content = []
+                                        table_rows = []
                                         header_row = None
                                         
-                                        for para in content:
-                                            if para == '[TABLE_START]':
+                                        for text in paragraphs:
+                                            if text == '[TABLE_START]':
                                                 in_table = True
+                                                table_content = []
                                                 table_rows = []
-                                            elif para == '[TABLE_END]':
+                                                header_row = None
+                                            elif text == '[TABLE_END]':
                                                 in_table = False
                                                 
-                                                # Display the table as DataFrame
+                                                # Process collected table content - store the processed table
                                                 if table_rows:
-                                                    st.markdown(f"**Table in section {section}:**")
+                                                    # Create a JSON representation of the table
+                                                    table_data = {
+                                                        'header': header_row if header_row else [],
+                                                        'rows': table_rows
+                                                    }
                                                     
-                                                    # Convert to DataFrame with unique column handling
-                                                    if header_row:
-                                                        # Create unique headers
-                                                        unique_headers = []
-                                                        header_counts = {}
-                                                        
-                                                        for header in header_row:
-                                                            if header in header_counts:
-                                                                header_counts[header] += 1
-                                                                unique_headers.append(f"{header}_{header_counts[header]}")
-                                                            else:
-                                                                header_counts[header] = 0
-                                                                unique_headers.append(header)
-                                                        
-                                                        # Create DataFrame with unique column names
-                                                        df = pd.DataFrame(table_rows)
-                                                        if len(df.columns) == len(unique_headers):
-                                                            df.columns = unique_headers
-                                                    else:
-                                                        df = pd.DataFrame(table_rows)
-                                                    
-                                                    # Display the DataFrame
-                                                    st.dataframe(df)
-                                                
-                                                # Reset for potential next table
-                                                header_row = None
-                                            elif para.startswith('[TABLE_HEADER]'):
+                                                    filtered_data.append({
+                                                        'section': section,
+                                                        'level': section_level,
+                                                        'content_type': 'table',
+                                                        'text': json.dumps(table_data)
+                                                    })
+                                            elif text.startswith('[TABLE_HEADER]'):
                                                 # Process header row
-                                                cells = para[14:].split('|')
+                                                cells = text[14:].split('|')
                                                 header_row = cells
-                                            elif para.startswith('[TABLE_ROW]'):
+                                                table_content.append(text)
+                                            elif text.startswith('[TABLE_ROW]'):
                                                 # Process data row
-                                                cells = para[11:].split('|')
+                                                cells = text[11:].split('|')
                                                 table_rows.append(cells)
-                                            elif not in_table:
-                                                # Regular paragraph outside table
-                                                st.write(para)
-                                    else:
-                                        # Regular paragraphs (no table)
-                                        for j, paragraph in enumerate(content):
-                                            st.write(f"{j+1}. {paragraph}")
-                                    
-                                    # Show summary for this section
-                                    section_paragraphs = sum(1 for para in content if not para.startswith('[TABLE'))
-                                    section_words = sum(len(para.split()) for para in content if not para.startswith('[TABLE'))
-                                    section_chars = sum(len(para) for para in content if not para.startswith('[TABLE'))
-                                    st.info(f"This section contains {section_paragraphs} paragraphs, {section_words} words, and {section_chars} characters.")
-                        
-                        # Section filtering functionality
-                        st.markdown("### Filter Sections")
-                        st.write("Select sections to include in the filtered output. When a section is selected, all its content (including subsections) will be included:")
-                        
-                        # Get main level sections (usually level 1 but could vary by document)
-                        main_sections = []
-                        for level, headings in sorted(toc_hierarchy.items()):
-                            if headings:  # If we have headings at this level
-                                if not main_sections:  # If main_sections is still empty
-                                    main_sections = headings
-                        
-                        # Create multiselect for the main sections
-                        selected_sections = st.multiselect(
-                            "Select sections to include:",
-                            options=main_sections,
-                            default=main_sections  # Select all main sections by default
-                        )
-                        
-                        # Filter button
-                        if st.button("Create Filtered Output"):
-                            if selected_sections:
-                                # Create a filtered dictionary of sections
-                                filtered_sections = {}
-                                
-                                for section in selected_sections:
-                                    if section in sections_content:
-                                        filtered_sections[section] = sections_content[section]
-                                
-                                # Convert to a dataframe for Excel export
-                                filtered_data = []
-                                
-                                for section, paragraphs in filtered_sections.items():
-                                    # Get the section level from TOC
-                                    section_level = 0
-                                    for heading, level in toc:
-                                        if heading == section:
-                                            section_level = level
-                                            break
-                                    
-                                    # Process paragraphs based on content type
-                                    in_table = False
-                                    table_content = []
-                                    table_rows = []
-                                    header_row = None
-                                    
-                                    for text in paragraphs:
-                                        if text == '[TABLE_START]':
-                                            in_table = True
-                                            table_content = []
-                                            table_rows = []
-                                            header_row = None
-                                        elif text == '[TABLE_END]':
-                                            in_table = False
-                                            
-                                            # Process collected table content - store the processed table
-                                            if table_rows:
-                                                # Create a JSON representation of the table
-                                                table_data = {
-                                                    'header': header_row if header_row else [],
-                                                    'rows': table_rows
-                                                }
-                                                
+                                                table_content.append(text)
+                                            else:
+                                                # Regular paragraph
                                                 filtered_data.append({
                                                     'section': section,
                                                     'level': section_level,
-                                                    'content_type': 'table',
-                                                    'text': json.dumps(table_data)
+                                                    'content_type': 'paragraph',
+                                                    'text': text
                                                 })
-                                        elif text.startswith('[TABLE_HEADER]'):
-                                            # Process header row
-                                            cells = text[14:].split('|')
-                                            header_row = cells
-                                            table_content.append(text)
-                                        elif text.startswith('[TABLE_ROW]'):
-                                            # Process data row
-                                            cells = text[11:].split('|')
-                                            table_rows.append(cells)
-                                            table_content.append(text)
-                                        else:
-                                            # Regular paragraph
-                                            filtered_data.append({
-                                                'section': section,
-                                                'level': section_level,
-                                                'content_type': 'paragraph',
-                                                'text': text
-                                            })
-                                
-                                filtered_df = pd.DataFrame(filtered_data)
-                                
-                                if not filtered_df.empty:
-                                    st.success(f"Created filtered output with {len(filtered_df)} items from {len(filtered_sections)} sections.")
                                     
-                                    # Show a preview
-                                    with st.expander("Preview Filtered Content"):
-                                        st.dataframe(filtered_df[['section', 'level', 'content_type', 'text']])
+                                    filtered_df = pd.DataFrame(filtered_data)
                                     
-                                    # Download button for the filtered document
-                                    excel_data = BytesIO()
-                                    filtered_df.to_excel(excel_data, index=False)
-                                    excel_data.seek(0)
-                                    
-                                    st.download_button(
-                                        label="Download Filtered Document",
-                                        data=excel_data,
-                                        file_name="filtered_document.xlsx",
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                    )
-                                else:
-                                    st.warning("The filtered output is empty. Please select at least one section with content.")
-                            else:
-                                st.warning("Please select at least one section to create a filtered output.")
-                        
-                        # Create a complete dataframe with all document content
-                        all_data = []
-                        for section, paragraphs in sections_content.items():
-                            # Skip the DOCUMENT_START section
-                            if section == "DOCUMENT_START":
-                                continue
-                                
-                            # Get the section level from TOC
-                            section_level = 0
-                            for heading, level in toc:
-                                if heading == section:
-                                    section_level = level
-                                    break
-                            
-                            # Process paragraphs and tables
-                            in_table = False
-                            table_content = []
-                            table_rows = []
-                            header_row = None
-                            
-                            for text in paragraphs:
-                                if text == '[TABLE_START]':
-                                    in_table = True
-                                    table_content = []
-                                    table_rows = []
-                                    header_row = None
-                                elif text == '[TABLE_END]':
-                                    in_table = False
-                                    
-                                    # Process collected table content
-                                    if table_rows:
-                                        # Create a JSON representation of the table
-                                        table_data = {
-                                            'header': header_row if header_row else [],
-                                            'rows': table_rows
-                                        }
+                                    if not filtered_df.empty:
+                                        st.success(f"Salida filtrada creada con {len(filtered_df)} elementos de {len(filtered_sections)} secciones.")
                                         
-                                        all_data.append({
-                                            'section': section,
-                                            'level': section_level,
-                                            'content_type': 'table',
-                                            'text': json.dumps(table_data)
-                                        })
-                                elif text.startswith('[TABLE_HEADER]'):
-                                    # Process header row
-                                    cells = text[14:].split('|')
-                                    header_row = cells
-                                    table_content.append(text)
-                                elif text.startswith('[TABLE_ROW]'):
-                                    # Process data row
-                                    cells = text[11:].split('|')
-                                    table_rows.append(cells)
-                                    table_content.append(text)
+                                        # Show a preview
+                                        with st.expander("Vista Previa del Contenido Filtrado"):
+                                            st.dataframe(filtered_df[['section', 'level', 'content_type', 'text']])
+                                        
+                                        # Download button for the filtered document
+                                        excel_data = BytesIO()
+                                        filtered_df.to_excel(excel_data, index=False)
+                                        excel_data.seek(0)
+                                        
+                                        st.download_button(
+                                            label="Descargar Documento Filtrado",
+                                            data=excel_data,
+                                            file_name="filtered_document.xlsx",
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                        )
+                                    else:
+                                        st.warning("La salida filtrada está vacía. Por favor seleccione al menos una sección con contenido.")
                                 else:
-                                    # Regular paragraph
-                                    all_data.append({
-                                        'section': section,
-                                        'level': section_level,
-                                        'content_type': 'paragraph',
-                                        'text': text
-                                    })
-                        
-                        complete_df = pd.DataFrame(all_data)
-                        
-                        # Download button for the complete parsed document
-                        with st.expander("Download Complete Parsed Document"):
-                            excel_data = BytesIO()
-                            complete_df.to_excel(excel_data, index=False)
-                            excel_data.seek(0)
-                            
-                            st.download_button(
-                                label="Download Complete Document",
-                                data=excel_data,
-                                file_name="complete_document.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
+                                    st.warning("Por favor seleccione al menos una sección para crear una salida filtrada.")
+                        else:
+                            st.warning("No se encontraron secciones con encabezados en el documento.")
                     else:
-                        st.warning("No sections with headings found in the document.")
-                else:
-                    st.warning("No content found in the document.")
-            
+                        st.warning("No se encontró contenido en el documento.")
+                
+                # Tab 3: Rubric Evaluation
+                with doc_tabs[2]:
+                    add_rubric_evaluation_section(sections_content, toc, toc_hierarchy)
+                    
             except Exception as e:
                 st.error(f"Error processing document: {str(e)}")
                 traceback.print_exc()  # Print full traceback for debugging
@@ -589,7 +904,7 @@ def add_document_upload_tab():
                 except Exception as table_error:
                     st.error(f"Error in emergency table extraction: {str(table_error)}")
     else:
-        st.info("Please upload a DOCX file to begin.")
+        st.info("Por favor suba un archivo DOCX para comenzar.")
 
 # ============= VISUALIZATION FUNCTIONS =============
 
