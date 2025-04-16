@@ -24,7 +24,7 @@ import zipfile
 # Use environment variables for API keys
 # For local development - use .env file or set environment variables
 # For Streamlit Cloud - set these in the app settings
-# openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
 # Initialize OpenAI - use only the older API version
 import openai
 openai.api_key = openai_api_key
