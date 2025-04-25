@@ -64,11 +64,10 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     if not valid_selected_sections and main_sections:
         valid_selected_sections = [main_sections[0]]
     selected_sections = st.multiselect(
-        # Unique key added to avoid DuplicateWidgetID error
-        key="rubric_section_multiselect", 
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
-        default=valid_selected_sections
+        default=valid_selected_sections,
+        key="rubric_section_multiselect"
     )
     if st.button("Confirmar Secciones para Evaluación"):
         if not selected_sections:
@@ -292,11 +291,10 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     
     # Allow users to select sections for evaluation
     selected_sections = st.multiselect(
-        # Unique key added to avoid DuplicateWidgetID error
-        key="rubric_section_multiselect", 
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
-        default=valid_selected_sections
+        default=valid_selected_sections,
+        key="rubric_section_multiselect"
     )
     
     # Button to confirm section selection
