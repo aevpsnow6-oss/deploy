@@ -713,11 +713,14 @@ def parse_docx_with_docx2python(docx_file):
         r'Intestazione\s*(\d+)',      # Italian: Intestazione 1, Intestazione 2
         r'Kop\s*(\d+)',               # Dutch: Kop 1, Kop 2
     ]
+    style_id_to_name = {}
     for style in styles_root.findall('.//w:style', namespaces):
         style_id = style.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}styleId')
         style_name = style.find('.//w:name', namespaces)
+        style_name_val = style_name.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val') if style_name is not None else None
+        if style_id:
+            style_id_to_name[style_id] = style_name_val
         if style_id and style_name is not None:
-            style_name_val = style_name.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
             found = False
             for pattern in heading_patterns:
                 level_match = re.search(pattern, style_id)
@@ -729,6 +732,8 @@ def parse_docx_with_docx2python(docx_file):
                     found = True
                     break
             # Optionally, add more patterns here for other languages/styles
+    # Print all unique style IDs and names found
+    st.info("Paragraph styles found in this DOCX:\n" + "\n".join(f"{sid}: {sname}" for sid, sname in style_id_to_name.items()))
     
     # Parse document.xml
     doc_root = ET.fromstring(doc_xml)
@@ -759,25 +764,20 @@ def parse_docx_with_docx2python(docx_file):
             if style_id in heading_styles:
                 heading_level = heading_styles[style_id]
                 current_heading_text = text
-                
-                # Add to TOC
+                current_heading_level = heading_level
                 toc.append((text, heading_level))
-                
-                # Add to TOC hierarchy
                 if heading_level not in toc_hierarchy:
                     toc_hierarchy[heading_level] = []
                 toc_hierarchy[heading_level].append(text)
-                
-                # Add as a section
                 sections[text] = []
+                paragraphs_with_styles.append((text, style_id, heading_level))
             else:
-                # Add to current section
+                # Add paragraph to the current section
                 if current_heading_text:
                     sections[current_heading_text].append(text)
                 else:
                     sections["DOCUMENT_START"].append(text)
-            
-            paragraphs_with_styles.append((text, style_id, heading_level if is_heading else None))
+                paragraphs_with_styles.append((text, style_id, None))
             
     except Exception as e:
         st.warning(f"Could not extract document structure: {e}")
