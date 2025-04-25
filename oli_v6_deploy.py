@@ -1254,11 +1254,10 @@ def add_document_upload_tab():
                                             main_sections = toc_hierarchy[level]
                                             break
                                 selected_sections = st.multiselect(
-        # Unique key added to avoid DuplicateWidgetID error
-        key="rubric_section_multiselect", 
                                     "Seleccione secciones para incluir:",
                                     options=main_sections,
-                                    default=st.session_state.get('selected_sections_for_eval', main_sections)
+                                    default=st.session_state.get('selected_sections_for_eval', main_sections),
+                                    key="rubric_section_multiselect"
                                 )
                                 update_eval = st.form_submit_button("Usar estas secciones para evaluación")
                                 create_filtered = st.form_submit_button("Crear Salida Filtrada")
