@@ -779,9 +779,16 @@ def parse_docx_with_docx2python(docx_file):
             elif outline_level is not None:
                 heading_level = outline_level + 1  # Convert to 1-based level
                 is_heading = True
-            # Check formatting-based heading (fallback)
-            elif (text.strip().isupper() and len(text.strip().split()) <= 5) or \
-                 (text.strip().startswith('Chapter') or text.strip().startswith('Section')):
+            # Check formatting-based heading (fallback, stricter)
+            # Only fallback if style and outline level are missing
+            elif (
+                text.strip().isupper() and 
+                len(text.strip().split()) >= 2 and  # at least 2 words
+                len(text.strip()) >= 8 and          # at least 8 characters
+                not any(text.strip() == prev[0] for prev in toc[-3:])  # not a duplicate of recent headings
+            ) or (
+                text.strip().startswith('Chapter') or text.strip().startswith('Section')
+            ):
                 heading_level = current_heading_level + 1
                 is_heading = True
             
@@ -846,8 +853,15 @@ def process_docx2python_content(doc_data, sections, toc, toc_hierarchy):
             if isinstance(paragraph, list):
                 for text in paragraph:
                     if isinstance(text, str) and text.strip():
-                        # Heuristic for heading detection (all caps, short line)
-                        if text.strip().isupper() and len(text.strip().split()) <= 5:
+                        # Improved fallback heuristic for heading detection (stricter)
+                        if (
+                            text.strip().isupper() and 
+                            len(text.strip().split()) >= 2 and  # at least 2 words
+                            len(text.strip()) >= 8 and          # at least 8 characters
+                            not any(text.strip() == prev[0] for prev in toc[-3:])  # not a duplicate of recent headings
+                        ) or (
+                            text.strip().startswith('Chapter') or text.strip().startswith('Section')
+                        ):
                             # Looks like a heading
                             current_section = text.strip()
                             sections[current_section] = []
