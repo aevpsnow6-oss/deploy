@@ -737,40 +737,24 @@ def parse_docx_with_docx2python(docx_file):
     current_heading_level = 0
     
     # Iterate over paragraphs
-    for para in doc_root.findall('.//w:p', namespaces):
-        # Get the paragraph text
-        text_parts = []
-        for text_elem in para.findall('.//w:t', namespaces):
-            if text_elem.text:
-                text_parts.append(text_elem.text)
-        text = ''.join(text_parts).strip()
-        if not text:
-            continue
-        # Get the paragraph style
-        style_elem = para.find('.//w:pStyle', namespaces)
-        style_id = None
-        if style_elem is not None:
-            style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
-        # If this is a heading, start a new section
-        if style_id in heading_styles:
-            heading_level = heading_styles[style_id]
-            current_heading_text = text
-            current_heading_level = heading_level
-            toc.append((text, heading_level))
-            if heading_level not in toc_hierarchy:
-                toc_hierarchy[heading_level] = []
-            toc_hierarchy[heading_level].append(text)
-            sections[text] = []
-        else:
-            # Add paragraph to the current section
-            if current_heading_text:
-                sections[current_heading_text].append(text)
-                heading_level = current_heading_level + 1
-                is_heading = True
-            
-            if is_heading:
-                # Update current heading level and text
-                current_heading_level = heading_level
+    try:
+        for para in doc_root.findall('.//w:p', namespaces):
+            # Get the paragraph text
+            text_parts = []
+            for text_elem in para.findall('.//w:t', namespaces):
+                if text_elem.text:
+                    text_parts.append(text_elem.text)
+            text = ''.join(text_parts).strip()
+            if not text:
+                continue
+            # Get the paragraph style
+            style_elem = para.find('.//w:pStyle', namespaces)
+            style_id = None
+            if style_elem is not None:
+                style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+            # If this is a heading, start a new section
+            if style_id in heading_styles:
+                heading_level = heading_styles[style_id]
                 current_heading_text = text
                 
                 # Add to TOC
