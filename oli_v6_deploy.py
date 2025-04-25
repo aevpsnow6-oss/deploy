@@ -198,28 +198,46 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
                                         'justification': '',
                                         'context': [doc['text'] for doc in relevant_docs]
                                     }
-                                score_options = list(range(1, len(levels_df) + 1))
-                                score_labels = [f"{score} - {levels_df.loc[score-1, 'Description'][:50]}..." for score in score_options]
-                                selected_score = st.radio(
-                                    "Seleccione un puntaje:",
-                                    options=score_options,
-                                    format_func=lambda x: score_labels[x-1],
-                                    key=f"score_{criterion_id}",
-                                    index=st.session_state.evaluations[criterion_id]['score'] - 1
-                                )
-                                justification = st.text_area(
-                                    "Justificación (opcional):",
-                                    value=st.session_state.evaluations[criterion_id]['justification'],
-                                    key=f"justification_{criterion_id}"
-                                )
-                                st.session_state.evaluations[criterion_id] = {
-                                    'criterion_name': criterion_name,
-                                    'score': selected_score,
-                                    'justification': justification,
-                                    'context': [doc['text'] for doc in relevant_docs]
-                                }
-                                st.markdown("##### Detalles del Nivel Seleccionado")
-                                st.markdown(f"**Nivel {selected_score}:** {levels_df.loc[selected_score-1, 'Description']}")
+                                if st.button(f"Evaluar criterio: {criterion_name}", key=f"evaluate_{criterion_id}"):
+                                    with st.spinner('Analizando criterio y generando puntuación...'):
+                                        context_text = '\n'.join([doc['text'] for doc in relevant_docs])
+                                        prompt = f"""
+Criterio de evaluación: {criterion_name}
+Contexto relevante extraído del documento:
+{context_text}
+
+Por favor, analiza el contexto y asigna un puntaje del 1 al {len(levels_df)} según los niveles de la rúbrica, proporcionando una justificación breve en español.
+Devuelve la respuesta en formato JSON:
+{{"score": <puntaje>, "justification": "<justificación>"}}
+"""
+                                        try:
+                                            response = openai.ChatCompletion.create(
+                                                model="gpt-3.5-turbo",
+                                                messages=[{"role": "user", "content": prompt}],
+                                                max_tokens=256,
+                                                temperature=0.2
+                                            )
+                                            import json as pyjson
+                                            result = response['choices'][0]['message']['content']
+                                            parsed = pyjson.loads(result)
+                                            score = int(parsed['score'])
+                                            justification = parsed['justification']
+                                        except Exception as e:
+                                            score = 1
+                                            justification = f"Error en la evaluación automática: {str(e)}"
+
+                                        st.session_state.evaluations[criterion_id] = {
+                                            'criterion_name': criterion_name,
+                                            'score': score,
+                                            'justification': justification,
+                                            'context': [doc['text'] for doc in relevant_docs]
+                                        }
+                                eval_info = st.session_state.evaluations.get(criterion_id)
+                                if eval_info and eval_info['justification']:
+                                    st.success(f"**Puntaje generado:** {eval_info['score']}")
+                                    st.markdown(f"**Justificación:** {eval_info['justification']}")
+                                    st.markdown("##### Detalles del Nivel Seleccionado")
+                                    st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
                             else:
                                 st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
                     if st.button("Generar Reporte de Evaluación"):
