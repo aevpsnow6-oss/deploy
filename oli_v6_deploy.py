@@ -739,6 +739,7 @@ def parse_docx_with_docx2python(docx_file):
     current_heading_level = 0
     
     # Iterate over paragraphs
+    paragraphs_with_styles = []
     try:
         for para in doc_root.findall('.//w:p', namespaces):
             # Get the paragraph text
