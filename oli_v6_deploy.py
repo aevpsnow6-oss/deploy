@@ -1964,7 +1964,7 @@ def summarize_text(text, prompt_template):
 # ============= MAIN APP CODE =============
 
 # Set page config
-st.markdown("<h3 style='text-align: center;'>Oli: Análisis Automatizado de Recomendaciones</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h3>", unsafe_allow_html=True)
 
 # Check for API key before running the app
 if not openai_api_key:
