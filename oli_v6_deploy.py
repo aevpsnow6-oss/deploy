@@ -64,6 +64,8 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     if not valid_selected_sections and main_sections:
         valid_selected_sections = [main_sections[0]]
     selected_sections = st.multiselect(
+        # Unique key added to avoid DuplicateWidgetID error
+        key="rubric_section_multiselect", 
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
         default=valid_selected_sections
@@ -290,6 +292,8 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     
     # Allow users to select sections for evaluation
     selected_sections = st.multiselect(
+        # Unique key added to avoid DuplicateWidgetID error
+        key="rubric_section_multiselect", 
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
         default=valid_selected_sections
@@ -1252,6 +1256,8 @@ def add_document_upload_tab():
                                             main_sections = toc_hierarchy[level]
                                             break
                                 selected_sections = st.multiselect(
+        # Unique key added to avoid DuplicateWidgetID error
+        key="rubric_section_multiselect", 
                                     "Seleccione secciones para incluir:",
                                     options=main_sections,
                                     default=st.session_state.get('selected_sections_for_eval', main_sections)
