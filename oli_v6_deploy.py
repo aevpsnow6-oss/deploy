@@ -450,8 +450,8 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
                                 file_name="evaluation_report.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
-    else:
-        st.info("Por favor confirme las secciones a evaluar para continuar con la selección de criterios y la evaluación.")
+        else:
+            st.info("Por favor confirme las secciones a evaluar para continuar con la selección de criterios y la evaluación.")
 
 def load_engagement_rubric():
     """
