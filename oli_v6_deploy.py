@@ -67,7 +67,7 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
         default=valid_selected_sections,
-        key="rubric_section_multiselect"
+        key="rubric_section_multiselect_eval"
     )
     if st.button("Confirmar Secciones para Evaluación"):
         if not selected_sections:
@@ -1126,7 +1126,7 @@ def add_document_upload_tab():
                                     "Seleccione secciones para incluir:",
                                     options=main_sections,
                                     default=st.session_state.get('selected_sections_for_eval', main_sections),
-                                    key="rubric_section_multiselect"
+                                    key="rubric_section_multiselect_filter"
                                 )
                                 update_eval = st.form_submit_button("Usar estas secciones para evaluación")
                                 create_filtered = st.form_submit_button("Crear Salida Filtrada")
