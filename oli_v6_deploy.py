@@ -36,27 +36,234 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     """
     Add a new section for rubric-based evaluation of the document.
-    This allows users to choose a rubric type, view criteria, and evaluate the document
-    with full flexibility on which sections and criteria to evaluate.
-    
-    Parameters:
-    -----------
-    sections_content : dict
-        Dictionary of section names to content
-    toc : list
-        Table of contents as a list of (heading, level) tuples
-    toc_hierarchy : dict
-        Hierarchical structure of the TOC
-        
-    Returns:
-    --------
-    None
+    Allows users to select rubric type (performance/engagement), choose criteria, evaluate selected sections, view results, and download as CSV/Excel.
     """
+    import streamlit as st
+    import pandas as pd
+    from io import BytesIO
+    import plotly.graph_objs as go
+
     st.markdown("### Evaluación por Rúbrica")
-    
+
     # Initialize session state variables if not already present
     if 'selected_sections_for_eval' not in st.session_state:
         st.session_state.selected_sections_for_eval = []
+    if 'evaluation_sections_confirmed' not in st.session_state:
+        st.session_state.evaluation_sections_confirmed = False
+
+    # Section Selection for Evaluation
+    st.markdown("#### 1. Selección de Secciones para Evaluación")
+    main_sections = []
+    for level, headings in sorted(toc_hierarchy.items()):
+        if headings and not main_sections:
+            main_sections = headings
+    valid_selected_sections = [
+        section for section in st.session_state.selected_sections_for_eval 
+        if section in main_sections
+    ]
+    if not valid_selected_sections and main_sections:
+        valid_selected_sections = [main_sections[0]]
+    selected_sections = st.multiselect(
+        "Seleccione las secciones del documento que desea evaluar:",
+        options=main_sections,
+        default=valid_selected_sections
+    )
+    if st.button("Confirmar Secciones para Evaluación"):
+        if not selected_sections:
+            st.warning("Por favor seleccione al menos una sección para evaluar.")
+        else:
+            st.session_state.selected_sections_for_eval = selected_sections
+            st.session_state.evaluation_sections_confirmed = True
+            st.success(f"Secciones confirmadas para evaluación: {', '.join(selected_sections)}")
+    if st.session_state.selected_sections_for_eval:
+        st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state.selected_sections_for_eval)}")
+
+    # Only proceed with rubric selection if sections are confirmed
+    if st.session_state.evaluation_sections_confirmed:
+        st.markdown("#### 2. Selección de Rúbrica y Criterios")
+        rubric_type = st.selectbox(
+            "Seleccione tipo de rúbrica para evaluación:",
+            ["Participación (Engagement)", "Desempeño (Performance)"],
+            index=0
+        )
+        if rubric_type == "Participación (Engagement)":
+            rubric_df = load_engagement_rubric()
+            criteria_col = "Criterion"
+            short_col = "crit_short"
+            group_col = "Criterio"
+        else:
+            rubric_df = load_performance_rubric()
+            criteria_col = "subdim"
+            short_col = None
+            group_col = "dimension"
+        st.markdown("##### Estructura de la Rúbrica")
+        rubric_groups = rubric_df.groupby(group_col)
+        cols = st.columns([1, 3])
+        with cols[0]:
+            st.markdown("**Categorías**")
+            categories = list(rubric_groups.groups.keys())
+            selected_category = st.radio(
+                "Seleccione una categoría:",
+                categories,
+                label_visibility="collapsed"
+            )
+        with cols[1]:
+            st.markdown("**Criterios**")
+            if selected_category:
+                category_criteria = rubric_df[rubric_df[group_col] == selected_category]
+                if 'selected_criteria' not in st.session_state:
+                    st.session_state.selected_criteria = {}
+                all_criteria_in_category = st.checkbox(f"Seleccionar todos los criterios en '{selected_category}'")
+                selected_criteria_ids = []
+                for _, criterion_row in category_criteria.iterrows():
+                    criterion_id = criterion_row[criteria_col]
+                    criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                    if criterion_id not in st.session_state.selected_criteria:
+                        st.session_state.selected_criteria[criterion_id] = False
+                    if all_criteria_in_category:
+                        st.session_state.selected_criteria[criterion_id] = True
+                    is_selected = st.checkbox(
+                        criterion_name,
+                        value=st.session_state.selected_criteria[criterion_id],
+                        key=f"criterion_{criterion_id}"
+                    )
+                    st.session_state.selected_criteria[criterion_id] = is_selected
+                    if is_selected:
+                        selected_criteria_ids.append(criterion_id)
+        with st.expander("Opciones avanzadas de selección de criterios"):
+            select_all_criteria = st.checkbox("Seleccionar TODOS los criterios de todas las categorías")
+            if select_all_criteria:
+                for _, row in rubric_df.iterrows():
+                    criterion_id = row[criteria_col]
+                    st.session_state.selected_criteria[criterion_id] = True
+                st.success("Todos los criterios han sido seleccionados.")
+            if st.button("Limpiar todas las selecciones"):
+                for criterion_id in st.session_state.selected_criteria:
+                    st.session_state.selected_criteria[criterion_id] = False
+                st.success("Todas las selecciones han sido limpiadas.")
+        if st.button("Ver Detalles de Criterios Seleccionados"):
+            selected_any = any(st.session_state.selected_criteria.values())
+            if not selected_any:
+                st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
+            else:
+                st.markdown("##### Detalles de Criterios Seleccionados")
+                selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
+                    [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+                )]
+                for _, criterion_row in selected_criteria_df.iterrows():
+                    criterion_id = criterion_row[criteria_col]
+                    criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                    with st.expander(f"{criterion_name}", expanded=True):
+                        levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                        st.table(levels_df)
+        if st.button("Iniciar Evaluación de Criterios Seleccionados"):
+            selected_any = any(st.session_state.selected_criteria.values())
+            if not selected_any:
+                st.warning("Por favor seleccione al menos un criterio para evaluar.")
+            else:
+                st.markdown("#### 3. Evaluación de Criterios")
+                selected_criteria_ids = [
+                    cid for cid, selected in st.session_state.selected_criteria.items() if selected
+                ]
+                filtered_sections_content = {}
+                for section in st.session_state.selected_sections_for_eval:
+                    if section in sections_content:
+                        filtered_sections_content[section] = sections_content[section]
+                doc_store = process_document_for_evaluation(filtered_sections_content)
+                if not doc_store.get('paragraphs', []):
+                    st.warning("No se encontraron párrafos en las secciones seleccionadas.")
+                else:
+                    if 'evaluations' not in st.session_state:
+                        st.session_state.evaluations = {}
+                    st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_sections_content)} secciones con {len(doc_store.get('paragraphs', []))} párrafos.")
+                    for criterion_id in selected_criteria_ids:
+                        criterion_rows = rubric_df[rubric_df[criteria_col] == criterion_id]
+                        if criterion_rows.empty:
+                            st.warning(f"No se encontraron detalles para el criterio: {criterion_id}")
+                            continue
+                        criterion_row = criterion_rows.iloc[0]
+                        criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row.index else criterion_id
+                        with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
+                            relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
+                            if relevant_docs:
+                                st.markdown("##### Contexto Relevante")
+                                display_retrieved_context(relevant_docs)
+                                st.markdown("##### Evaluación")
+                                levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                                if criterion_id not in st.session_state.evaluations:
+                                    st.session_state.evaluations[criterion_id] = {
+                                        'criterion_name': criterion_name,
+                                        'score': 1,
+                                        'justification': '',
+                                        'context': [doc['text'] for doc in relevant_docs]
+                                    }
+                                score_options = list(range(1, len(levels_df) + 1))
+                                score_labels = [f"{score} - {levels_df.loc[score-1, 'Description'][:50]}..." for score in score_options]
+                                selected_score = st.radio(
+                                    "Seleccione un puntaje:",
+                                    options=score_options,
+                                    format_func=lambda x: score_labels[x-1],
+                                    key=f"score_{criterion_id}",
+                                    index=st.session_state.evaluations[criterion_id]['score'] - 1
+                                )
+                                justification = st.text_area(
+                                    "Justificación (opcional):",
+                                    value=st.session_state.evaluations[criterion_id]['justification'],
+                                    key=f"justification_{criterion_id}"
+                                )
+                                st.session_state.evaluations[criterion_id] = {
+                                    'criterion_name': criterion_name,
+                                    'score': selected_score,
+                                    'justification': justification,
+                                    'context': [doc['text'] for doc in relevant_docs]
+                                }
+                                st.markdown("##### Detalles del Nivel Seleccionado")
+                                st.markdown(f"**Nivel {selected_score}:** {levels_df.loc[selected_score-1, 'Description']}")
+                            else:
+                                st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
+                    if st.button("Generar Reporte de Evaluación"):
+                        if not st.session_state.evaluations:
+                            st.warning("No hay evaluaciones para generar un reporte.")
+                        else:
+                            st.markdown("#### Reporte de Evaluación")
+                            eval_data = []
+                            for criterion_id, eval_info in st.session_state.evaluations.items():
+                                eval_data.append({
+                                    'Criterio': eval_info['criterion_name'],
+                                    'Puntuación': eval_info['score'],
+                                    'Justificación': eval_info['justification'] or "No proporcionada"
+                                })
+                            eval_df = pd.DataFrame(eval_data)
+                            st.table(eval_df)
+                            avg_score = eval_df['Puntuación'].mean()
+                            st.metric("Puntuación Promedio", f"{avg_score:.2f}")
+                            fig = go.Figure(data=[
+                                go.Bar(
+                                    x=eval_df['Criterio'],
+                                    y=eval_df['Puntuación'],
+                                    text=eval_df['Puntuación'],
+                                    textposition='auto',
+                                    marker_color='blue'
+                                )
+                            ])
+                            fig.update_layout(
+                                title='Puntuaciones por Criterio',
+                                xaxis_title='Criterio',
+                                yaxis_title='Puntuación',
+                                yaxis=dict(range=[0, 5.5])
+                            )
+                            st.plotly_chart(fig)
+                            excel_data = BytesIO()
+                            eval_df.to_excel(excel_data, index=False)
+                            excel_data.seek(0)
+                            st.download_button(
+                                label="Descargar Reporte de Evaluación",
+                                data=excel_data,
+                                file_name="evaluation_report.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+    else:
+        st.info("Por favor confirme las secciones a evaluar para continuar con la selección de criterios y la evaluación.")
     
     if 'evaluation_sections_confirmed' not in st.session_state:
         st.session_state.evaluation_sections_confirmed = False
