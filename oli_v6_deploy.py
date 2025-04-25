@@ -690,6 +690,8 @@ def parse_docx_with_docx2python(docx_file):
     import zipfile
     import xml.etree.ElementTree as ET
     import re
+    from docx2python import docx2python
+    doc_data = docx2python(docx_file)
     
     # Open the DOCX as a zip and extract the XML
     docx_zip = zipfile.ZipFile(docx_file)
@@ -730,7 +732,7 @@ def parse_docx_with_docx2python(docx_file):
     
     # Parse document.xml
     doc_root = ET.fromstring(doc_xml)
-    sections = {}
+    sections = {"DOCUMENT_START": []}
     toc = []
     toc_hierarchy = {}
     current_heading_text = None
