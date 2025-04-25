@@ -212,7 +212,7 @@ Devuelve la respuesta en formato JSON:
 """
                                         try:
                                             response = openai.ChatCompletion.create(
-                                                model="gpt-3.5-turbo",
+                                                model="gpt-4o-mini",
                                                 messages=[{"role": "user", "content": prompt}],
                                                 max_tokens=256,
                                                 temperature=0.2
