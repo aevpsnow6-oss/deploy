@@ -670,6 +670,12 @@ def display_retrieved_context(relevant_docs):
     for i, doc in enumerate(relevant_docs):
         st.markdown(f"**Párrafo {i+1}:** _{doc['metadata'].get('section', 'Sección desconocida')}_")
         st.markdown(f"{doc['text']}")
+
+
+def parse_docx_with_docx2python(docx_file):
+    """
+    Parse a DOCX file using ONLY proper Word heading styles (Heading1, Título 1, etc.).
+    Ignores all fallback heuristics. This is the most robust approach for well-formatted documents.
     
     Parameters:
     -----------
