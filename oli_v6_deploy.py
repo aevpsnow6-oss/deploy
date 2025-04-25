@@ -294,7 +294,7 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
         "Seleccione las secciones del documento que desea evaluar:",
         options=main_sections,
         default=valid_selected_sections,
-        key="rubric_section_multiselect"
+        key="filter_section_multiselect"
     )
     
     # Button to confirm section selection
