@@ -269,11 +269,11 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     # (Removed duplicate section selection block to prevent DuplicateWidgetID error)
     # Only the original section selection and confirmation logic (with key="rubric_section_multiselect") is retained above.
             
-            # Option to clear all selections
-            if st.button("Limpiar todas las selecciones"):
-                for criterion_id in st.session_state.selected_criteria:
-                    st.session_state.selected_criteria[criterion_id] = False
-                st.success("Todas las selecciones han sido limpiadas.")
+        # Option to clear all selections
+        if st.button("Limpiar todas las selecciones"):
+            for criterion_id in st.session_state.selected_criteria:
+                st.session_state.selected_criteria[criterion_id] = False
+            st.success("Todas las selecciones han sido limpiadas.")
         
         # Button to view detailed rubric for selected criteria
         if st.button("Ver Detalles de Criterios Seleccionados"):
