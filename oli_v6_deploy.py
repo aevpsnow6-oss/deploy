@@ -1033,46 +1033,34 @@ def add_document_upload_tab():
                                         section_chars = sum(len(para) for para in content if not para.startswith('[TABLE'))
                                         st.info(f"Esta sección contiene {section_paragraphs} párrafos, {section_words} palabras y {section_chars} caracteres.")
                             
-                            # Section filtering functionality
+                            # Section filtering functionality (optimized with st.form)
                             st.markdown("#### Filtrar Secciones")
                             st.write("Seleccione secciones para incluir en la salida filtrada. Cuando se selecciona una sección, todo su contenido (incluyendo subsecciones) será incluido:")
-                            
-                            # Get main level sections (usually level 1 but could vary by document)
-                            main_sections = toc_hierarchy.get(1, [])
-                            if not main_sections:
-                                # If no level 1 headings, use the first level available
-                                for level in sorted(toc_hierarchy.keys()):
-                                    if toc_hierarchy[level]:
-                                        main_sections = toc_hierarchy[level]
-                                        break
-                            
-                            # Create multiselect for the main sections
-                            selected_sections = st.multiselect(
-                                "Seleccione secciones para incluir:",
-                                options=main_sections,
-                                default=main_sections  # Select all main sections by default
-                            )
-                            
-                            # Store selected sections in session state for use in evaluation
-                            if 'selected_sections_for_eval' not in st.session_state:
-                                st.session_state.selected_sections_for_eval = selected_sections
-                            
-                            # Button to update evaluation sections
-                            if st.button("Usar estas secciones para evaluación"):
-                                st.session_state.selected_sections_for_eval = selected_sections
-                                st.session_state.evaluation_sections_confirmed = True
-                                st.success(f"Secciones actualizadas para evaluación: {', '.join(selected_sections)}")
-                            
-                            # Filter button
-                            if st.button("Crear Salida Filtrada"):
-                                if selected_sections:
-                                    # Create a filtered dictionary of sections
+                            with st.form(key="section_filter_form"):
+                                main_sections = toc_hierarchy.get(1, [])
+                                if not main_sections:
+                                    # If no level 1 headings, use the first level available
+                                    for level in sorted(toc_hierarchy.keys()):
+                                        if toc_hierarchy[level]:
+                                            main_sections = toc_hierarchy[level]
+                                            break
+                                selected_sections = st.multiselect(
+                                    "Seleccione secciones para incluir:",
+                                    options=main_sections,
+                                    default=st.session_state.get('selected_sections_for_eval', main_sections)
+                                )
+                                update_eval = st.form_submit_button("Usar estas secciones para evaluación")
+                                create_filtered = st.form_submit_button("Crear Salida Filtrada")
+                                if update_eval:
+                                    st.session_state.selected_sections_for_eval = selected_sections
+                                    st.session_state.evaluation_sections_confirmed = True
+                                    st.success(f"Secciones actualizadas para evaluación: {', '.join(selected_sections)}")
+                                if create_filtered:
                                     filtered_sections = {}
-                                    
                                     for section in selected_sections:
                                         if section in sections_content:
                                             filtered_sections[section] = sections_content[section]
-                                    
+                                    st.session_state.filtered_sections = filtered_sections
                                     # Convert to a dataframe for Excel export
                                     filtered_data = []
                                     
