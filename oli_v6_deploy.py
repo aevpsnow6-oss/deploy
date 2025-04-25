@@ -670,125 +670,95 @@ def display_retrieved_context(relevant_docs):
     for i, doc in enumerate(relevant_docs):
         st.markdown(f"**Párrafo {i+1}:** _{doc['metadata'].get('section', 'Sección desconocida')}_")
         st.markdown(f"{doc['text']}")
-        st.markdown("---")
-
-
-def parse_docx_with_docx2python(docx_file):
-    """
-    Parse a DOCX file using docx2python to extract text and tables
-    with proper structure preservation.
     
     Parameters:
     -----------
     docx_file : str or file-like object
         Path to the DOCX file or a file-like object
-        
+    
     Returns:
     --------
     tuple
         (sections, toc, toc_hierarchy)
     """
-    # Extract content with docx2python
-    doc_data = docx2python(docx_file)
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import re
     
-    # Initialize structures
-    sections = {"DOCUMENT_START": []}
+    # Open the DOCX as a zip and extract the XML
+    docx_zip = zipfile.ZipFile(docx_file)
+    styles_xml = docx_zip.read('word/styles.xml')
+    doc_xml = docx_zip.read('word/document.xml')
+    
+    # Parse styles.xml to map style IDs to heading levels
+    styles_root = ET.fromstring(styles_xml)
+    namespaces = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+    heading_styles = {}
+    # Add support for custom heading names/styles (Spanish, French, etc.)
+    # Patterns for supported heading names in various languages
+    heading_patterns = [
+        r'Heading\s*(\d+)',           # English: Heading1, Heading 2
+        r'Título\s*(\d+)',            # Spanish: Título 1, Título 2
+        r'Titre\s*(\d+)',             # French: Titre 1, Titre 2
+        r'Rubrik\s*(\d+)',            # German: Rubrik 1, Rubrik 2
+        r'Заголовок\s*(\d+)',         # Russian: Заголовок 1, Заголовок 2
+        r'Intestazione\s*(\d+)',      # Italian: Intestazione 1, Intestazione 2
+        r'Kop\s*(\d+)',               # Dutch: Kop 1, Kop 2
+    ]
+    for style in styles_root.findall('.//w:style', namespaces):
+        style_id = style.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}styleId')
+        style_name = style.find('.//w:name', namespaces)
+        if style_id and style_name is not None:
+            style_name_val = style_name.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+            found = False
+            for pattern in heading_patterns:
+                level_match = re.search(pattern, style_id)
+                if not level_match and style_name_val:
+                    level_match = re.search(pattern, style_name_val)
+                if level_match:
+                    level = int(level_match.group(1))
+                    heading_styles[style_id] = level
+                    found = True
+                    break
+            # Optionally, add more patterns here for other languages/styles
+    
+    # Parse document.xml
+    doc_root = ET.fromstring(doc_xml)
+    sections = {}
     toc = []
     toc_hierarchy = {}
+    current_heading_text = None
+    current_heading_level = 0
     
-    # Extract styles.xml and document.xml for better structure information
-    docx_zip = zipfile.ZipFile(docx_file)
-    
-    # Read styles.xml to get heading style information
-    heading_styles = {}
-    try:
-        styles_xml = docx_zip.read('word/styles.xml')
-        styles_root = ET.fromstring(styles_xml)
-        
-        # Define namespaces
-        namespaces = {
-            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-        }
-        
-        # Extract heading styles and their levels
-        for style in styles_root.findall('.//w:style', namespaces):
-            style_id = style.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}styleId')
-            style_name = style.find('.//w:name', namespaces)
-            
-            if style_id and style_name is not None:
-                style_name_val = style_name.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
-                
-                # Check if it's a heading style
-                if style_id.startswith('Heading') or (style_name_val and 'Heading' in style_name_val):
-                    level_match = re.search(r'Heading\s*(\d+)', style_id)
-                    if not level_match:
-                        level_match = re.search(r'Heading\s*(\d+)', style_name_val or '')
-                    
-                    if level_match:
-                        level = int(level_match.group(1))
-                        heading_styles[style_id] = level
-    except Exception as e:
-        st.warning(f"Could not extract heading styles: {e}")
-        # Fallback to default heading detection
-    
-    # Read document.xml to get structure information
-    try:
-        doc_xml = docx_zip.read('word/document.xml')
-        doc_root = ET.fromstring(doc_xml)
-        
-        # Extract paragraphs with their styles and properties
-        paragraphs_with_styles = []
-        current_heading_level = 0
-        current_heading_text = None
-        
-        for para in doc_root.findall('.//w:p', namespaces):
-            # Extract text content
-            text_parts = []
-            for text_elem in para.findall('.//w:t', namespaces):
-                if text_elem.text:
-                    text_parts.append(text_elem.text)
-            
-            if not text_parts:
-                continue
-                
-            text = ''.join(text_parts).strip()
-            
-            # Extract style information
-            style_elem = para.find('.//w:pStyle', namespaces)
-            style_id = None
-            if style_elem is not None:
-                style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
-            
-            # Extract paragraph properties for additional heading detection
-            para_props = para.find('.//w:pPr', namespaces)
-            outline_level = None
-            if para_props is not None:
-                outline_elem = para_props.find('.//w:outlineLvl', namespaces)
-                if outline_elem is not None:
-                    outline_level = int(outline_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'))
-            
-            # Determine if this is a heading
-            is_heading = False
-            heading_level = None
-            
-            # Check style-based heading
-            if style_id in heading_styles:
-                heading_level = heading_styles[style_id]
-                is_heading = True
-            # Check outline level
-            elif outline_level is not None:
-                heading_level = outline_level + 1  # Convert to 1-based level
-                is_heading = True
-            # Check formatting-based heading (fallback, stricter)
-            # Only fallback if style and outline level are missing
-            elif (
-                text.strip().isupper() and 
-                len(text.strip().split()) >= 2 and  # at least 2 words
-                len(text.strip()) >= 8 and          # at least 8 characters
-                not any(text.strip() == prev[0] for prev in toc[-3:])  # not a duplicate of recent headings
-            ) or (
-                text.strip().startswith('Chapter') or text.strip().startswith('Section')
-            ):
+    # Iterate over paragraphs
+    for para in doc_root.findall('.//w:p', namespaces):
+        # Get the paragraph text
+        text_parts = []
+        for text_elem in para.findall('.//w:t', namespaces):
+            if text_elem.text:
+                text_parts.append(text_elem.text)
+        text = ''.join(text_parts).strip()
+        if not text:
+            continue
+        # Get the paragraph style
+        style_elem = para.find('.//w:pStyle', namespaces)
+        style_id = None
+        if style_elem is not None:
+            style_id = style_elem.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')
+        # If this is a heading, start a new section
+        if style_id in heading_styles:
+            heading_level = heading_styles[style_id]
+            current_heading_text = text
+            current_heading_level = heading_level
+            toc.append((text, heading_level))
+            if heading_level not in toc_hierarchy:
+                toc_hierarchy[heading_level] = []
+            toc_hierarchy[heading_level].append(text)
+            sections[text] = []
+        else:
+            # Add paragraph to the current section
+            if current_heading_text:
+                sections[current_heading_text].append(text)
                 heading_level = current_heading_level + 1
                 is_heading = True
             
