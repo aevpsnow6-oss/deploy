@@ -368,8 +368,9 @@ Devuelve la respuesta en formato JSON:
 {"score": <puntaje>, "justification": "<justificación>"}
 """
 
-                st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
-            else:
+                if eval_info:
+                    st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
+                else:
                 st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
                 if st.button("Generar Reporte de Evaluación"):
                     if not st.session_state.evaluations:
