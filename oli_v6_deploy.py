@@ -1756,30 +1756,64 @@ with tab3:
                 st.markdown('---')
                 if st.session_state.get('embeddings_ready', False):
                     if st.button('Evaluar por rúbrica'):
+                        # Create a dataframe to store analysis results
                         rubric_analysis_data = []
+
+                        # Process each criterion
                         n_criteria = len(rubric_dict)
                         progress = st.progress(0, text="Iniciando evaluación por rúbrica...")
+
                         with st.spinner('Evaluando documento por rúbrica...'):
                             for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
                                 st.info(f"Evaluando criterio: {crit}")
-                                # Evaluate just this criterion (simulate as in megaparse_example)
+                                
+                                # Evaluate just this criterion
                                 single_rubric = {crit: descriptions}
                                 result = store.score_rubric_directly(single_rubric)
-                                res = result[crit]
-                                analysis = res.get('analysis', {})
-                                rubric_analysis_data.append({
-                                    'Criterio': crit,
-                                    'Score': res.get('score'),
-                                    'Confianza': res.get('confidence'),
-                                    'Análisis': analysis.get('analysis'),
-                                    'Evidencia': analysis.get('evidence'),
-                                    'Recomendaciones': analysis.get('recommendations'),
-                                    'Error': analysis.get('error', '')
-                                })
+                                
+                                # Get the analysis result or default values
+                                if crit in result:
+                                    res = result[crit]
+                                    analysis = res.get('analysis', {})
+                                    
+                                    # Create a dictionary with all fields, using empty strings for missing values
+                                    row_data = {
+                                        'Criterio': crit,
+                                        'Score': res.get('score', 0),
+                                        'Confianza': res.get('confidence', 0),
+                                        'Análisis': analysis.get('analysis', '') if isinstance(analysis, dict) else str(analysis),
+                                        'Evidencia': analysis.get('evidence', '') if isinstance(analysis, dict) else '',
+                                        'Recomendaciones': analysis.get('recommendations', '') if isinstance(analysis, dict) else '',
+                                        'Error': analysis.get('error', '') if isinstance(analysis, dict) else ''
+                                    }
+                                else:
+                                    # Default values if criterion not found in results
+                                    row_data = {
+                                        'Criterio': crit,
+                                        'Score': 0,
+                                        'Confianza': 0,
+                                        'Análisis': '',
+                                        'Evidencia': '',
+                                        'Recomendaciones': '',
+                                        'Error': 'No results found for this criterion'
+                                    }
+                                    
+                                rubric_analysis_data.append(row_data)
                                 progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
+
+                        # Create dataframe and display results
                         rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
                         st.markdown('#### Resultados de la evaluación por rúbrica:')
                         st.dataframe(rubric_analysis_df, use_container_width=True)
+
+                        # Optional: Add a download button for the results
+                        csv = rubric_analysis_df.to_csv(index=False)
+                        st.download_button(
+                            label="Descargar resultados como CSV",
+                            data=csv,
+                            file_name="evaluacion_rubrica.csv",
+                            mime="text/csv"
+                        )
 
 
             except Exception as e:
