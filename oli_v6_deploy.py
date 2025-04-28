@@ -1704,6 +1704,7 @@ with tab3:
                     with st.spinner('Generando embeddings...'):
                         store = SimpleHierarchicalStore(use_cache=True)
                         store.add_documents(exploded_df, content_column='llm_paragraph', section_column='header_1')
+                        st.session_state['store'] = store
                         st.session_state['embeddings_ready'] = True
                         st.success('Embeddings generados correctamente!')
                         progress_bar.progress(0.8, text="Embeddings generados. Listo para evaluación por rúbrica.")
@@ -1729,9 +1730,12 @@ with tab3:
                 # Ensure llm_paragraph is string type (important after CSV reload)
                 if 'llm_paragraph' in exploded_df_for_eval.columns:
                     exploded_df_for_eval['llm_paragraph'] = exploded_df_for_eval['llm_paragraph'].astype(str)
-                # Always use exploded_df_for_eval for the store
-                store = SimpleHierarchicalStore(use_cache=True)
-                store.add_documents(exploded_df_for_eval, content_column='llm_paragraph', section_column='header_1')
+                # Retrieve store from session_state if available
+                store = st.session_state.get('store', None)
+                if store is None:
+                    store = SimpleHierarchicalStore(use_cache=True)
+                    store.add_documents(exploded_df_for_eval, content_column='llm_paragraph', section_column='header_1')
+                    st.session_state['store'] = store
                 if rubric_type == "Participación (Engagement)":
                     rubric_dict = engagement_rubric
                 else:
