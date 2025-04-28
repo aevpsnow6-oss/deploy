@@ -371,11 +371,167 @@ Devuelve la respuesta en formato JSON:
                 st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
             else:
                 st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
+                if st.button("Generar Reporte de Evaluación"):
+                    if not st.session_state.evaluations:
+                        st.warning("No hay evaluaciones para generar un reporte.")
+                    else:
+                        st.markdown("#### Reporte de Evaluación")
+                        eval_data = []
+                        for criterion_id, eval_info in st.session_state.evaluations.items():
+                            eval_data.append({
+                                'Criterio': eval_info['criterion_name'],
+                                'Puntuación': eval_info['score'],
+                                'Justificación': eval_info['justification'] or "No proporcionada"
+                            })
+                        eval_df = pd.DataFrame(eval_data)
+                        st.table(eval_df)
+                        avg_score = eval_df['Puntuación'].mean()
+                        st.metric("Puntuación Promedio", f"{avg_score:.2f}")
+                        fig = go.Figure(data=[
+                            go.Bar(
+                                x=eval_df['Criterio'],
+                                y=eval_df['Puntuación'],
+                                text=eval_df['Puntuación'],
+                                textposition='auto',
+                                marker_color='blue'
+                            )
+                        ])
+                        fig.update_layout(
+                            title='Puntuaciones por Criterio',
+                            xaxis_title='Criterio',
+                            yaxis_title='Puntuación',
+                            yaxis=dict(range=[0, 5.5])
+                        )
+                        st.plotly_chart(fig)
+                        excel_data = BytesIO()
+                        eval_df.to_excel(excel_data, index=False)
+                        excel_data.seek(0)
+                        st.download_button(
+                            label="Descargar Reporte de Evaluación",
+                            data=excel_data,
+                            file_name="evaluation_report.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+    else:
+        st.info("Por favor confirme las secciones a evaluar para continuar con la selección de criterios y la evaluación.")
+        
+        # (Removed duplicate section selection block to prevent DuplicateWidgetID error)
+        # Only the original section selection and confirmation logic (with key="rubric_section_multiselect") is retained above.
+        
+        # Option to clear all selections
+        if st.button("Limpiar todas las selecciones"):
+            for criterion_id in st.session_state.selected_criteria:
+                st.session_state.selected_criteria[criterion_id] = False
+            st.success("Todas las selecciones han sido limpiadas.")
+
+        # Button to view detailed rubric for selected criteria
+        if st.button("Ver Detalles de Criterios Seleccionados"):
+            selected_any = any(st.session_state.selected_criteria.values())
+            if not selected_any:
+                st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
+            else:
+                st.markdown("##### Detalles de Criterios Seleccionados")
+                # Get selected criteria
+                selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
+                    [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+                )]
+        for _, criterion_row in selected_criteria_df.iterrows():
+            criterion_id = criterion_row[criteria_col]
+            criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+            with st.expander(f"{criterion_name}", expanded=True):
+                # Display the rubric levels for this criterion
+                levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                st.table(levels_df)
+
+    # Button to start evaluation
+    if st.button("Iniciar Evaluación de Criterios Seleccionados"):
+        selected_any = any(st.session_state.selected_criteria.values())
+        if not selected_any:
+            st.warning("Por favor seleccione al menos un criterio para evaluar.")
+        else:
+            st.markdown("#### 3. Evaluación de Criterios")
+            # Get selected criteria IDs
+            selected_criteria_ids = [
+                cid for cid, selected in st.session_state.selected_criteria.items() if selected
+            ]
+            # Filter document content based on selected sections
+            filtered_sections_content = {}
+            for section in st.session_state.selected_sections_for_eval:
+                if section in sections_content:
+                    filtered_sections_content[section] = sections_content[section]
+            # Process document for hierarchical retrieval
+            doc_store = process_document_for_evaluation(filtered_sections_content)
+            if not doc_store.get('paragraphs', []):
+                st.warning("No se encontraron párrafos en las secciones seleccionadas.")
+            else:
+                # Create a dictionary to store evaluations
+                if 'evaluations' not in st.session_state:
+                    st.session_state.evaluations = {}
+                # Display total counts
+                st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_sections_content)} secciones con {len(doc_store.get('paragraphs', []))} párrafos.")
+                # Evaluate each selected criterion
+                for criterion_id in selected_criteria_ids:
+                    # Get criterion details
+                    criterion_rows = rubric_df[rubric_df[criteria_col] == criterion_id]
+                    if criterion_rows.empty:
+                        st.warning(f"No se encontraron detalles para el criterio: {criterion_id}")
+                        continue
+                    criterion_row = criterion_rows.iloc[0]
+                    criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row.index else criterion_id
+                    with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
+                        # Perform hierarchical retrieval for this criterion
+                        relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
+                        if relevant_docs:
+                            # Display retrieved context
+                            st.markdown("##### Contexto Relevante")
+                            display_retrieved_context(relevant_docs)
+                            # Display evaluation options
+                            st.markdown("##### Evaluación")
+                            # Get rubric levels for this criterion
+                            levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                            # Initialize the evaluation in session state if not already there
+                            if criterion_id not in st.session_state.evaluations:
+                                st.session_state.evaluations[criterion_id] = {
+                                    'criterion_name': criterion_name,
+                                    'score': 1,  # Default to first level
+                                    'justification': '',
+                                    'context': []
+                                }
+                            # Create radio buttons for scoring
+                            score_options = list(range(1, len(levels_df) + 1))
+                            score_labels = [f"{score} - {levels_df.loc[score-1, 'Description'][:50]}..." for score in score_options]
+                            selected_score = st.radio(
+                                "Seleccione un puntaje:",
+                                options=score_options,
+                                format_func=lambda x: score_labels[x-1],
+                                key=f"score_{criterion_id}",
+                                index=st.session_state.evaluations[criterion_id]['score'] - 1
+                            )
+                            # Justification text area
+                            justification = st.text_area(
+                                "Justificación (opcional):",
+                                value=st.session_state.evaluations[criterion_id]['justification'],
+                                key=f"justification_{criterion_id}"
+                            )
+                            # Update the evaluation in session state
+                            st.session_state.evaluations[criterion_id] = {
+                                'criterion_name': criterion_name,
+                                'score': selected_score,
+                                'justification': justification,
+                                'context': [doc['text'] for doc in relevant_docs]
+                            }
+                            # Show current level details
+                            st.markdown("##### Detalles del Nivel Seleccionado")
+                            st.markdown(f"**Nivel {selected_score}:** {levels_df.loc[selected_score-1, 'Description']}")
+                        else:
+                            st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
+                    # Button to generate evaluation report
                     if st.button("Generar Reporte de Evaluación"):
                         if not st.session_state.evaluations:
                             st.warning("No hay evaluaciones para generar un reporte.")
                         else:
                             st.markdown("#### Reporte de Evaluación")
+                            # Create a summary table
                             eval_data = []
                             for criterion_id, eval_info in st.session_state.evaluations.items():
                                 eval_data.append({
@@ -414,180 +570,6 @@ Devuelve la respuesta en formato JSON:
                             )
     else:
         st.info("Por favor confirme las secciones a evaluar para continuar con la selección de criterios y la evaluación.")
-    
-    # (Removed duplicate section selection block to prevent DuplicateWidgetID error)
-    # Only the original section selection and confirmation logic (with key="rubric_section_multiselect") is retained above.
-            
-# Option to clear all selections
-if st.button("Limpiar todas las selecciones"):
-    for criterion_id in st.session_state.selected_criteria:
-        st.session_state.selected_criteria[criterion_id] = False
-    st.success("Todas las selecciones han sido limpiadas.")
-
-# Button to view detailed rubric for selected criteria
-if st.button("Ver Detalles de Criterios Seleccionados"):
-    selected_any = any(st.session_state.selected_criteria.values())
-    if not selected_any:
-        st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
-    else:
-        st.markdown("##### Detalles de Criterios Seleccionados")
-        # Get selected criteria
-        selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
-            [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
-        )]
-        for _, criterion_row in selected_criteria_df.iterrows():
-            criterion_id = criterion_row[criteria_col]
-            criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
-            with st.expander(f"{criterion_name}", expanded=True):
-                # Display the rubric levels for this criterion
-                levels_df = rubric_to_levels_df(criterion_row, criteria_col)
-                st.table(levels_df)
-
-# Button to start evaluation
-if st.button("Iniciar Evaluación de Criterios Seleccionados"):
-    selected_any = any(st.session_state.selected_criteria.values())
-    if not selected_any:
-        st.warning("Por favor seleccione al menos un criterio para evaluar.")
-    else:
-        st.markdown("#### 3. Evaluación de Criterios")
-        # Get selected criteria IDs
-        selected_criteria_ids = [
-            cid for cid, selected in st.session_state.selected_criteria.items() if selected
-        ]
-        # Filter document content based on selected sections
-        filtered_sections_content = {}
-        for section in st.session_state.selected_sections_for_eval:
-            if section in sections_content:
-                filtered_sections_content[section] = sections_content[section]
-        # Process document for hierarchical retrieval
-        doc_store = process_document_for_evaluation(filtered_sections_content)
-        if not doc_store.get('paragraphs', []):
-            st.warning("No se encontraron párrafos en las secciones seleccionadas.")
-        else:
-            # Create a dictionary to store evaluations
-            if 'evaluations' not in st.session_state:
-                st.session_state.evaluations = {}
-            # Display total counts
-            st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_sections_content)} secciones con {len(doc_store.get('paragraphs', []))} párrafos.")
-            # Evaluate each selected criterion
-            for criterion_id in selected_criteria_ids:
-                # Get criterion details
-                criterion_rows = rubric_df[rubric_df[criteria_col] == criterion_id]
-                if criterion_rows.empty:
-                    st.warning(f"No se encontraron detalles para el criterio: {criterion_id}")
-                    continue
-                criterion_row = criterion_rows.iloc[0]
-                criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row.index else criterion_id
-                with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
-                    # Perform hierarchical retrieval for this criterion
-                    relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
-                    if relevant_docs:
-                        # Display retrieved context
-                        st.markdown("##### Contexto Relevante")
-                        display_retrieved_context(relevant_docs)
-                        # Display evaluation options
-                                st.markdown("##### Evaluación")
-                                # Get rubric levels for this criterion
-                                levels_df = rubric_to_levels_df(criterion_row, criteria_col)
-                                
-                                # Initialize the evaluation in session state if not already there
-                                if criterion_id not in st.session_state.evaluations:
-                                    st.session_state.evaluations[criterion_id] = {
-                                        'criterion_name': criterion_name,
-                                        'score': 1,  # Default to first level
-                                        'justification': '',
-                                        'context': []
-                                    }
-                                
-                                # Create radio buttons for scoring
-                                score_options = list(range(1, len(levels_df) + 1))
-                                score_labels = [f"{score} - {levels_df.loc[score-1, 'Description'][:50]}..." for score in score_options]
-                                
-                                selected_score = st.radio(
-                                    "Seleccione un puntaje:",
-                                    options=score_options,
-                                    format_func=lambda x: score_labels[x-1],
-                                    key=f"score_{criterion_id}",
-                                    index=st.session_state.evaluations[criterion_id]['score'] - 1
-                                )
-                                
-                                # Justification text area
-                                justification = st.text_area(
-                                    "Justificación (opcional):",
-                                    value=st.session_state.evaluations[criterion_id]['justification'],
-                                    key=f"justification_{criterion_id}"
-                                )
-                                
-                                # Update the evaluation in session state
-                                st.session_state.evaluations[criterion_id] = {
-                                    'criterion_name': criterion_name,
-                                    'score': selected_score,
-                                    'justification': justification,
-                                    'context': [doc['text'] for doc in relevant_docs]
-                                }
-                                
-                                # Show current level details
-                                st.markdown("##### Detalles del Nivel Seleccionado")
-                                st.markdown(f"**Nivel {selected_score}:** {levels_df.loc[selected_score-1, 'Description']}")
-                            else:
-                                st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
-                    
-                    # Button to generate evaluation report
-                    if st.button("Generar Reporte de Evaluación"):
-                        if not st.session_state.evaluations:
-                            st.warning("No hay evaluaciones para generar un reporte.")
-                        else:
-                            st.markdown("#### Reporte de Evaluación")
-                            
-                            # Create a summary table
-                            eval_data = []
-                            for criterion_id, eval_info in st.session_state.evaluations.items():
-                                eval_data.append({
-                                    'Criterio': eval_info['criterion_name'],
-                                    'Puntuación': eval_info['score'],
-                                    'Justificación': eval_info['justification'] or "No proporcionada"
-                                })
-                            
-                            eval_df = pd.DataFrame(eval_data)
-                            st.table(eval_df)
-                            
-                            # Calculate average score
-                            avg_score = eval_df['Puntuación'].mean()
-                            st.metric("Puntuación Promedio", f"{avg_score:.2f}")
-                            
-                            # Create a chart to visualize scores
-                            fig = go.Figure(data=[
-                                go.Bar(
-                                    x=eval_df['Criterio'],
-                                    y=eval_df['Puntuación'],
-                                    text=eval_df['Puntuación'],
-                                    textposition='auto',
-                                    marker_color='blue'
-                                )
-                            ])
-                            
-                            fig.update_layout(
-                                title='Puntuaciones por Criterio',
-                                xaxis_title='Criterio',
-                                yaxis_title='Puntuación',
-                                yaxis=dict(range=[0, 5.5])  # Set y-axis range
-                            )
-                            
-                            st.plotly_chart(fig)
-                            
-                            # Option to download the report
-                            excel_data = BytesIO()
-                            eval_df.to_excel(excel_data, index=False)
-                            excel_data.seek(0)
-                            
-                            st.download_button(
-                                label="Descargar Reporte de Evaluación",
-                                data=excel_data,
-                                file_name="evaluation_report.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-        else:
-            st.info("Por favor confirme las secciones a evaluar para continuar con la selección de criterios y la evaluación.")
 
 def load_engagement_rubric():
     """
