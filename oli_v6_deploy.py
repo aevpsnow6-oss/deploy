@@ -1925,7 +1925,7 @@ with tab3:
         return pd.DataFrame(rows)
     
     # Function to split text into chunks respecting the token limit
-    def split_text_into_chunks(text, max_tokens=7000):  # Using 7000 to leave room for prompt and completion
+    def split_text_into_chunks(text, max_tokens=6000):  # Using 6000 to leave room for prompt and completion
         import re
         # Split by paragraphs first
         paragraphs = text.split('\n')
@@ -2060,10 +2060,10 @@ with tab3:
         
         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
         
-        3. TODAS las evidencias importantes del documento. Combina todas las citas textuales de los fragmentos individuales, eliminando duplicados. El objetivo es proporcionar un conjunto completo de evidencia textual (al menos 15-20 párrafos verbatim del documento original).
+        3. TODAS las evidencias importantes del documento. Combina todas las citas textuales de los fragmentos individuales, eliminando duplicados. El objetivo es proporcionar un conjunto completo de evidencia textual (al menos 8-10 párrafos verbatim del documento original).
         
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis global extenso y detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "todas las citas textuales combinadas del documento (al menos 15-20 párrafos)"}}
+        {{"analysis": "tu análisis global extenso y detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "todas las citas textuales combinadas del documento (al menos 8-10 párrafos)"}}
         
         Devuelve solo el objeto JSON, nada más.
         """
@@ -2077,7 +2077,7 @@ with tab3:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=4000  # Increased token limit for detailed responses
+                max_tokens=1000  # Increased token limit for detailed responses
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
