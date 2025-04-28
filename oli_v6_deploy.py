@@ -1976,7 +1976,7 @@ with tab3:
         # Synthesize results from all chunks
         return synthesize_evaluations(chunk_results, criterion, descriptions)
     
-    # Function to evaluate a single text chunk
+    # Function to evaluate a single text chunk - Fixed for OpenAI v0.28
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
         """Evaluate a single text chunk against a criterion"""
         import json
@@ -2006,9 +2006,9 @@ with tab3:
         Devuelve solo el objeto JSON, nada más.
         """
         
-        # Call LLM
+        # Call LLM using OpenAI v0.28 syntax
         try:
-            response = openai.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados y puntuaciones basadas en criterios específicos."},
@@ -2016,13 +2016,13 @@ with tab3:
                 ],
                 response_format={"type": "json_object"}
             )
-            raw = response.choices[0].message.content.strip()
+            raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': '', 'recommendations': '', 'confidence': 0}
     
-    # Function to synthesize evaluations from multiple chunks
+    # Function to synthesize evaluations - Fixed for OpenAI v0.28
     def synthesize_evaluations(chunk_results, criterion, descriptions):
         """Synthesize evaluations from multiple document chunks"""
         import json
@@ -2059,9 +2059,9 @@ with tab3:
         Devuelve solo el objeto JSON, nada más.
         """
         
-        # Call LLM for synthesis
+        # Call LLM for synthesis using OpenAI v0.28 syntax
         try:
-            response = openai.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto."},
@@ -2069,7 +2069,7 @@ with tab3:
                 ],
                 response_format={"type": "json_object"}
             )
-            raw = response.choices[0].message.content.strip()
+            raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
@@ -2106,7 +2106,7 @@ with tab3:
                 df = extract_docx_structure(tmp_file.name)
                 progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
                 
-                # Process sections with LLM to clean up text
+                # Process sections with LLM to clean up text - Updated for OpenAI v0.28
                 header_1_values = df['header_1'].dropna().unique()
                 llm_summary_rows = []
                 llm_progress = st.progress(0, text="Procesando secciones con LLM...")
@@ -2121,6 +2121,7 @@ with tab3:
                     else:
                         llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                         try:
+                            # Use OpenAI v0.28 syntax
                             response = openai.ChatCompletion.create(
                                 model="gpt-4o-mini",
                                 messages=[
@@ -2130,7 +2131,7 @@ with tab3:
                                 max_tokens=1024,
                                 temperature=0.01,
                             )
-                            llm_output = response.choices[0].message.content.strip()
+                            llm_output = response["choices"][0]["message"]["content"].strip()
                         except Exception as e:
                             llm_output = f"[LLM ERROR: {e}]"
                             
