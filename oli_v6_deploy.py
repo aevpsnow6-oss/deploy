@@ -371,12 +371,12 @@ Devuelve la respuesta en formato JSON:
                 if eval_info:
                     st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
                 else:
-                st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
-                if st.button("Generar Reporte de Evaluación"):
-                    if not st.session_state.evaluations:
-                        st.warning("No hay evaluaciones para generar un reporte.")
-                    else:
-                        st.markdown("#### Reporte de Evaluación")
+                    st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
+                    if st.button("Generar Reporte de Evaluación"):
+                        if not st.session_state.evaluations:
+                            st.warning("No hay evaluaciones para generar un reporte.")
+                        else:
+                            st.markdown("#### Reporte de Evaluación")
                         eval_data = []
                         for criterion_id, eval_info in st.session_state.evaluations.items():
                             eval_data.append({
