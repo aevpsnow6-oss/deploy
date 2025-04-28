@@ -2016,7 +2016,7 @@ with tab3:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=4000  # Increased token limit for detailed responses
+                max_tokens=2000  # Increased token limit for detailed responses
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
