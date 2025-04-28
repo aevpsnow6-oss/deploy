@@ -1417,27 +1417,6 @@ def add_document_upload_tab():
                 import traceback
                 st.error(traceback.format_exc())
                 
-                # Emergency table extraction
-                try:
-                    st.markdown("### Emergency Table Extraction")
-                    st.write("Attempting direct table extraction...")
-                    
-                    # Extract tables using docx2python
-                    doc_result = docx2python(tmp_file_path)
-                    
-                    # Display tables
-                    for i, table in enumerate(doc_result.tables):
-                        if table:
-                            st.markdown(f"**Table {i+1}:**")
-                            df = pd.DataFrame(table)
-                            st.dataframe(df)
-                    
-                    # Clean up the temporary file
-                    if os.path.exists(tmp_file_path):
-                        os.unlink(tmp_file_path)
-                        
-                except Exception as table_error:
-                    st.error(f"Error in emergency table extraction: {str(table_error)}")
     else:
         st.info("Por favor suba un archivo DOCX para comenzar.")
         
