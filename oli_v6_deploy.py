@@ -1565,10 +1565,35 @@ with tab2:
 # Tab 3: Document Upload and Parsing
 with tab3:
     st.header("Subir y Evaluar Documento DOCX")
+    # Read rubrics from Excel files as in megaparse_example.py
+    import pandas as pd
+    engagement_rubric = {}
+    performance_rubric = {}
+    parteval_rubric = {}
+    try:
+        df_rubric_engagement = pd.read_excel('G:/My Drive/RAG/Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
+        df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_engagement.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            engagement_rubric[indicador] = valores
+        df_rubric_performance = pd.read_excel('G:/My Drive/RAG/Matriz_scores_meta analisis_ESP_v2.xlsx')
+        df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_performance.iterrows():
+            criterio = row['subdim']
+            valores = row.drop('subdim').values.tolist()
+            performance_rubric[criterio] = valores
+        df_rubric_parteval = pd.read_excel('G:/My Drive/RAG/Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
+        df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_parteval.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            parteval_rubric[indicador] = valores
+    except Exception as e:
+        st.error(f"Error leyendo las rúbricas: {e}")
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
     if uploaded_file is not None:
         with st.spinner("Procesando documento..."):
-            # Save to temp file
             tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
             tmp_file.write(uploaded_file.read())
             tmp_file.close()
@@ -1576,6 +1601,9 @@ with tab3:
             try:
                 doc_result = docx2python(tmp_file.name)
                 progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                import os
+                from collections import OrderedDict
+                # --- Step 1: Parse DOCX into paragraphs and sections (as before) ---
                 paragraphs = []
                 toc = []
                 toc_hierarchy = {}
@@ -1590,14 +1618,73 @@ with tab3:
                             })
                     toc.append((f'Section {i+1}', 1))
                     toc_hierarchy.setdefault(1, []).append(f'Section {i+1}')
-                exploded_df = pd.DataFrame(paragraphs)
-                progress_bar.progress(0.6, text="Documento estructurado. Generando embeddings...")
+                df = pd.DataFrame(paragraphs)
+                # --- Step 2: LLM Parsing by Section with Progress (as in megaparse_example) ---
+                header_1_values = df['header_1'].dropna().unique()
+                llm_summary_rows = []
+                llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+                total_sections = len(header_1_values)
+                for idx, header in enumerate(header_1_values):
+                    section_df = df[df['header_1'] == header].copy()
+                    full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                    if not full_text:
+                        llm_output = ""
+                    else:
+                        # Show section-level progress in Streamlit
+                        llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+                        # Use the same prompt as in megaparse_example
+                        try:
+                            response = openai.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=[
+                                    {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                                    {"role": "user", "content": full_text}
+                                ],
+                                max_tokens=1024,
+                                temperature=0.01,
+                            )
+                            llm_output = response.choices[0].message.content.strip()
+                        except Exception as e:
+                            llm_output = f"[LLM ERROR: {e}]"
+                    llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+                llm_progress.progress(1.0, text="LLM parsing completado.")
+                llm_summary_df = pd.DataFrame(llm_summary_rows)
+                llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                exploded_df = llm_summary_df.assign(
+                    llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                ).explode('llm_paragraph')
+                exploded_df = exploded_df.reset_index(drop=True)
+                exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                exploded_df['document_id'] = 1
+                # --- Step 3: Compute File Summary ---
+                file_size = os.path.getsize(tmp_file.name)
+                n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                n_paragraphs = len(exploded_df)
+                toc_sections = llm_summary_df['header_1'].tolist()
+                st.info(f"**Resumen del documento:**\n\n- Tamaño del archivo: {file_size/1024:.2f} KB\n- Número de palabras: {n_words}\n- Número de párrafos: {n_paragraphs}")
+                st.markdown("#### Tabla de Contenidos (TOC):")
+                for i, sec in enumerate(toc_sections):
+                    st.markdown(f"{i+1}. {sec}")
+                progress_bar.progress(0.6, text="Documento estructurado y procesado por LLM. Generando embeddings...")
+                # --- Step 4: Embedding Generation (as before) ---
                 store = SimpleHierarchicalStore(use_cache=True)
-                store.add_documents(exploded_df)
+                store.add_documents(exploded_df, content_column='llm_paragraph', section_column='header_1')
                 progress_bar.progress(0.8, text="Embeddings generados. Listo para evaluación por rúbrica.")
                 st.success("Documento procesado exitosamente. Puede proceder a la evaluación por rúbrica.")
                 progress_bar.progress(1.0, text="Procesamiento completo.")
-                add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy)
+                # Simple rubric selection UI
+                rubric_type = st.selectbox(
+                    "Seleccione tipo de rúbrica para evaluación:",
+                    ["Participación (Engagement)", "Desempeño (Performance)"]
+                )
+                if rubric_type == "Participación (Engagement)":
+                    rubric_dict = engagement_rubric
+                else:
+                    rubric_dict = performance_rubric
+                st.markdown("#### Criterios disponibles:")
+                for crit, levels in rubric_dict.items():
+                    st.markdown(f"**{crit}:** {', '.join(levels)}")
+                # (You can add further evaluation UI or logic here as needed)
             except Exception as e:
                 st.error(f"Error procesando el documento: {e}")
     else:
