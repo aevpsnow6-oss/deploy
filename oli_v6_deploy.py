@@ -1568,4 +1568,4 @@ with tab2:
 #==============================================================================================
 # Tab 3: Document Upload and Parsing
 with tab3:
-    add_document_upload_tab()
+    st.info("La funcionalidad de subir y procesar documentos aún no está implementada en esta versión.")
