@@ -1696,13 +1696,25 @@ with tab3:
                 st.info(f"**Resumen del documento:**\n\n- Tamaño del archivo: {file_size/1024:.2f} KB\n- Número de palabras: {n_words}\n- Número de párrafos: {n_paragraphs}")
                 st.markdown("#### Estructura extraída del documento:")
                 st.dataframe(exploded_df, use_container_width=True)
-                progress_bar.progress(0.6, text="Documento estructurado y procesado por LLM. Generando embeddings...")
-                # --- Step 4: Embedding Generation (as before) ---
-                store = SimpleHierarchicalStore(use_cache=True)
-                store.add_documents(exploded_df, content_column='llm_paragraph', section_column='header_1')
-                progress_bar.progress(0.8, text="Embeddings generados. Listo para evaluación por rúbrica.")
-                st.success("Documento procesado exitosamente. Puede proceder a la evaluación por rúbrica.")
-                progress_bar.progress(1.0, text="Procesamiento completo.")
+                progress_bar.progress(0.6, text="Documento estructurado y procesado por LLM. Listo para generar embeddings.")
+                # --- Step 4: Embedding Generation (manual trigger) ---
+                if 'embeddings_ready' not in st.session_state:
+                    st.session_state['embeddings_ready'] = False
+                if st.button('Generar Embeddings'):
+                    with st.spinner('Generando embeddings...'):
+                        store = SimpleHierarchicalStore(use_cache=True)
+                        store.add_documents(exploded_df, content_column='llm_paragraph', section_column='header_1')
+                        st.session_state['embeddings_ready'] = True
+                        st.success('Embeddings generados correctamente!')
+                        progress_bar.progress(0.8, text="Embeddings generados. Listo para evaluación por rúbrica.")
+                if st.session_state.get('embeddings_ready', False):
+                    st.success("Embeddings listos. Puede proceder a la evaluación por rúbrica.")
+                    progress_bar.progress(1.0, text="Procesamiento completo.")
+                else:
+                    progress_bar.progress(0.7, text="Esperando generación de embeddings...")
+                    st.info("Genere los embeddings antes de continuar.")
+                    return
+
                 # Simple rubric selection UI
                 rubric_type = st.selectbox(
                     "Seleccione tipo de rúbrica para evaluación:",
@@ -1726,24 +1738,33 @@ with tab3:
                     rubric_dict = performance_rubric
                 # --- RUBRIC EVALUATION BUTTON AND DISPLAY ---
                 st.markdown('---')
-                if st.button('Evaluar por rúbrica'):
-                    with st.spinner('Evaluando documento por rúbrica...'):
-                        rubric_results = store.score_rubric_directly(rubric_dict)
+                if st.session_state.get('embeddings_ready', False):
+                    if st.button('Evaluar por rúbrica'):
                         rubric_analysis_data = []
-                        for crit, res in rubric_results.items():
-                            analysis = res.get('analysis', {})
-                            rubric_analysis_data.append({
-                                'Criterio': crit,
-                                'Score': res.get('score'),
-                                'Confianza': res.get('confidence'),
-                                'Análisis': analysis.get('analysis'),
-                                'Evidencia': analysis.get('evidence'),
-                                'Recomendaciones': analysis.get('recommendations'),
-                                'Error': analysis.get('error', '')
-                            })
+                        n_criteria = len(rubric_dict)
+                        progress = st.progress(0, text="Iniciando evaluación por rúbrica...")
+                        with st.spinner('Evaluando documento por rúbrica...'):
+                            for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
+                                st.info(f"Evaluando criterio: {crit}")
+                                # Evaluate just this criterion (simulate as in megaparse_example)
+                                single_rubric = {crit: descriptions}
+                                result = store.score_rubric_directly(single_rubric)
+                                res = result[crit]
+                                analysis = res.get('analysis', {})
+                                rubric_analysis_data.append({
+                                    'Criterio': crit,
+                                    'Score': res.get('score'),
+                                    'Confianza': res.get('confidence'),
+                                    'Análisis': analysis.get('analysis'),
+                                    'Evidencia': analysis.get('evidence'),
+                                    'Recomendaciones': analysis.get('recommendations'),
+                                    'Error': analysis.get('error', '')
+                                })
+                                progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
                         rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
                         st.markdown('#### Resultados de la evaluación por rúbrica:')
                         st.dataframe(rubric_analysis_df, use_container_width=True)
+
 
             except Exception as e:
                 st.error(f"Error procesando el documento: {e}")
