@@ -1577,11 +1577,135 @@ with tab2:
 # Tab 3: Document Upload and Parsing
 with tab3:
     st.header("Subir y Evaluar Documento DOCX")
+    
+    # Cache the document processing function to persist between Streamlit re-runs
+    @st.cache_data
+    def process_docx_with_llm(file_content, file_name):
+        """Process DOCX file and generate embeddings with caching to persist between re-runs"""
+        # Create temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_file:
+            tmp_file.write(file_content)
+            docx_path = tmp_file.name
+        
+        # Extract document structure
+        doc_result = docx2python(docx_path)
+        df = extract_docx_structure(docx_path)
+        
+        # Process sections with LLM
+        header_1_values = df['header_1'].dropna().unique()
+        llm_summary_rows = []
+        
+        for header in header_1_values:
+            section_df = df[df['header_1'] == header].copy()
+            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+            
+            if not full_text:
+                llm_output = ""
+            else:
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                            {"role": "user", "content": full_text}
+                        ],
+                        max_tokens=1024,
+                        temperature=0.01,
+                    )
+                    llm_output = response.choices[0].message.content.strip()
+                except Exception as e:
+                    llm_output = f"[LLM ERROR: {e}]"
+                    
+            llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+        
+        # Create and process dataframes
+        llm_summary_df = pd.DataFrame(llm_summary_rows)
+        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+        
+        exploded_df = llm_summary_df.assign(
+            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+        ).explode('llm_paragraph')
+        exploded_df = exploded_df.reset_index(drop=True)
+        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+        
+        # Calculate statistics
+        file_size = os.path.getsize(docx_path)
+        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+        n_paragraphs = len(exploded_df)
+        
+        # Create the store with embeddings
+        store = SimpleHierarchicalStore(use_cache=True)
+        store.add_documents(exploded_df, content_column='llm_paragraph', section_column='header_1')
+        
+        # Clean up temp file
+        try:
+            os.unlink(docx_path)
+        except:
+            pass
+            
+        return {
+            'exploded_df': exploded_df,
+            'store': store,
+            'file_stats': {
+                'file_size': file_size,
+                'n_words': n_words,
+                'n_paragraphs': n_paragraphs
+            }
+        }
+    
+    # Function to evaluate document against rubric
+    def evaluate_with_rubric(store, rubric_dict):
+        """Evaluate document against specified rubric"""
+        rubric_analysis_data = []
+        n_criteria = len(rubric_dict)
+        
+        progress = st.progress(0, text="Iniciando evaluación por rúbrica...")
+        
+        for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
+            st.info(f"Evaluando criterio: {crit}")
+            
+            # Evaluate just this criterion
+            single_rubric = {crit: descriptions}
+            result = store.score_rubric_directly(single_rubric)
+            
+            # Get the analysis result or default values
+            if crit in result:
+                res = result[crit]
+                analysis = res.get('analysis', {})
+                
+                # Create a dictionary with all fields, using empty strings for missing values
+                row_data = {
+                    'Criterio': crit,
+                    'Score': res.get('score', 0),
+                    'Confianza': res.get('confidence', 0),
+                    'Análisis': analysis.get('analysis', '') if isinstance(analysis, dict) else str(analysis),
+                    'Evidencia': analysis.get('evidence', '') if isinstance(analysis, dict) else '',
+                    'Recomendaciones': analysis.get('recommendations', '') if isinstance(analysis, dict) else '',
+                    'Error': analysis.get('error', '') if isinstance(analysis, dict) else ''
+                }
+            else:
+                # Default values if criterion not found in results
+                row_data = {
+                    'Criterio': crit,
+                    'Score': 0,
+                    'Confianza': 0,
+                    'Análisis': '',
+                    'Evidencia': '',
+                    'Recomendaciones': '',
+                    'Error': 'No results found for this criterion'
+                }
+                
+            rubric_analysis_data.append(row_data)
+            progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
+        
+        return pd.DataFrame(rubric_analysis_data)
+    
     # Read rubrics from Excel files as in megaparse_example.py
     import pandas as pd
     engagement_rubric = {}
     performance_rubric = {}
     parteval_rubric = {}
+    
     try:
         df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
@@ -1589,12 +1713,14 @@ with tab3:
             indicador = row['Indicador']
             valores = row.drop('Indicador').values.tolist()
             engagement_rubric[indicador] = valores
+            
         df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
         for idx, row in df_rubric_performance.iterrows():
             criterio = row['subdim']
             valores = row.drop('subdim').values.tolist()
             performance_rubric[criterio] = valores
+            
         df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_parteval.iterrows():
@@ -1603,210 +1729,110 @@ with tab3:
             parteval_rubric[indicador] = valores
     except Exception as e:
         st.error(f"Error leyendo las rúbricas: {e}")
+    
+    # Create function to extract document structure (moved outside to avoid redefinition)
+    def extract_docx_structure(docx_path):
+        from docx import Document
+        doc = Document(docx_path)
+        filename = os.path.basename(docx_path)
+        rows = []
+        current_headers = {i: '' for i in range(1, 7)}
+        para_counter = 0
+        
+        def get_header_level(style_name):
+            for i in range(1, 7):
+                if style_name.lower().startswith(f'heading {i}'.lower()):
+                    return i
+            return None
+            
+        def header_dict():
+            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+            
+        for para in doc.paragraphs:
+            para_counter += 1
+            level = get_header_level(para.style.name)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+            elif para.text.strip():
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+        return pd.DataFrame(rows)
+    
+    # Main document upload interface
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+    
     if uploaded_file is not None:
-        with st.spinner("Procesando documento..."):
-            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-            tmp_file.write(uploaded_file.read())
-            tmp_file.close()
-            progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-            try:
-                doc_result = docx2python(tmp_file.name)
-                progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
-                import os
-                from docx import Document
-                from collections import defaultdict
-                # --- Step 1: Parse DOCX with python-docx to extract hierarchical headings ---
-                def extract_docx_structure(docx_path):
-                    doc = Document(docx_path)
-                    filename = os.path.basename(docx_path)
-                    rows = []
-                    current_headers = {i: '' for i in range(1, 7)}
-                    para_counter = 0
-                    def get_header_level(style_name):
-                        for i in range(1, 7):
-                            if style_name.lower().startswith(f'heading {i}'.lower()):
-                                return i
-                        return None
-                    def header_dict():
-                        return {f'header_{i}': current_headers[i] for i in range(1, 7)}
-                    for para in doc.paragraphs:
-                        para_counter += 1
-                        level = get_header_level(para.style.name)
-                        if level and 1 <= level <= 6:
-                            current_headers[level] = para.text.strip()
-                            for l in range(level+1, 7):
-                                current_headers[l] = ''
-                            rows.append({
-                                'filename': filename,
-                                **header_dict(),
-                                'content': '',
-                                'source_type': 'heading',
-                                'paragraph_number': para_counter,
-                                'page_number': None
-                            })
-                        elif para.text.strip():
-                            rows.append({
-                                'filename': filename,
-                                **header_dict(),
-                                'content': para.text.strip(),
-                                'source_type': 'paragraph',
-                                'paragraph_number': para_counter,
-                                'page_number': None
-                            })
-                    return pd.DataFrame(rows)
-                df = extract_docx_structure(tmp_file.name)
-                # --- Step 2: LLM Parsing by Section (header_1) with Progress ---
-                header_1_values = df['header_1'].dropna().unique()
-                llm_summary_rows = []
-                llm_progress = st.progress(0, text="Procesando secciones con LLM...")
-                total_sections = len(header_1_values)
-                for idx, header in enumerate(header_1_values):
-                    section_df = df[df['header_1'] == header].copy()
-                    full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                    if not full_text:
-                        llm_output = ""
-                    else:
-                        llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
-                        try:
-                            response = openai.ChatCompletion.create(
-                                model="gpt-4o-mini",
-                                messages=[
-                                    {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
-                                    {"role": "user", "content": full_text}
-                                ],
-                                max_tokens=1024,
-                                temperature=0.01,
-                            )
-                            llm_output = response.choices[0].message.content.strip()
-                        except Exception as e:
-                            llm_output = f"[LLM ERROR: {e}]"
-                    llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
-                llm_progress.progress(1.0, text="LLM parsing completado.")
-                llm_summary_df = pd.DataFrame(llm_summary_rows)
-                llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
-                exploded_df = llm_summary_df.assign(
-                    llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                ).explode('llm_paragraph')
-                exploded_df = exploded_df.reset_index(drop=True)
-                exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                # --- Save exploded_df as |-delimited CSV in a temp file (persist path in session_state) ---
-                import tempfile
-                import uuid
-                csv_id = str(uuid.uuid4())
-                if 'exploded_df_csv_path' not in st.session_state or st.session_state.get('last_uploaded_file') != uploaded_file.name:
-                    temp_csv = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
-                    exploded_df.to_csv(temp_csv.name, sep='|', index=False)
-                    st.session_state['exploded_df_csv_path'] = temp_csv.name
-                    st.session_state['last_uploaded_file'] = uploaded_file.name
-                else:
-                    temp_csv = open(st.session_state['exploded_df_csv_path'], 'r')
-                # --- Step 3: Compute File Summary ---
-                file_size = os.path.getsize(tmp_file.name)
-                n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                n_paragraphs = len(exploded_df)
-                st.info(f"**Resumen del documento:**\n\n- Tamaño del archivo: {file_size/1024:.2f} KB\n- Número de palabras: {n_words}\n- Número de párrafos: {n_paragraphs}")
+        try:
+            # Create a unique ID for this file to ensure proper caching
+            file_id = f"{uploaded_file.name}_{hash(uploaded_file.getvalue())}"
+            
+            # Process document with caching - this will persist between Streamlit reruns
+            with st.spinner("Procesando documento..."):
+                progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                
+                # Process the document - this is cached so it won't rerun on button clicks
+                processed_data = process_docx_with_llm(uploaded_file.getvalue(), uploaded_file.name)
+                
+                # Extract results from cached processing
+                exploded_df = processed_data['exploded_df']
+                store = processed_data['store']
+                stats = processed_data['file_stats']
+                
+                progress_bar.progress(0.8, text="Documento procesado y embeddings generados.")
+                
+                # Display document summary
+                st.info(f"**Resumen del documento:**\n\n" + 
+                       f"- Tamaño del archivo: {stats['file_size']/1024:.2f} KB\n" + 
+                       f"- Número de palabras: {stats['n_words']}\n" + 
+                       f"- Número de párrafos: {stats['n_paragraphs']}")
+                
+                # Show extracted content
                 st.markdown("#### Estructura extraída del documento:")
                 st.dataframe(exploded_df, use_container_width=True)
-                progress_bar.progress(0.6, text="Documento estructurado y procesado por LLM. Listo para generar embeddings.")
-                # --- Step 4: Embedding Generation (manual trigger) ---
-                if 'embeddings_ready' not in st.session_state:
-                    st.session_state['embeddings_ready'] = False
-                if st.button('Generar Embeddings'):
-                    with st.spinner('Generando embeddings...'):
-                        store = SimpleHierarchicalStore(use_cache=True)
-                        store.add_documents(exploded_df, content_column='llm_paragraph', section_column='header_1')
-                        st.session_state['store'] = store
-                        st.session_state['embeddings_ready'] = True
-                        st.success('Embeddings generados correctamente!')
-                        progress_bar.progress(0.8, text="Embeddings generados. Listo para evaluación por rúbrica.")
-                if st.session_state.get('embeddings_ready', False):
-                    st.success("Embeddings listos. Puede proceder a la evaluación por rúbrica.")
-                    progress_bar.progress(1.0, text="Procesamiento completo.")
-                else:
-                    progress_bar.progress(0.7, text="Esperando generación de embeddings...")
-                    st.info("Genere los embeddings antes de continuar.")
-                    st.stop()
-
-                # Simple rubric selection UI
+                
+                progress_bar.progress(1.0, text="Procesamiento completo.")
+                
+                # Rubric selection UI
+                st.markdown("#### Evaluación por Rúbrica")
                 rubric_type = st.selectbox(
                     "Seleccione tipo de rúbrica para evaluación:",
                     ["Participación (Engagement)", "Desempeño (Performance)"]
                 )
-                # --- Load exploded_df from CSV for rubric evaluation (on rerun) ---
-                import os
-                if 'exploded_df_csv_path' in st.session_state and os.path.exists(st.session_state['exploded_df_csv_path']):
-                    exploded_df_for_eval = pd.read_csv(st.session_state['exploded_df_csv_path'], sep='|')
-                else:
-                    exploded_df_for_eval = exploded_df
-                # Ensure llm_paragraph is string type (important after CSV reload)
-                if 'llm_paragraph' in exploded_df_for_eval.columns:
-                    exploded_df_for_eval['llm_paragraph'] = exploded_df_for_eval['llm_paragraph'].astype(str)
-                # Retrieve store from session_state if available
-                store = st.session_state.get('store', None)
-                if store is None:
-                    store = SimpleHierarchicalStore(use_cache=True)
-                    store.add_documents(exploded_df_for_eval, content_column='llm_paragraph', section_column='header_1')
-                    st.session_state['store'] = store
+                
+                # Select appropriate rubric based on user choice
                 if rubric_type == "Participación (Engagement)":
                     rubric_dict = engagement_rubric
                 else:
                     rubric_dict = performance_rubric
-                # --- RUBRIC EVALUATION BUTTON AND DISPLAY ---
+                
+                # Evaluate button
                 st.markdown('---')
-                if st.session_state.get('embeddings_ready', False):
-                    if st.button('Evaluar por rúbrica'):
-                        # Create a dataframe to store analysis results
-                        rubric_analysis_data = []
-
-                        # Process each criterion
-                        n_criteria = len(rubric_dict)
-                        progress = st.progress(0, text="Iniciando evaluación por rúbrica...")
-
-                        with st.spinner('Evaluando documento por rúbrica...'):
-                            for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
-                                st.info(f"Evaluando criterio: {crit}")
-                                
-                                # Evaluate just this criterion
-                                single_rubric = {crit: descriptions}
-                                result = store.score_rubric_directly(single_rubric)
-                                
-                                # Get the analysis result or default values
-                                if crit in result:
-                                    res = result[crit]
-                                    analysis = res.get('analysis', {})
-                                    
-                                    # Create a dictionary with all fields, using empty strings for missing values
-                                    row_data = {
-                                        'Criterio': crit,
-                                        'Score': res.get('score', 0),
-                                        'Confianza': res.get('confidence', 0),
-                                        'Análisis': analysis.get('analysis', '') if isinstance(analysis, dict) else str(analysis),
-                                        'Evidencia': analysis.get('evidence', '') if isinstance(analysis, dict) else '',
-                                        'Recomendaciones': analysis.get('recommendations', '') if isinstance(analysis, dict) else '',
-                                        'Error': analysis.get('error', '') if isinstance(analysis, dict) else ''
-                                    }
-                                else:
-                                    # Default values if criterion not found in results
-                                    row_data = {
-                                        'Criterio': crit,
-                                        'Score': 0,
-                                        'Confianza': 0,
-                                        'Análisis': '',
-                                        'Evidencia': '',
-                                        'Recomendaciones': '',
-                                        'Error': 'No results found for this criterion'
-                                    }
-                                    
-                                rubric_analysis_data.append(row_data)
-                                progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
-
-                        # Create dataframe and display results
-                        rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
+                if st.button('Evaluar por rúbrica'):
+                    with st.spinner('Evaluando documento por rúbrica...'):
+                        # Perform evaluation
+                        rubric_analysis_df = evaluate_with_rubric(store, rubric_dict)
+                        
+                        # Display results
                         st.markdown('#### Resultados de la evaluación por rúbrica:')
                         st.dataframe(rubric_analysis_df, use_container_width=True)
-
-                        # Optional: Add a download button for the results
+                        
+                        # Download button
                         csv = rubric_analysis_df.to_csv(index=False)
                         st.download_button(
                             label="Descargar resultados como CSV",
@@ -1814,9 +1840,10 @@ with tab3:
                             file_name="evaluacion_rubrica.csv",
                             mime="text/csv"
                         )
-
-
-            except Exception as e:
-                st.error(f"Error procesando el documento: {e}")
+        
+        except Exception as e:
+            st.error(f"Error procesando el documento: {e}")
+            import traceback
+            st.error(traceback.format_exc())
     else:
         st.info("Por favor suba un archivo DOCX para comenzar.")
