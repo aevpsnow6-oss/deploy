@@ -1713,7 +1713,7 @@ with tab3:
                 else:
                     progress_bar.progress(0.7, text="Esperando generación de embeddings...")
                     st.info("Genere los embeddings antes de continuar.")
-                    return
+                    st.stop()
 
                 # Simple rubric selection UI
                 rubric_type = st.selectbox(
