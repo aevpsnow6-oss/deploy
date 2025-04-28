@@ -1602,24 +1602,49 @@ with tab3:
                 doc_result = docx2python(tmp_file.name)
                 progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
                 import os
-                from collections import OrderedDict
-                # --- Step 1: Parse DOCX into paragraphs and sections (as before) ---
-                paragraphs = []
-                toc = []
-                toc_hierarchy = {}
-                for i, (body, *_rest) in enumerate(doc_result.body):
-                    for j, para in enumerate(body):
-                        text = " ".join(para).strip()
-                        if text:
-                            paragraphs.append({
-                                'header_1': f'Section {i+1}',
-                                'content': text,
-                                'index_df': len(paragraphs),
+                from docx import Document
+                from collections import defaultdict
+                # --- Step 1: Parse DOCX with python-docx to extract hierarchical headings ---
+                def extract_docx_structure(docx_path):
+                    doc = Document(docx_path)
+                    filename = os.path.basename(docx_path)
+                    rows = []
+                    current_headers = {i: '' for i in range(1, 7)}
+                    para_counter = 0
+                    def get_header_level(style_name):
+                        for i in range(1, 7):
+                            if style_name.lower().startswith(f'heading {i}'.lower()):
+                                return i
+                        return None
+                    def header_dict():
+                        return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+                    for para in doc.paragraphs:
+                        para_counter += 1
+                        level = get_header_level(para.style.name)
+                        if level and 1 <= level <= 6:
+                            current_headers[level] = para.text.strip()
+                            for l in range(level+1, 7):
+                                current_headers[l] = ''
+                            rows.append({
+                                'filename': filename,
+                                **header_dict(),
+                                'content': '',
+                                'source_type': 'heading',
+                                'paragraph_number': para_counter,
+                                'page_number': None
                             })
-                    toc.append((f'Section {i+1}', 1))
-                    toc_hierarchy.setdefault(1, []).append(f'Section {i+1}')
-                df = pd.DataFrame(paragraphs)
-                # --- Step 2: LLM Parsing by Section with Progress (as in megaparse_example) ---
+                        elif para.text.strip():
+                            rows.append({
+                                'filename': filename,
+                                **header_dict(),
+                                'content': para.text.strip(),
+                                'source_type': 'paragraph',
+                                'paragraph_number': para_counter,
+                                'page_number': None
+                            })
+                    return pd.DataFrame(rows)
+                df = extract_docx_structure(tmp_file.name)
+                # --- Step 2: LLM Parsing by Section (header_1) with Progress ---
                 header_1_values = df['header_1'].dropna().unique()
                 llm_summary_rows = []
                 llm_progress = st.progress(0, text="Procesando secciones con LLM...")
@@ -1630,9 +1655,7 @@ with tab3:
                     if not full_text:
                         llm_output = ""
                     else:
-                        # Show section-level progress in Streamlit
                         llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
-                        # Use the same prompt as in megaparse_example
                         try:
                             response = openai.chat.completions.create(
                                 model="gpt-4o-mini",
@@ -1660,11 +1683,38 @@ with tab3:
                 file_size = os.path.getsize(tmp_file.name)
                 n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
                 n_paragraphs = len(exploded_df)
-                toc_sections = llm_summary_df['header_1'].tolist()
+                # --- Build Hierarchical TOC ---
+                def build_toc_tree(df):
+                    tree = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))))
+                    for _, row in df.iterrows():
+                        h1, h2, h3, h4, h5, h6 = [row.get(f'header_{i}', '') for i in range(1, 7)]
+                        if h1:
+                            if h2:
+                                if h3:
+                                    if h4:
+                                        if h5:
+                                            if h6:
+                                                tree[h1][h2][h3][h4][h5][h6].append('')
+                                            else:
+                                                tree[h1][h2][h3][h4][h5][''].append('')
+                                        else:
+                                            tree[h1][h2][h3][h4][''][''].append('')
+                                    else:
+                                        tree[h1][h2][h3][''][''][''].append('')
+                                else:
+                                    tree[h1][h2][''][''][''][''].append('')
+                            else:
+                                tree[h1][''][''][''][''][''].append('')
+                    return tree
+                toc_tree = build_toc_tree(df)
+                def render_toc(tree, level=1):
+                    for key, subtree in tree.items():
+                        if key:
+                            with st.expander("  " * (level-1) + key, expanded=False):
+                                render_toc(subtree, level+1)
                 st.info(f"**Resumen del documento:**\n\n- Tamaño del archivo: {file_size/1024:.2f} KB\n- Número de palabras: {n_words}\n- Número de párrafos: {n_paragraphs}")
                 st.markdown("#### Tabla de Contenidos (TOC):")
-                for i, sec in enumerate(toc_sections):
-                    st.markdown(f"{i+1}. {sec}")
+                render_toc(toc_tree)
                 progress_bar.progress(0.6, text="Documento estructurado y procesado por LLM. Generando embeddings...")
                 # --- Step 4: Embedding Generation (as before) ---
                 store = SimpleHierarchicalStore(use_cache=True)
@@ -1681,9 +1731,6 @@ with tab3:
                     rubric_dict = engagement_rubric
                 else:
                     rubric_dict = performance_rubric
-                st.markdown("#### Criterios disponibles:")
-                for crit, levels in rubric_dict.items():
-                    st.markdown(f"**{crit}:** {', '.join(levels)}")
                 # (You can add further evaluation UI or logic here as needed)
             except Exception as e:
                 st.error(f"Error procesando el documento: {e}")
