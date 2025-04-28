@@ -1714,6 +1714,12 @@ with tab3:
                     exploded_df_for_eval = pd.read_csv(st.session_state['exploded_df_csv_path'], sep='|')
                 else:
                     exploded_df_for_eval = exploded_df
+                # Ensure llm_paragraph is string type (important after CSV reload)
+                if 'llm_paragraph' in exploded_df_for_eval.columns:
+                    exploded_df_for_eval['llm_paragraph'] = exploded_df_for_eval['llm_paragraph'].astype(str)
+                # Always use exploded_df_for_eval for the store
+                store = SimpleHierarchicalStore(use_cache=True)
+                store.add_documents(exploded_df_for_eval, content_column='llm_paragraph', section_column='header_1')
                 if rubric_type == "Participación (Engagement)":
                     rubric_dict = engagement_rubric
                 else:
@@ -1722,9 +1728,7 @@ with tab3:
                 st.markdown('---')
                 if st.button('Evaluar por rúbrica'):
                     with st.spinner('Evaluando documento por rúbrica...'):
-                        # Use the store already built above (with exploded_df)
                         rubric_results = store.score_rubric_directly(rubric_dict)
-                        # Build a DataFrame for display
                         rubric_analysis_data = []
                         for crit, res in rubric_results.items():
                             analysis = res.get('analysis', {})
@@ -1740,6 +1744,7 @@ with tab3:
                         rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
                         st.markdown('#### Resultados de la evaluación por rúbrica:')
                         st.dataframe(rubric_analysis_df, use_container_width=True)
+
             except Exception as e:
                 st.error(f"Error procesando el documento: {e}")
     else:
