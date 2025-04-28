@@ -127,8 +127,10 @@ class SimpleHierarchicalStore:
         norm2 = sum(b * b for b in embedding2) ** 0.5
         return dot_product / (norm1 * norm2) if norm1 > 0 and norm2 > 0 else 0
     def score_rubric_directly(self, rubric_elements: Dict, top_n_paragraphs: int = 10) -> Dict:
+        print(f"[score_rubric_directly] Evaluating criterion: {rubric_elements}")
         results = {}
         for criterion, descriptions in rubric_elements.items():
+            print(f"[score_rubric_directly] Evaluating criterion: {criterion}")
             criterion_embedding = self.get_embedding(criterion)
             paragraph_scores = []
             for p in self.paragraphs:
@@ -139,6 +141,7 @@ class SimpleHierarchicalStore:
             context_text = '\n\n---\n\n'.join([p[0]['text'] for p in top_paragraphs])
             try:
                 analysis = self.analyze_criterion(criterion, context_text, descriptions)
+                print(f"[score_rubric_directly] Analysis result for '{criterion}': {analysis}")
                 results[criterion] = {
                     'analysis': analysis,
                     'context': context_text,
@@ -147,14 +150,19 @@ class SimpleHierarchicalStore:
                     'top_paragraphs': [{'text': p[0]['text'], 'similarity': p[1]} for p in top_paragraphs[:3]]
                 }
             except Exception as e:
+                print(f"[score_rubric_directly] Exception for '{criterion}': {e}")
                 results[criterion] = {
                     'analysis': {'error': str(e)},
                     'context': context_text,
                     'score': 0,
                     'confidence': 0
                 }
+        print(f"[score_rubric_directly] Final results: {results}")
         return results
     def analyze_criterion(self, criterion: str, context: str, descriptions: list) -> dict:
+        print(f"[analyze_criterion] Called with criterion: {criterion}")
+        print(f"[analyze_criterion] Context: {context[:200]} ...")
+        print(f"[analyze_criterion] Descriptions: {descriptions}")
         prompt = f"""
         You are evaluating a document against a specific criterion. 
         Criterion: {criterion}
@@ -182,8 +190,12 @@ class SimpleHierarchicalStore:
                 response_format={"type": "json_object"}
             )
             raw = response.choices[0].message.content.strip()
-            return json.loads(raw)
+            print(f"[analyze_criterion] Raw response: {raw}")
+            parsed = json.loads(raw)
+            print(f"[analyze_criterion] Parsed response: {parsed}")
+            return parsed
         except Exception as e:
+            print(f"[analyze_criterion] Exception: {e}")
             return {'score': 0, 'analysis': f'Error: {str(e)}'}
 # --- End: SimpleHierarchicalStore and RAG logic ---
 
