@@ -928,6 +928,98 @@ def process_tables(doc_data, sections):
             if current_section in sections:
                 sections[current_section].extend(table_content)
 
+def extract_docx_structure(docx_path):
+    from docx import Document
+    import numpy as np
+    doc = Document(docx_path)
+    filename = os.path.basename(docx_path)
+    rows = []
+    current_headers = {i: '' for i in range(1, 7)}
+    para_counter = 0
+    def get_header_level(style_name):
+        for i in range(1, 7):
+            if style_name.lower().startswith(f'heading {i}'.lower()):
+                return i
+        return None
+    def header_dict():
+        return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+    def iter_block_items(parent):
+        from docx.oxml.text.paragraph import CT_P
+        from docx.oxml.table import CT_Tbl
+        for child in parent.element.body:
+            if isinstance(child, CT_P):
+                yield ('paragraph', parent.paragraphs[[p._p for p in parent.paragraphs].index(child)])
+            elif isinstance(child, CT_Tbl):
+                yield ('table', parent.tables[[t._tbl for t in parent.tables].index(child)])
+    for block_type, block in iter_block_items(doc):
+        if block_type == 'paragraph':
+            para = block
+            para_counter += 1
+            level = get_header_level(para.style.name)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+            elif para.text.strip():
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+        elif block_type == 'table':
+            for row in block.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        para_counter += 1
+                        cell_text = para.text.strip()
+                        cell_style = para.style.name if para.style else ''
+                        if cell_text:
+                            rows.append({
+                                'filename': filename,
+                                **header_dict(),
+                                'content': cell_text,
+                                'table_paragraph_style': cell_style,
+                                'source_type': 'table_cell',
+                                'paragraph_number': para_counter,
+                                'page_number': None
+                            })
+    all_keys = set()
+    for row in rows:
+        all_keys.update(str(k) for k in row.keys())
+    result_df = pd.DataFrame(columns=list(all_keys))
+    for i, row in enumerate(rows):
+        safe_row = {}
+        for k, v in row.items():
+            str_key = str(k)
+            if v is None:
+                safe_row[str_key] = None
+            elif isinstance(v, (int, float, bool, str)):
+                safe_row[str_key] = v
+            elif isinstance(v, np.ndarray):
+                if v.size == 1:
+                    try:
+                        safe_row[str_key] = v.item()
+                    except:
+                        safe_row[str_key] = str(v)
+                else:
+                    safe_row[str_key] = str(v)
+            else:
+                safe_row[str_key] = str(v)
+        result_df.loc[i] = safe_row
+    df = result_df
+    return df
+
 def add_document_upload_tab():
     """Add a new tab for document upload and parsing with improved docx2python implementation"""
     st.header("Document Upload and Parsing")
@@ -941,76 +1033,64 @@ def add_document_upload_tab():
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_file_path = tmp_file.name
-            
             try:
-                # Parse the document using docx2python
+                # Parse using the megaparse pipeline
+                exploded_df = extract_docx_structure(tmp_file_path)
+                # Parse the document using docx2python (original logic)
                 sections_content, toc, toc_hierarchy = parse_docx_with_docx2python(tmp_file_path)
-                
                 # Get file size
                 file_size_bytes = len(uploaded_file.getvalue())
                 file_size_kb = file_size_bytes / 1024
                 file_size_mb = file_size_kb / 1024
-                
                 # Count statistics
                 total_sections = len(sections_content) - 1  # Don't count DOCUMENT_START
-                
                 # Count subsections by level
                 subsections_count = {}
                 for level, headings in toc_hierarchy.items():
                     if level > 1:  # Level 1 headings are main sections
                         subsections_count[level] = len(headings)
-                
                 total_subsections = sum(subsections_count.values())
-                
                 # Count paragraphs, words, and characters
                 total_paragraphs = 0
                 total_words = 0
                 total_chars = 0
-                
                 for section, paragraphs in sections_content.items():
                     for para in paragraphs:
-                        if not para.startswith('[TABLE'):  # Skip table markup in word/char count
+                        if not para.startswith('[TABLE'):
                             total_paragraphs += 1
                             words = para.split()
                             total_words += len(words)
                             total_chars += len(para)
-                
                 # Clean up the temporary file
                 os.unlink(tmp_file_path)
-                
                 # Show document summary
                 st.success("Document processed successfully!")
-                
                 # Create tabs for document summary, section viewing, and rubric evaluation
-                doc_tabs = st.tabs(["Resumen del Documento", "Secciones", "Evaluación por Rúbrica"])
-                
+                doc_tabs = st.tabs(["Resumen del Documento", "Secciones", "Evaluación por Rúbrica", "Exploded DataFrame"])
                 # Tab 1: Document Summary
                 with doc_tabs[0]:
                     st.markdown("### Resumen del Documento")
                     col1, col2, col3 = st.columns(3)
-                    
                     with col1:
                         st.metric("Tamaño del Archivo", f"{file_size_mb:.2f} MB" if file_size_mb >= 1 else f"{file_size_kb:.2f} KB")
                         st.metric("Total de Secciones", total_sections)
-                    
                     with col2:
                         st.metric("Total de Subsecciones", total_subsections)
                         st.metric("Total de Párrafos", total_paragraphs)
-                    
                     with col3:
                         st.metric("Total de Palabras", total_words)
                         st.metric("Total de Caracteres", total_chars)
-                    
-                    # Display table of contents
                     st.markdown("#### Tabla de Contenido")
-                    
-                    # Group TOC by levels for display
                     for level in sorted(toc_hierarchy.keys()):
-                        if level <= 5:  # Only show up to level 5
+                        if level <= 5:
                             with st.expander(f"Encabezados Nivel {level} ({len(toc_hierarchy[level])})", level == 1):
                                 for i, heading in enumerate(toc_hierarchy[level]):
                                     st.markdown(f"{i+1}. {heading}")
-                
+                # Tab 4: Show exploded_df
+                with doc_tabs[3]:
+                    st.markdown("### exploded_df (Megaparse DataFrame)")
+                    st.dataframe(exploded_df)
+
                 # Tab 2: Document Sections
                 with doc_tabs[1]:
                     st.markdown("### Secciones del Documento")
