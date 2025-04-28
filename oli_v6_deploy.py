@@ -457,20 +457,20 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                 
                 # Tab 3: Rubric Evaluation
                 with doc_tabs[2]:
-                    # Call the rubric evaluation function with the document sections
-                    if 'add_rubric_evaluation_section' in globals():
-                        add_rubric_evaluation_section(sections_content, toc, toc_hierarchy)
-                    else:
-                        st.info("La función de evaluación por rúbrica no está disponible. Por favor actualice el código con la implementación de esta función.")
-                    
-        except Exception as e:
-            st.error(f"Error processing document: {str(e)}")
-            import traceback
-            st.error(traceback.format_exc())
-                
+                    try:
+                        # Call the rubric evaluation function with the document sections
+                        if 'add_rubric_evaluation_section' in globals():
+                            add_rubric_evaluation_section(sections_content, toc, toc_hierarchy)
+                        else:
+                            st.info("La función de evaluación por rúbrica no está disponible. Por favor actualice el código con la implementación de esta función.")
+                    except Exception as e:
+                        st.error(f"Error processing document: {str(e)}")
+                        import traceback
+                        st.error(traceback.format_exc())
+
     else:
         st.info("Por favor suba un archivo DOCX para comenzar.")
-        
+
 # ============= VISUALIZATION FUNCTIONS =============
 
 # Function to prepare additional data for new visualizations
