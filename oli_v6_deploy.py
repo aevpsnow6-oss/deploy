@@ -1683,38 +1683,9 @@ with tab3:
                 file_size = os.path.getsize(tmp_file.name)
                 n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
                 n_paragraphs = len(exploded_df)
-                # --- Build Hierarchical TOC ---
-                def build_toc_tree(df):
-                    tree = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))))
-                    for _, row in df.iterrows():
-                        h1, h2, h3, h4, h5, h6 = [row.get(f'header_{i}', '') for i in range(1, 7)]
-                        if h1:
-                            if h2:
-                                if h3:
-                                    if h4:
-                                        if h5:
-                                            if h6:
-                                                tree[h1][h2][h3][h4][h5][h6].append('')
-                                            else:
-                                                tree[h1][h2][h3][h4][h5][''].append('')
-                                        else:
-                                            tree[h1][h2][h3][h4][''][''].append('')
-                                    else:
-                                        tree[h1][h2][h3][''][''][''].append('')
-                                else:
-                                    tree[h1][h2][''][''][''][''].append('')
-                            else:
-                                tree[h1][''][''][''][''][''].append('')
-                    return tree
-                toc_tree = build_toc_tree(df)
-                def render_toc(tree, level=1):
-                    for key, subtree in tree.items():
-                        if key:
-                            with st.expander("  " * (level-1) + key, expanded=False):
-                                render_toc(subtree, level+1)
                 st.info(f"**Resumen del documento:**\n\n- Tamaño del archivo: {file_size/1024:.2f} KB\n- Número de palabras: {n_words}\n- Número de párrafos: {n_paragraphs}")
-                st.markdown("#### Tabla de Contenidos (TOC):")
-                render_toc(toc_tree)
+                st.markdown("#### Estructura extraída del documento:")
+                st.dataframe(exploded_df, use_container_width=True)
                 progress_bar.progress(0.6, text="Documento estructurado y procesado por LLM. Generando embeddings...")
                 # --- Step 4: Embedding Generation (as before) ---
                 store = SimpleHierarchicalStore(use_cache=True)
