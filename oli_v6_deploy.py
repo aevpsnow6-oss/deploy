@@ -33,34 +33,185 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 # ============= DOCX PARSING FUNCTIONS =============
 
-def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
+# --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
+import pickle
+from typing import List, Dict, Any
+import numpy as np
+import json
+import os
+import openai
+
+class SimpleHierarchicalStore:
+    def __init__(self, use_cache=True, cache_dir=None):
+        self.documents = {}
+        self.sections = {}
+        self.paragraphs = []
+        self.use_cache = use_cache
+        self.cache_dir = cache_dir or os.getcwd()
+        self.embedding_cache = {}
+        self.query_cache = {}
+        self.storage_dir = cache_dir or os.path.join(os.path.expanduser("~"), "document_store")
+        os.makedirs(self.storage_dir, exist_ok=True)
+        self.cache_file = os.path.join(self.storage_dir, "embedding_cache.pkl")
+        if use_cache:
+            self._load_cache()
+    def _load_cache(self):
+        if not self.use_cache:
+            return
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'rb') as f:
+                    self.embedding_cache = pickle.load(f)
+            except Exception:
+                self.embedding_cache = {}
+        else:
+            self.embedding_cache = {}
+    def _hash_text(self, text):
+        import hashlib
+        return hashlib.md5(text.encode('utf-8')).hexdigest()
+    def _save_cache(self):
+        if not self.use_cache:
+            return
+        try:
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(self.embedding_cache, f)
+        except Exception:
+            pass
+    def get_embedding(self, text: str):
+        if not text or text.isspace():
+            return [0.0] * 1536
+        if self.use_cache:
+            text_hash = hash(text)
+            if text_hash in self.embedding_cache:
+                return self.embedding_cache[text_hash]
+        try:
+            response = openai.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            embedding = response.data[0].embedding
+            if self.use_cache:
+                self.embedding_cache[hash(text)] = embedding
+                if len(self.embedding_cache) % 100 == 0:
+                    self._save_cache()
+            return embedding
+        except Exception:
+            return [0.0] * 1536
+    def add_documents(self, df, content_column='content', section_column='header_1', batch_size=20):
+        doc_id = df['document_id'].iloc[0] if 'document_id' in df.columns else 'doc1'
+        self.documents[doc_id] = {'embedding': self.get_embedding(' '.join(df[content_column].astype(str).tolist()))}
+        for _, row in df.iterrows():
+            section_id = row.get(section_column, '')
+            if pd.isna(section_id):
+                section_id = '_default_section'
+            section_text = str(row.get(content_column, ''))
+            if not section_text.strip():
+                continue
+            section_embedding = self.get_embedding(section_text)
+            self.sections[(doc_id, section_id)] = {
+                'text': section_text,
+                'embedding': section_embedding
+            }
+            self.paragraphs.append({
+                'text': section_text,
+                'embedding': section_embedding,
+                'document_id': doc_id,
+                'section_id': section_id,
+                'position': row.get('paragraph_number', 0)
+            })
+    def cosine_similarity(self, embedding1, embedding2):
+        if not embedding1 or not embedding2:
+            return 0
+        dot_product = sum(a * b for a, b in zip(embedding1, embedding2))
+        norm1 = sum(a * a for a in embedding1) ** 0.5
+        norm2 = sum(b * b for b in embedding2) ** 0.5
+        return dot_product / (norm1 * norm2) if norm1 > 0 and norm2 > 0 else 0
+    def score_rubric_directly(self, rubric_elements: Dict, top_n_paragraphs: int = 10) -> Dict:
+        results = {}
+        for criterion, descriptions in rubric_elements.items():
+            criterion_embedding = self.get_embedding(criterion)
+            paragraph_scores = []
+            for p in self.paragraphs:
+                similarity = self.cosine_similarity(criterion_embedding, p['embedding'])
+                paragraph_scores.append((p, similarity))
+            paragraph_scores.sort(key=lambda x: x[1], reverse=True)
+            top_paragraphs = paragraph_scores[:top_n_paragraphs]
+            context_text = '\n\n---\n\n'.join([p[0]['text'] for p in top_paragraphs])
+            try:
+                analysis = self.analyze_criterion(criterion, context_text, descriptions)
+                results[criterion] = {
+                    'analysis': analysis,
+                    'context': context_text,
+                    'score': analysis.get('score', 0),
+                    'confidence': analysis.get('confidence', 0),
+                    'top_paragraphs': [{'text': p[0]['text'], 'similarity': p[1]} for p in top_paragraphs[:3]]
+                }
+            except Exception as e:
+                results[criterion] = {
+                    'analysis': {'error': str(e)},
+                    'context': context_text,
+                    'score': 0,
+                    'confidence': 0
+                }
+        return results
+    def analyze_criterion(self, criterion: str, context: str, descriptions: list) -> dict:
+        prompt = f"""
+        You are evaluating a document against a specific criterion. 
+        Criterion: {criterion}
+        Descriptions of scoring levels:
+        {json.dumps(descriptions, indent=2)}
+        Document content to evaluate:
+        {context}
+        Please analyze how well the document meets this criterion. Provide:
+        1. A detailed analysis (2-3 paragraphs)
+        2. A score from 1-5 (where 1 is lowest and 5 is highest)
+        3. Key evidence from the document that supports your score
+        4. Any recommendations for improvement
+        5. A confidence level (0-1) indicating how confident you are in this assessment
+        Format your response as a JSON object with the following keys:
+        {"analysis": "your detailed analysis here", "score": numeric_score_between_1_and_5, "evidence": "key evidence from the document", "recommendations": "your recommendations for improvement", "confidence": confidence_level_between_0_and_1}
+        Return only the JSON object, nothing else.
+        """
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert document evaluator that provides detailed analysis and scoring based on specific criteria."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            return json.loads(raw)
+        except Exception as e:
+            return {'score': 0, 'analysis': f'Error: {str(e)}'}
+# --- End: SimpleHierarchicalStore and RAG logic ---
+
+# --- HIERARCHICAL RAG RUBRIC EVALUATION ---
+def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
     """
-    Add a new section for rubric-based evaluation of the document.
-    Allows users to select rubric type (performance/engagement), choose criteria, evaluate selected sections, view results, and download as CSV/Excel.
+    Add a new section for rubric-based evaluation of the document using hierarchical RAG pipeline.
+    Allows users to select rubric type, choose criteria, evaluate selected sections, view results, and download as CSV/Excel.
     """
     import streamlit as st
     import pandas as pd
     from io import BytesIO
-    import plotly.graph_objs as go
+    from collections import defaultdict
 
-    st.markdown("### Evaluación por Rúbrica")
+    st.markdown("### Evaluación por Rúbrica (Hierarchical RAG)")
 
-    # Initialize session state variables if not already present
+    # --- Section Selection ---
     if 'selected_sections_for_eval' not in st.session_state:
         st.session_state.selected_sections_for_eval = []
     if 'evaluation_sections_confirmed' not in st.session_state:
         st.session_state.evaluation_sections_confirmed = False
 
-    # Section Selection for Evaluation
     st.markdown("#### 1. Selección de Secciones para Evaluación")
     main_sections = []
     for level, headings in sorted(toc_hierarchy.items()):
         if headings and not main_sections:
             main_sections = headings
-    valid_selected_sections = [
-        section for section in st.session_state.selected_sections_for_eval 
-        if section in main_sections
-    ]
+    valid_selected_sections = [s for s in st.session_state.selected_sections_for_eval if s in main_sections]
     if not valid_selected_sections and main_sections:
         valid_selected_sections = [main_sections[0]]
     selected_sections = st.multiselect(
@@ -79,7 +230,7 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
     if st.session_state.selected_sections_for_eval:
         st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state.selected_sections_for_eval)}")
 
-    # Only proceed with rubric selection if sections are confirmed
+    # --- Rubric Selection & Evaluation ---
     if st.session_state.evaluation_sections_confirmed:
         st.markdown("#### 2. Selección de Rúbrica y Criterios")
         rubric_type = st.selectbox(
@@ -157,50 +308,56 @@ def add_rubric_evaluation_section(sections_content, toc, toc_hierarchy):
                     with st.expander(f"{criterion_name}", expanded=True):
                         levels_df = rubric_to_levels_df(criterion_row, criteria_col)
                         st.table(levels_df)
-        if st.button("Iniciar Evaluación de Criterios Seleccionados"):
+        if st.button("Iniciar Evaluación de Criterios Seleccionados (RAG)"):
             selected_any = any(st.session_state.selected_criteria.values())
             if not selected_any:
                 st.warning("Por favor seleccione al menos un criterio para evaluar.")
             else:
-                st.markdown("#### 3. Evaluación de Criterios")
-                selected_criteria_ids = [
-                    cid for cid, selected in st.session_state.selected_criteria.items() if selected
-                ]
-                filtered_sections_content = {}
-                for section in st.session_state.selected_sections_for_eval:
-                    if section in sections_content:
-                        filtered_sections_content[section] = sections_content[section]
-                doc_store = process_document_for_evaluation(filtered_sections_content)
-                if not doc_store.get('paragraphs', []):
+                st.markdown("#### 3. Evaluación de Criterios (RAG)")
+                selected_criteria_ids = [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+                filtered_df = exploded_df[exploded_df['header_1'].isin(st.session_state.selected_sections_for_eval)].copy()
+                if filtered_df.empty:
                     st.warning("No se encontraron párrafos en las secciones seleccionadas.")
-                else:
-                    if 'evaluations' not in st.session_state:
-                        st.session_state.evaluations = {}
-                    st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_sections_content)} secciones con {len(doc_store.get('paragraphs', []))} párrafos.")
-                    for criterion_id in selected_criteria_ids:
-                        criterion_rows = rubric_df[rubric_df[criteria_col] == criterion_id]
-                        if criterion_rows.empty:
-                            st.warning(f"No se encontraron detalles para el criterio: {criterion_id}")
-                            continue
-                        criterion_row = criterion_rows.iloc[0]
-                        criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row.index else criterion_id
-                        with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
-                            relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
-                            if relevant_docs:
-                                st.markdown("##### Contexto Relevante")
-                                display_retrieved_context(relevant_docs)
-                                st.markdown("##### Evaluación")
-                                levels_df = rubric_to_levels_df(criterion_row, criteria_col)
-                                if criterion_id not in st.session_state.evaluations:
-                                    st.session_state.evaluations[criterion_id] = {
-                                        'criterion_name': criterion_name,
-                                        'score': 1,
-                                        'justification': '',
-                                        'context': [doc['text'] for doc in relevant_docs]
-                                    }
-                                if st.button(f"Evaluar criterio: {criterion_name}", key=f"evaluate_{criterion_id}"):
-                                    with st.spinner('Analizando criterio y generando puntuación...'):
-                                        context_text = '\n'.join([doc['text'] for doc in relevant_docs])
+                    return
+                rubric_dict = {}
+                for cid in selected_criteria_ids:
+                    crit_row = rubric_df[rubric_df[criteria_col] == cid].iloc[0]
+                    levels = rubric_to_levels_df(crit_row, criteria_col)
+                    rubric_dict[cid] = levels['Description'].tolist()
+                st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_df)} párrafos.")
+                with st.spinner('Generando embeddings y evaluando rúbrica...'):
+                    store = SimpleHierarchicalStore(use_cache=True)
+                    filtered_df['document_id'] = 'doc1'  # Single doc context
+                    store.add_documents(filtered_df)
+                    results = store.score_rubric_directly(rubric_dict, top_n_paragraphs=10)
+                eval_rows = []
+                for cid, result in results.items():
+                    criterion_name = cid
+                    if short_col:
+                        crit_row = rubric_df[rubric_df[criteria_col] == cid].iloc[0]
+                        criterion_name = crit_row[short_col] if short_col in crit_row else cid
+                    score = result.get('score', 0)
+                    context = result.get('context', '')
+                    analysis = result.get('analysis', {})
+                    eval_rows.append({
+                        'Criterio': criterion_name,
+                        'Score': score,
+                        'Justificación': analysis.get('analysis', analysis.get('justification', '')),
+                        'Contexto': context
+                    })
+                eval_df = pd.DataFrame(eval_rows)
+                st.dataframe(eval_df)
+                def to_excel(df):
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df.to_excel(writer, index=False)
+                    return output.getvalue()
+                st.download_button(
+                    label="Descargar resultados como Excel",
+                    data=to_excel(eval_df),
+                    file_name="evaluacion_rubrica_rag.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
                                         prompt = f"""
 Criterio de evaluación: {criterion_name}
 Contexto relevante extraído del documento:
