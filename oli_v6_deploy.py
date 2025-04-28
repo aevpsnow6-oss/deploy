@@ -1678,7 +1678,17 @@ with tab3:
                 ).explode('llm_paragraph')
                 exploded_df = exploded_df.reset_index(drop=True)
                 exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                exploded_df['document_id'] = 1
+                # --- Save exploded_df as |-delimited CSV in a temp file (persist path in session_state) ---
+                import tempfile
+                import uuid
+                csv_id = str(uuid.uuid4())
+                if 'exploded_df_csv_path' not in st.session_state or st.session_state.get('last_uploaded_file') != uploaded_file.name:
+                    temp_csv = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
+                    exploded_df.to_csv(temp_csv.name, sep='|', index=False)
+                    st.session_state['exploded_df_csv_path'] = temp_csv.name
+                    st.session_state['last_uploaded_file'] = uploaded_file.name
+                else:
+                    temp_csv = open(st.session_state['exploded_df_csv_path'], 'r')
                 # --- Step 3: Compute File Summary ---
                 file_size = os.path.getsize(tmp_file.name)
                 n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
@@ -1698,11 +1708,38 @@ with tab3:
                     "Seleccione tipo de rúbrica para evaluación:",
                     ["Participación (Engagement)", "Desempeño (Performance)"]
                 )
+                # --- Load exploded_df from CSV for rubric evaluation (on rerun) ---
+                import os
+                if 'exploded_df_csv_path' in st.session_state and os.path.exists(st.session_state['exploded_df_csv_path']):
+                    exploded_df_for_eval = pd.read_csv(st.session_state['exploded_df_csv_path'], sep='|')
+                else:
+                    exploded_df_for_eval = exploded_df
                 if rubric_type == "Participación (Engagement)":
                     rubric_dict = engagement_rubric
                 else:
                     rubric_dict = performance_rubric
-                # (You can add further evaluation UI or logic here as needed)
+                # --- RUBRIC EVALUATION BUTTON AND DISPLAY ---
+                st.markdown('---')
+                if st.button('Evaluar por rúbrica'):
+                    with st.spinner('Evaluando documento por rúbrica...'):
+                        # Use the store already built above (with exploded_df)
+                        rubric_results = store.score_rubric_directly(rubric_dict)
+                        # Build a DataFrame for display
+                        rubric_analysis_data = []
+                        for crit, res in rubric_results.items():
+                            analysis = res.get('analysis', {})
+                            rubric_analysis_data.append({
+                                'Criterio': crit,
+                                'Score': res.get('score'),
+                                'Confianza': res.get('confidence'),
+                                'Análisis': analysis.get('analysis'),
+                                'Evidencia': analysis.get('evidence'),
+                                'Recomendaciones': analysis.get('recommendations'),
+                                'Error': analysis.get('error', '')
+                            })
+                        rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
+                        st.markdown('#### Resultados de la evaluación por rúbrica:')
+                        st.dataframe(rubric_analysis_df, use_container_width=True)
             except Exception as e:
                 st.error(f"Error procesando el documento: {e}")
     else:
