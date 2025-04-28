@@ -358,45 +358,19 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                     file_name="evaluacion_rubrica_rag.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                                        prompt = f"""
+                prompt = f"""
 Criterio de evaluación: {criterion_name}
 Contexto relevante extraído del documento:
 {context_text}
 
 Por favor, analiza el contexto y asigna un puntaje del 1 al {len(levels_df)} según los niveles de la rúbrica, proporcionando una justificación breve en español.
 Devuelve la respuesta en formato JSON:
-{{"score": <puntaje>, "justification": "<justificación>"}}
+{"score": <puntaje>, "justification": "<justificación>"}
 """
-                                        try:
-                                            response = openai.ChatCompletion.create(
-                                                model="gpt-4o-mini",
-                                                messages=[{"role": "user", "content": prompt}],
-                                                max_tokens=256,
-                                                temperature=0.2
-                                            )
-                                            import json as pyjson
-                                            result = response['choices'][0]['message']['content']
-                                            parsed = pyjson.loads(result)
-                                            score = int(parsed['score'])
-                                            justification = parsed['justification']
-                                        except Exception as e:
-                                            score = 1
-                                            justification = f"Error en la evaluación automática: {str(e)}"
 
-                                        st.session_state.evaluations[criterion_id] = {
-                                            'criterion_name': criterion_name,
-                                            'score': score,
-                                            'justification': justification,
-                                            'context': [doc['text'] for doc in relevant_docs]
-                                        }
-                                eval_info = st.session_state.evaluations.get(criterion_id)
-                                if eval_info and eval_info['justification']:
-                                    st.success(f"**Puntaje generado:** {eval_info['score']}")
-                                    st.markdown(f"**Justificación:** {eval_info['justification']}")
-                                    st.markdown("##### Detalles del Nivel Seleccionado")
-                                    st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
-                            else:
-                                st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
+                st.markdown(f"**Nivel {eval_info['score']}:** {levels_df.loc[eval_info['score']-1, 'Description']}")
+            else:
+                st.warning("No se encontró contexto relevante para este criterio en las secciones seleccionadas.")
                     if st.button("Generar Reporte de Evaluación"):
                         if not st.session_state.evaluations:
                             st.warning("No hay evaluaciones para generar un reporte.")
@@ -444,87 +418,74 @@ Devuelve la respuesta en formato JSON:
     # (Removed duplicate section selection block to prevent DuplicateWidgetID error)
     # Only the original section selection and confirmation logic (with key="rubric_section_multiselect") is retained above.
             
-        # Option to clear all selections
-        if st.button("Limpiar todas las selecciones"):
-            for criterion_id in st.session_state.selected_criteria:
-                st.session_state.selected_criteria[criterion_id] = False
-            st.success("Todas las selecciones han sido limpiadas.")
-        
-        # Button to view detailed rubric for selected criteria
-        if st.button("Ver Detalles de Criterios Seleccionados"):
-            selected_any = any(st.session_state.selected_criteria.values())
-            if not selected_any:
-                st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
-            else:
-                st.markdown("##### Detalles de Criterios Seleccionados")
-                
-                # Get selected criteria
-                selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
-                    [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
-                )]
-                
-                for _, criterion_row in selected_criteria_df.iterrows():
-                    criterion_id = criterion_row[criteria_col]
-                    criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
-                    
-                    with st.expander(f"{criterion_name}", expanded=True):
-                        # Display the rubric levels for this criterion
-                        levels_df = rubric_to_levels_df(criterion_row, criteria_col)
-                        st.table(levels_df)
-        
-        # Button to start evaluation
-        if st.button("Iniciar Evaluación de Criterios Seleccionados"):
-            selected_any = any(st.session_state.selected_criteria.values())
-            if not selected_any:
-                st.warning("Por favor seleccione al menos un criterio para evaluar.")
-            else:
-                st.markdown("#### 3. Evaluación de Criterios")
-                
-                # Get selected criteria IDs
-                selected_criteria_ids = [
-                    cid for cid, selected in st.session_state.selected_criteria.items() if selected
-                ]
-                
-                # Filter document content based on selected sections
-                filtered_sections_content = {}
-                for section in st.session_state.selected_sections_for_eval:
-                    if section in sections_content:
-                        filtered_sections_content[section] = sections_content[section]
-                
-                # Process document for hierarchical retrieval
-                doc_store = process_document_for_evaluation(filtered_sections_content)
-                
-                if not doc_store.get('paragraphs', []):
-                    st.warning("No se encontraron párrafos en las secciones seleccionadas.")
-                else:
-                    # Create a dictionary to store evaluations
-                    if 'evaluations' not in st.session_state:
-                        st.session_state.evaluations = {}
-                    
-                    # Display total counts
-                    st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_sections_content)} secciones con {len(doc_store.get('paragraphs', []))} párrafos.")
-                    
-                    # Evaluate each selected criterion
-                    for criterion_id in selected_criteria_ids:
-                        # Get criterion details
-                        criterion_rows = rubric_df[rubric_df[criteria_col] == criterion_id]
-                        if criterion_rows.empty:
-                            st.warning(f"No se encontraron detalles para el criterio: {criterion_id}")
-                            continue
-                            
-                        criterion_row = criterion_rows.iloc[0]
-                        criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row.index else criterion_id
-                        
-                        with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
-                            # Perform hierarchical retrieval for this criterion
-                            relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
-                            
-                            if relevant_docs:
-                                # Display retrieved context
-                                st.markdown("##### Contexto Relevante")
-                                display_retrieved_context(relevant_docs)
-                                
-                                # Display evaluation options
+# Option to clear all selections
+if st.button("Limpiar todas las selecciones"):
+    for criterion_id in st.session_state.selected_criteria:
+        st.session_state.selected_criteria[criterion_id] = False
+    st.success("Todas las selecciones han sido limpiadas.")
+
+# Button to view detailed rubric for selected criteria
+if st.button("Ver Detalles de Criterios Seleccionados"):
+    selected_any = any(st.session_state.selected_criteria.values())
+    if not selected_any:
+        st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
+    else:
+        st.markdown("##### Detalles de Criterios Seleccionados")
+        # Get selected criteria
+        selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
+            [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+        )]
+        for _, criterion_row in selected_criteria_df.iterrows():
+            criterion_id = criterion_row[criteria_col]
+            criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+            with st.expander(f"{criterion_name}", expanded=True):
+                # Display the rubric levels for this criterion
+                levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                st.table(levels_df)
+
+# Button to start evaluation
+if st.button("Iniciar Evaluación de Criterios Seleccionados"):
+    selected_any = any(st.session_state.selected_criteria.values())
+    if not selected_any:
+        st.warning("Por favor seleccione al menos un criterio para evaluar.")
+    else:
+        st.markdown("#### 3. Evaluación de Criterios")
+        # Get selected criteria IDs
+        selected_criteria_ids = [
+            cid for cid, selected in st.session_state.selected_criteria.items() if selected
+        ]
+        # Filter document content based on selected sections
+        filtered_sections_content = {}
+        for section in st.session_state.selected_sections_for_eval:
+            if section in sections_content:
+                filtered_sections_content[section] = sections_content[section]
+        # Process document for hierarchical retrieval
+        doc_store = process_document_for_evaluation(filtered_sections_content)
+        if not doc_store.get('paragraphs', []):
+            st.warning("No se encontraron párrafos en las secciones seleccionadas.")
+        else:
+            # Create a dictionary to store evaluations
+            if 'evaluations' not in st.session_state:
+                st.session_state.evaluations = {}
+            # Display total counts
+            st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_sections_content)} secciones con {len(doc_store.get('paragraphs', []))} párrafos.")
+            # Evaluate each selected criterion
+            for criterion_id in selected_criteria_ids:
+                # Get criterion details
+                criterion_rows = rubric_df[rubric_df[criteria_col] == criterion_id]
+                if criterion_rows.empty:
+                    st.warning(f"No se encontraron detalles para el criterio: {criterion_id}")
+                    continue
+                criterion_row = criterion_rows.iloc[0]
+                criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row.index else criterion_id
+                with st.expander(f"Evaluación de: {criterion_name}", expanded=True):
+                    # Perform hierarchical retrieval for this criterion
+                    relevant_docs = hierarchical_retrieval_for_criterion(doc_store, criterion_id, criterion_row)
+                    if relevant_docs:
+                        # Display retrieved context
+                        st.markdown("##### Contexto Relevante")
+                        display_retrieved_context(relevant_docs)
+                        # Display evaluation options
                                 st.markdown("##### Evaluación")
                                 # Get rubric levels for this criterion
                                 levels_df = rubric_to_levels_df(criterion_row, criteria_col)
