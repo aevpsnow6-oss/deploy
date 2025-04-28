@@ -362,96 +362,94 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                         crit_row = rubric_df[rubric_df[criteria_col] == cid].iloc[0]
                         criterion_name = crit_row[short_col] if short_col in crit_row else cid
                     score = result.get('score', 0)
-{{ ... }}
-                                if create_filtered:
-                                    filtered_sections = {}
-                                    progress_bar = st.progress(0, text="Progreso de filtrado de secciones")
-                                    filtered_sections = {}
-                                    total_sections = len(selected_sections)
-                                    for idx, section in enumerate(selected_sections):
-                                        if section in sections_content:
-                                            filtered_sections[section] = sections_content[section]
-                                        progress_bar.progress((idx + 1) / total_sections, text=f"Filtrando sección '{section}' ({idx + 1}/{total_sections})")
-                                    progress_bar.empty()
-                                    st.session_state.filtered_sections = filtered_sections
-                                    # Convert to a dataframe for Excel export
-                                    filtered_data = []
-                                    for section, paragraphs in filtered_sections.items():
-                                        # Get the section level from TOC
-                                        section_level = 0
-                                        for heading, level in toc:
-                                            if heading == section:
-                                                section_level = level
-                                                break
-                                        # Process paragraphs based on content type
-                                        in_table = False
-                                        table_content = []
-                                        table_rows = []
-                                        header_row = None
-                                        for text in paragraphs:
-                                            if text == '[TABLE_START]':
-                                                in_table = True
-                                                table_content = []
-                                                table_rows = []
-                                                header_row = None
-                                            elif text == '[TABLE_END]':
-                                                in_table = False
-                                                # Process collected table content - store the processed table
-                                                if table_rows:
-                                                    # Create a JSON representation of the table
-                                                    table_data = {
-                                                        'header': header_row if header_row else [],
-                                                        'rows': table_rows
-                                                    }
-                                                    filtered_data.append({
-                                                        'section': section,
-                                                        'level': section_level,
-                                                        'content_type': 'table',
-                                                        'text': json.dumps(table_data)
-                                                    })
-                                            elif text.startswith('[TABLE_HEADER]'):
-                                                # Process header row
-                                                cells = text[14:].split('|')
-                                                header_row = cells
-                                                table_content.append(text)
-                                            elif text.startswith('[TABLE_ROW]'):
-                                                # Process data row
-                                                cells = text[11:].split('|')
-                                                table_rows.append(cells)
-                                                table_content.append(text)
-                                            else:
-                                                # Regular paragraph
-                                                filtered_data.append({
-                                                    'section': section,
-                                                    'level': section_level,
-                                                    'content_type': 'paragraph',
-                                                    'text': text
-                                                })
-                                    filtered_df = pd.DataFrame(filtered_data)
-                                    
-                                    if not filtered_df.empty:
-                                        st.success(f"Salida filtrada creada con {len(filtered_df)} elementos de {len(filtered_sections)} secciones.")
-                                        
-                                        # Show a preview
-{{ ... }}
-                                        with st.expander("Vista Previa del Contenido Filtrado"):
-                                            st.dataframe(filtered_df[['section', 'level', 'content_type', 'text']])
-                                        
-                                        # Download button for the filtered document
-                                        excel_data = BytesIO()
-                                        filtered_df.to_excel(excel_data, index=False)
-                                        excel_data.seek(0)
-                                        
-                                        st.download_button(
-                                            label="Descargar Documento Filtrado",
-                                            data=excel_data,
-                                            file_name="filtered_document.xlsx",
-                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                        )
-                                    else:
-                                        st.warning("La salida filtrada está vacía. Por favor seleccione al menos una sección con contenido.")
+
+                    if create_filtered:
+                        filtered_sections = {}
+                        progress_bar = st.progress(0, text="Progreso de filtrado de secciones")
+                        total_sections = len(selected_sections)
+                        for idx, section in enumerate(selected_sections):
+                            if section in sections_content:
+                                filtered_sections[section] = sections_content[section]
+                            progress_bar.progress((idx + 1) / total_sections, text=f"Filtrando sección '{section}' ({idx + 1}/{total_sections})")
+                        progress_bar.empty()
+                        st.session_state.filtered_sections = filtered_sections
+                        # Convert to a dataframe for Excel export
+                        filtered_data = []
+                        for section, paragraphs in filtered_sections.items():
+                            # Get the section level from TOC
+                            section_level = 0
+                            for heading, level in toc:
+                                if heading == section:
+                                    section_level = level
+                                    break
+                            # Process paragraphs based on content type
+                            in_table = False
+                            table_content = []
+                            table_rows = []
+                            header_row = None
+                            for text in paragraphs:
+                                if text == '[TABLE_START]':
+                                    in_table = True
+                                    table_content = []
+                                    table_rows = []
+                                    header_row = None
+                                elif text == '[TABLE_END]':
+                                    in_table = False
+                                    # Process collected table content - store the processed table
+                                    if table_rows:
+                                        # Create a JSON representation of the table
+                                        table_data = {
+                                            'header': header_row if header_row else [],
+                                            'rows': table_rows
+                                        }
+                                        filtered_data.append({
+                                            'section': section,
+                                            'level': section_level,
+                                            'content_type': 'table',
+                                            'text': json.dumps(table_data)
+                                        })
+                                elif text.startswith('[TABLE_HEADER]'):
+                                    # Process header row
+                                    cells = text[14:].split('|')
+                                    header_row = cells
+                                    table_content.append(text)
+                                elif text.startswith('[TABLE_ROW]'):
+                                    # Process data row
+                                    cells = text[11:].split('|')
+                                    table_rows.append(cells)
+                                    table_content.append(text)
                                 else:
-                                    st.warning("Por favor seleccione al menos una sección para crear una salida filtrada.")
+                                    # Regular paragraph
+                                    filtered_data.append({
+                                        'section': section,
+                                        'level': section_level,
+                                        'content_type': 'paragraph',
+                                        'text': text
+                                    })
+                                filtered_df = pd.DataFrame(filtered_data)
+                                
+                                if not filtered_df.empty:
+                                    st.success(f"Salida filtrada creada con {len(filtered_df)} elementos de {len(filtered_sections)} secciones.")
+                                    
+                                    # Show a preview
+                                    with st.expander("Vista Previa del Contenido Filtrado"):
+                                        st.dataframe(filtered_df[['section', 'level', 'content_type', 'text']])
+                                    
+                                    # Download button for the filtered document
+                                    excel_data = BytesIO()
+                                    filtered_df.to_excel(excel_data, index=False)
+                                    excel_data.seek(0)
+                                    
+                                    st.download_button(
+                                        label="Descargar Documento Filtrado",
+                                        data=excel_data,
+                                        file_name="filtered_document.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+                                else:
+                                    st.warning("La salida filtrada está vacía. Por favor seleccione al menos una sección con contenido.")
+                            else:
+                                st.warning("Por favor seleccione al menos una sección para crear una salida filtrada.")
                         else:
                             st.warning("No se encontraron secciones con encabezados en el documento.")
                     else:
@@ -465,10 +463,10 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                     else:
                         st.info("La función de evaluación por rúbrica no está disponible. Por favor actualice el código con la implementación de esta función.")
                     
-            except Exception as e:
-                st.error(f"Error processing document: {str(e)}")
-                import traceback
-                st.error(traceback.format_exc())
+        except Exception as e:
+            st.error(f"Error processing document: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
                 
     else:
         st.info("Por favor suba un archivo DOCX para comenzar.")
