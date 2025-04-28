@@ -1976,12 +1976,12 @@ with tab3:
         # Synthesize results from all chunks
         return synthesize_evaluations(chunk_results, criterion, descriptions)
     
-    # Function to evaluate a single text chunk - Fixed for OpenAI v0.28
+    # Function to evaluate a single text chunk - Modified for expanded analysis and evidence
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
-        """Evaluate a single text chunk against a criterion"""
+        """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
         import json
         
-        # Build prompt - Notice the doubled curly braces for JSON example
+        # Build prompt - Updated to request detailed analysis and extensive evidence
         prompt = f"""
         Estás evaluando un documento contra un criterio específico.
         
@@ -1994,14 +1994,15 @@ with tab3:
         {text_chunk}
         
         Analiza qué tan bien el documento cumple con este criterio. Proporciona:
-        1. Un análisis detallado (2-3 párrafos)
-        2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta)
-        3. Evidencia clave del documento que respalda tu puntuación
-        4. Recomendaciones para mejorar
-        5. Un nivel de confianza (0-1) que indica qué tan seguro estás de esta evaluación
+        
+        1. Un análisis EXTENSO Y DETALLADO (mínimo 4-5 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Tu análisis debe ser comprensivo, no sucinto. Proporciona un razonamiento profundo y multifacético que abarque todos los aspectos del criterio.
+        
+        2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
+        
+        3. AMPLIA EVIDENCIA del documento que respalde tu puntuación. Incluye MÚLTIPLES (al menos 10-15) citas textuales completas del documento, indicando claramente cómo cada fragmento específico contribuye a tu evaluación. No resumas la evidencia - proporciona los párrafos exactos del texto original.
         
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "evidencia clave del documento", "recommendations": "tus recomendaciones para mejorar", "confidence": nivel_de_confianza_entre_0_y_1}}
+        {{"analysis": "tu análisis extenso y detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "múltiples citas textuales completas del documento (al menos 10-15 párrafos)"}}
         
         Devuelve solo el objeto JSON, nada más.
         """
@@ -2011,34 +2012,41 @@ with tab3:
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados y puntuaciones basadas en criterios específicos."},
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis extremadamente detallados y exhaustivos, basados en criterios específicos. Tu análisis es extenso y tu evidencia muy completa, citando amplios fragmentos verbatim del texto original."},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
+                max_tokens=4000  # Increased token limit for detailed responses
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
-            return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': '', 'recommendations': '', 'confidence': 0}
+            return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
     
-    # Function to synthesize evaluations - Fixed for OpenAI v0.28
+    # Function to synthesize evaluations - Modified for expanded analysis and evidence
     def synthesize_evaluations(chunk_results, criterion, descriptions):
-        """Synthesize evaluations from multiple document chunks"""
+        """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
         import json
         
         # Extract and format the individual evaluations for the synthesis
         individual_evals = []
+        all_evidence = []
+        
         for i, result in enumerate(chunk_results):
             individual_evals.append(f"Evaluación del fragmento {i+1}:\n" +
-                                   f"Puntuación: {result.get('score', 0)}\n" +
-                                   f"Análisis: {result.get('analysis', '')}\n" +
-                                   f"Evidencia: {result.get('evidence', '')}")
+                                    f"Puntuación: {result.get('score', 0)}\n" +
+                                    f"Análisis: {result.get('analysis', '')}")
+            
+            # Collect all evidence
+            evidence = result.get('evidence', '')
+            if evidence:
+                all_evidence.append(f"Evidencia del fragmento {i+1}:\n{evidence}")
         
         # Define separator outside the f-string to avoid backslash issues
         separator = "\n\n"
         
-        # Create a synthesis prompt - Notice the doubled curly braces for JSON example
+        # Create a synthesis prompt - Updated for expanded results
         synthesis_prompt = f"""
         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
         
@@ -2046,15 +2054,16 @@ with tab3:
         
         {separator.join(individual_evals)}
         
-        Proporciona una evaluación sintetizada del documento completo para este criterio. Incluye:
-        1. Un análisis global (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos
+        Basándote en estas evaluaciones individuales, proporciona:
+        
+        1. Un análisis EXHAUSTIVO Y DETALLADO (mínimo 5-6 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser extremadamente comprensivo, no sucinto. Proporciona un razonamiento profundo que abarque todos los aspectos relevantes encontrados en el documento completo.
+        
         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
-        3. La evidencia más importante de todo el documento
-        4. Recomendaciones consolidadas para mejorar
-        5. Un nivel de confianza general (0-1)
+        
+        3. TODAS las evidencias importantes del documento. Combina todas las citas textuales de los fragmentos individuales, eliminando duplicados. El objetivo es proporcionar un conjunto completo de evidencia textual (al menos 15-20 párrafos verbatim del documento original).
         
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis global aquí", "score": puntuación_general_entre_1_y_5, "evidence": "evidencia clave consolidada", "recommendations": "recomendaciones consolidadas", "confidence": nivel_de_confianza_entre_0_y_1}}
+        {{"analysis": "tu análisis global extenso y detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "todas las citas textuales combinadas del documento (al menos 15-20 párrafos)"}}
         
         Devuelve solo el objeto JSON, nada más.
         """
@@ -2064,28 +2073,25 @@ with tab3:
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto."},
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones extremadamente detalladas y exhaustivas. Tu objetivo es proporcionar el análisis más completo posible con abundante evidencia textual."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
+                max_tokens=4000  # Increased token limit for detailed responses
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
-            # If synthesis fails, average the scores and combine some text
+            # If synthesis fails, combine results manually
             avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
-            avg_confidence = sum(r.get('confidence', 0) for r in chunk_results) / len(chunk_results)
             combined_analysis = separator.join(r.get('analysis', '') for r in chunk_results)
-            combined_evidence = separator.join(r.get('evidence', '') for r in chunk_results)
-            combined_recommendations = separator.join(r.get('recommendations', '') for r in chunk_results)
+            combined_evidence = separator.join(all_evidence)
             
             return {
                 'score': avg_score,
-                'analysis': f"Síntesis automática (error en LLM: {str(e)}):\n\n{combined_analysis[:500]}...",
-                'evidence': combined_evidence[:300] + "...",
-                'recommendations': combined_recommendations[:300] + "...",
-                'confidence': avg_confidence
+                'analysis': f"Síntesis automática (error en LLM: {str(e)}):\n\n{combined_analysis}",
+                'evidence': combined_evidence
             }
     
     # Document upload interface
@@ -2231,15 +2237,13 @@ with tab3:
                     # Direct evaluation with LLM
                     result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                     
-                    # Create a dictionary with all fields
+                    # Create a dictionary with all fields - Removed confidence and recommendations
                     row_data = {
                         'Criterio': crit,
                         'Score': result.get('score', 0),
-                        'Confianza': result.get('confidence', 0),
                         'Análisis': result.get('analysis', ''),
                         'Evidencia': result.get('evidence', ''),
-                        'Recomendaciones': result.get('recommendations', ''),
-                        'Error': result.get('error', '')
+                        'Error': result.get('error', '') if 'error' in result else ''
                     }
                     
                     rubric_analysis_data.append(row_data)
