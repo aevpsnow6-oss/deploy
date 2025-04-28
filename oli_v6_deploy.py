@@ -2036,23 +2036,24 @@ with tab3:
                                    f"Evidencia: {result.get('evidence', '')}")
         
         # Create a synthesis prompt
+        separator = "\n\n"
         synthesis_prompt = f"""
         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
-        
+
         Aquí están las evaluaciones individuales de cada fragmento:
-        
-        {"\n\n".join(individual_evals)}
-        
+
+        {separator.join(individual_evals)}
+
         Proporciona una evaluación sintetizada del documento completo para este criterio. Incluye:
         1. Un análisis global (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos
         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
         3. La evidencia más importante de todo el documento
         4. Recomendaciones consolidadas para mejorar
         5. Un nivel de confianza general (0-1)
-        
+
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
         {"analysis": "tu análisis global aquí", "score": puntuación_general_entre_1_y_5, "evidence": "evidencia clave consolidada", "recommendations": "recomendaciones consolidadas", "confidence": nivel_de_confianza_entre_0_y_1}
-        
+
         Devuelve solo el objeto JSON, nada más.
         """
         
