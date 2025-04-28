@@ -1562,10 +1562,43 @@ with tab2:
                 else:
                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
                     display_results(results)
-        else:
-            st.warning("Introduzca una consulta para buscar recomendaciones.")
-            
-#==============================================================================================
 # Tab 3: Document Upload and Parsing
 with tab3:
-    st.info("La funcionalidad de subir y procesar documentos aún no está implementada en esta versión.")
+    st.header("Subir y Evaluar Documento DOCX")
+    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+    if uploaded_file is not None:
+        with st.spinner("Procesando documento..."):
+            # Save to temp file
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+            tmp_file.write(uploaded_file.read())
+            tmp_file.close()
+            progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+            try:
+                doc_result = docx2python(tmp_file.name)
+                progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                paragraphs = []
+                toc = []
+                toc_hierarchy = {}
+                for i, (body, *_rest) in enumerate(doc_result.body):
+                    for j, para in enumerate(body):
+                        text = " ".join(para).strip()
+                        if text:
+                            paragraphs.append({
+                                'header_1': f'Section {i+1}',
+                                'content': text,
+                                'index_df': len(paragraphs),
+                            })
+                    toc.append((f'Section {i+1}', 1))
+                    toc_hierarchy.setdefault(1, []).append(f'Section {i+1}')
+                exploded_df = pd.DataFrame(paragraphs)
+                progress_bar.progress(0.6, text="Documento estructurado. Generando embeddings...")
+                store = SimpleHierarchicalStore(use_cache=True)
+                store.add_documents(exploded_df)
+                progress_bar.progress(0.8, text="Embeddings generados. Listo para evaluación por rúbrica.")
+                st.success("Documento procesado exitosamente. Puede proceder a la evaluación por rúbrica.")
+                progress_bar.progress(1.0, text="Procesamiento completo.")
+                add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy)
+            except Exception as e:
+                st.error(f"Error procesando el documento: {e}")
+    else:
+        st.info("Por favor suba un archivo DOCX para comenzar.")
