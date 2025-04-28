@@ -1571,19 +1571,19 @@ with tab3:
     performance_rubric = {}
     parteval_rubric = {}
     try:
-        df_rubric_engagement = pd.read_excel('G:/My Drive/RAG/Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
+        df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_engagement.iterrows():
             indicador = row['Indicador']
             valores = row.drop('Indicador').values.tolist()
             engagement_rubric[indicador] = valores
-        df_rubric_performance = pd.read_excel('G:/My Drive/RAG/Matriz_scores_meta analisis_ESP_v2.xlsx')
+        df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
         for idx, row in df_rubric_performance.iterrows():
             criterio = row['subdim']
             valores = row.drop('subdim').values.tolist()
             performance_rubric[criterio] = valores
-        df_rubric_parteval = pd.read_excel('G:/My Drive/RAG/Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
+        df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_parteval.iterrows():
             indicador = row['Indicador']
