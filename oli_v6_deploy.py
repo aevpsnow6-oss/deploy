@@ -1981,7 +1981,7 @@ with tab3:
         """Evaluate a single text chunk against a criterion"""
         import json
         
-        # Build prompt
+        # Build prompt - Notice the doubled curly braces for JSON example
         prompt = f"""
         Estás evaluando un documento contra un criterio específico.
         
@@ -2001,7 +2001,7 @@ with tab3:
         5. Un nivel de confianza (0-1) que indica qué tan seguro estás de esta evaluación
         
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "evidencia clave del documento", "recommendations": "tus recomendaciones para mejorar", "confidence": nivel_de_confianza_entre_0_y_1}
+        {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "evidencia clave del documento", "recommendations": "tus recomendaciones para mejorar", "confidence": nivel_de_confianza_entre_0_y_1}}
         
         Devuelve solo el objeto JSON, nada más.
         """
@@ -2035,25 +2035,27 @@ with tab3:
                                    f"Análisis: {result.get('analysis', '')}\n" +
                                    f"Evidencia: {result.get('evidence', '')}")
         
-        # Create a synthesis prompt
+        # Define separator outside the f-string to avoid backslash issues
         separator = "\n\n"
+        
+        # Create a synthesis prompt - Notice the doubled curly braces for JSON example
         synthesis_prompt = f"""
         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
-
+        
         Aquí están las evaluaciones individuales de cada fragmento:
-
+        
         {separator.join(individual_evals)}
-
+        
         Proporciona una evaluación sintetizada del documento completo para este criterio. Incluye:
         1. Un análisis global (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos
         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
         3. La evidencia más importante de todo el documento
         4. Recomendaciones consolidadas para mejorar
         5. Un nivel de confianza general (0-1)
-
+        
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {"analysis": "tu análisis global aquí", "score": puntuación_general_entre_1_y_5, "evidence": "evidencia clave consolidada", "recommendations": "recomendaciones consolidadas", "confidence": nivel_de_confianza_entre_0_y_1}
-
+        {{"analysis": "tu análisis global aquí", "score": puntuación_general_entre_1_y_5, "evidence": "evidencia clave consolidada", "recommendations": "recomendaciones consolidadas", "confidence": nivel_de_confianza_entre_0_y_1}}
+        
         Devuelve solo el objeto JSON, nada más.
         """
         
@@ -2074,9 +2076,9 @@ with tab3:
             # If synthesis fails, average the scores and combine some text
             avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
             avg_confidence = sum(r.get('confidence', 0) for r in chunk_results) / len(chunk_results)
-            combined_analysis = "\n\n".join(r.get('analysis', '') for r in chunk_results)
-            combined_evidence = "\n\n".join(r.get('evidence', '') for r in chunk_results)
-            combined_recommendations = "\n\n".join(r.get('recommendations', '') for r in chunk_results)
+            combined_analysis = separator.join(r.get('analysis', '') for r in chunk_results)
+            combined_evidence = separator.join(r.get('evidence', '') for r in chunk_results)
+            combined_recommendations = separator.join(r.get('recommendations', '') for r in chunk_results)
             
             return {
                 'score': avg_score,
