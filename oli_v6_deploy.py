@@ -1925,7 +1925,7 @@ with tab3:
         return pd.DataFrame(rows)
     
     # Function to split text into chunks respecting the token limit
-    def split_text_into_chunks(text, max_tokens=6000):  # Using 6000 to leave room for prompt and completion
+    def split_text_into_chunks(text, max_tokens=6500):  # Reduced from 7000 to leave more room
         import re
         # Split by paragraphs first
         paragraphs = text.split('\n')
@@ -1976,12 +1976,12 @@ with tab3:
         # Synthesize results from all chunks
         return synthesize_evaluations(chunk_results, criterion, descriptions)
     
-    # Function to evaluate a single text chunk - Modified for expanded analysis and evidence
+    # Function to evaluate a single text chunk - Modified with reduced token limit
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
         """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
         import json
         
-        # Build prompt - Updated to request detailed analysis and extensive evidence
+        # Build prompt - Updated with realistic constraints
         prompt = f"""
         Estás evaluando un documento contra un criterio específico.
         
@@ -1995,28 +1995,28 @@ with tab3:
         
         Analiza qué tan bien el documento cumple con este criterio. Proporciona:
         
-        1. Un análisis EXTENSO Y DETALLADO (mínimo 4-5 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Tu análisis debe ser comprensivo, no sucinto. Proporciona un razonamiento profundo y multifacético que abarque todos los aspectos del criterio.
+        1. Un análisis DETALLADO (2-3 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Proporciona un razonamiento profundo que abarque los aspectos del criterio.
         
         2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
         
-        3. AMPLIA EVIDENCIA del documento que respalde tu puntuación. Incluye MÚLTIPLES (al menos 10-15) citas textuales completas del documento, indicando claramente cómo cada fragmento específico contribuye a tu evaluación. No resumas la evidencia - proporciona los párrafos exactos del texto original.
+        3. EVIDENCIA del documento que respalde tu puntuación. Incluye entre 5-8 citas textuales del documento, indicando cómo cada fragmento contribuye a tu evaluación.
         
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis extenso y detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "múltiples citas textuales completas del documento (al menos 10-15 párrafos)"}}
+        {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "citas textuales del documento (5-8 párrafos)"}}
         
         Devuelve solo el objeto JSON, nada más.
         """
         
-        # Call LLM using OpenAI v0.28 syntax
+        # Call LLM using OpenAI v0.28 syntax with reduced token limit
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis extremadamente detallados y exhaustivos, basados en criterios específicos. Tu análisis es extenso y tu evidencia muy completa, citando amplios fragmentos verbatim del texto original."},
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=1000  # Increased token limit for detailed responses
+                max_tokens=2000  # Reduced token limit
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
@@ -2024,7 +2024,7 @@ with tab3:
         except Exception as e:
             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
     
-    # Function to synthesize evaluations - Modified for expanded analysis and evidence
+    # Function to synthesize evaluations - Modified with reduced token limit
     def synthesize_evaluations(chunk_results, criterion, descriptions):
         """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
         import json
@@ -2046,7 +2046,7 @@ with tab3:
         # Define separator outside the f-string to avoid backslash issues
         separator = "\n\n"
         
-        # Create a synthesis prompt - Updated for expanded results
+        # Create a synthesis prompt - Updated with realistic constraints
         synthesis_prompt = f"""
         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
         
@@ -2056,42 +2056,57 @@ with tab3:
         
         Basándote en estas evaluaciones individuales, proporciona:
         
-        1. Un análisis EXHAUSTIVO Y DETALLADO (mínimo 5-6 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser extremadamente comprensivo, no sucinto. Proporciona un razonamiento profundo que abarque todos los aspectos relevantes encontrados en el documento completo.
+        1. Un análisis DETALLADO (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser comprensivo y abarcar los aspectos relevantes encontrados en el documento.
         
         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
         
-        3. TODAS las evidencias importantes del documento. Combina todas las citas textuales de los fragmentos individuales, eliminando duplicados. El objetivo es proporcionar un conjunto completo de evidencia textual (al menos 8-10 párrafos verbatim del documento original).
+        3. Las evidencias más importantes del documento. Selecciona las 8-10 citas textuales más relevantes de los fragmentos individuales.
         
         Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis global extenso y detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "todas las citas textuales combinadas del documento (al menos 8-10 párrafos)"}}
+        {{"analysis": "tu análisis global detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "las citas textuales más relevantes del documento (8-10 párrafos)"}}
         
         Devuelve solo el objeto JSON, nada más.
         """
         
-        # Call LLM for synthesis using OpenAI v0.28 syntax
+        # Call LLM for synthesis using OpenAI v0.28 syntax with reduced token limit
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones extremadamente detalladas y exhaustivas. Tu objetivo es proporcionar el análisis más completo posible con abundante evidencia textual."},
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=1000  # Increased token limit for detailed responses
+                max_tokens=2000  # Reduced token limit
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
-            # If synthesis fails, combine results manually
+            # If synthesis fails, combine results manually in a more limited way
             avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
-            combined_analysis = separator.join(r.get('analysis', '') for r in chunk_results)
-            combined_evidence = separator.join(all_evidence)
+            # Take only the first paragraph of each analysis to avoid token limits
+            analysis_parts = []
+            for r in chunk_results:
+                analysis = r.get('analysis', '')
+                first_para = analysis.split('\n\n')[0] if '\n\n' in analysis else analysis
+                analysis_parts.append(first_para)
+            
+            # Take only the first few evidence items
+            evidence_parts = []
+            evidence_count = 0
+            for evidence in all_evidence:
+                parts = evidence.split('\n\n')
+                # Add up to 2 evidence parts per chunk
+                for part in parts[:2]:
+                    if evidence_count < 8:  # Limit to 8 total evidence parts
+                        evidence_parts.append(part)
+                        evidence_count += 1
             
             return {
                 'score': avg_score,
-                'analysis': f"Síntesis automática (error en LLM: {str(e)}):\n\n{combined_analysis}",
-                'evidence': combined_evidence
+                'analysis': separator.join(analysis_parts),
+                'evidence': separator.join(evidence_parts)
             }
     
     # Document upload interface
