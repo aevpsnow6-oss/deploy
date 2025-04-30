@@ -21,6 +21,14 @@ import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import zipfile
 
+# --- Utility function for Excel export ---
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Filtered Data')
+    processed_data = output.getvalue()
+    return processed_data
+
 # Use environment variables for API keys
 # For local development - use .env file or set environment variables
 # For Streamlit Cloud - set these in the app settings
@@ -479,9 +487,6 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                         st.error(f"Error processing document: {str(e)}")
                         import traceback
                         st.error(traceback.format_exc())
-
-    else:
-        st.info("Por favor suba un archivo DOCX para comenzar.")
 
 # ============= VISUALIZATION FUNCTIONS =============
 
@@ -1524,6 +1529,11 @@ with tab1:
 
     # Button to download the filtered dataframe as Excel file
     if st.button('Descargar Datos Filtrados'):
+        # Sanitize 'Evidencia' column to avoid ArrowInvalid errors
+        if 'Evidencia' in filtered_df.columns:
+            filtered_df['Evidencia'] = filtered_df['Evidencia'].apply(
+                lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x)
+            )
         filtered_data = to_excel(filtered_df)
         st.download_button(label='📥 Descargar Excel', data=filtered_data, file_name='filtered_data.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
