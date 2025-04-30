@@ -2016,7 +2016,7 @@ with tab3:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=2000  # Reduced token limit
+                max_tokens=1000  # Reduced token limit
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
@@ -2077,7 +2077,7 @@ with tab3:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=2000  # Reduced token limit
+                max_tokens=1000  # Reduced token limit
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
