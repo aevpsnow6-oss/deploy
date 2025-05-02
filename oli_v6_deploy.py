@@ -1399,16 +1399,29 @@ with tab1:
     if not filtered_df.empty:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
         st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
-        fig1, ax1 = plt.subplots(figsize=(18, 17))
-        country_counts.plot(kind='barh', ax=ax1)
-        ax1.set_xlabel('Número de Recomendaciones', fontsize=34)
-        ax1.set_ylabel('País', fontsize=34)
-        ax1.set_title('', fontsize=38)  # Remove internal title
-        ax1.tick_params(axis='x', labelsize=28)
-        ax1.tick_params(axis='y', labelsize=28)
-        for i in ax1.patches:
-            ax1.text(i.get_width() + 0.3, i.get_y() + 0.5, 
-                    str(round((i.get_width()), 2)), fontsize=28, color='dimgrey')
+        # Interactive Plotly horizontal bar chart
+        fig1 = go.Figure()
+        fig1.add_trace(go.Bar(
+            y=country_counts.index.tolist(),
+            x=country_counts.values.tolist(),
+            orientation='h',
+            text=country_counts.values.tolist(),
+            textposition='auto',
+            marker_color='#3498db',
+            hovertemplate='%{y}: %{x} recomendaciones'
+        ))
+        fig1.update_layout(
+            xaxis_title='Número de Recomendaciones',
+            yaxis_title='País',
+            margin=dict(t=30, l=120, r=30, b=30),
+            font=dict(size=28),
+            height=600,
+            plot_bgcolor='white',
+            showlegend=False
+        )
+        fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+        fig1.update_yaxes(showgrid=False)
+        st.plotly_chart(fig1, use_container_width=True)
 
         # Treemap: Recommendations by Dimension
         dimension_counts = filtered_df.groupby('dimension').agg({
@@ -1438,18 +1451,28 @@ with tab1:
         # Plot for recommendations by year
         year_counts = filtered_df_unique['year'].value_counts().sort_index()
         st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por Año</h3>", unsafe_allow_html=True)
-        fig2, ax2 = plt.subplots(figsize=(18, 14))
-        year_counts.plot(kind='bar', ax=ax2)
-        ax2.set_title('', fontsize=38)  # Remove internal title
-        ax2.set_xlabel('Año', fontsize=34)
-        ax2.set_ylabel('Número de Recomendaciones', fontsize=34)
-        ax2.tick_params(axis='x', labelsize=28)
-        ax2.tick_params(axis='y', labelsize=28)
-        ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
-        # Add value labels on top of each bar
-        for bar in ax2.patches:
-            ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
-                    str(int(bar.get_height())), ha='center', fontsize=28, color='dimgrey')
+        # Interactive Plotly vertical bar chart
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(
+            x=year_counts.index.astype(str).tolist(),
+            y=year_counts.values.tolist(),
+            text=year_counts.values.tolist(),
+            textposition='auto',
+            marker_color='#3498db',
+            hovertemplate='Año %{x}: %{y} recomendaciones'
+        ))
+        fig2.update_layout(
+            xaxis_title='Año',
+            yaxis_title='Número de Recomendaciones',
+            margin=dict(t=30, l=30, r=30, b=90),
+            font=dict(size=28),
+            height=600,
+            plot_bgcolor='white',
+            showlegend=False
+        )
+        fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45)
+        fig2.update_yaxes(showgrid=True, gridcolor='LightGray')
+        st.plotly_chart(fig2, use_container_width=True)
 
         # Treemap: Recommendations by Subdimension
         subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
