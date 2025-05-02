@@ -2226,7 +2226,15 @@ with tab3:
     # Document upload interface
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
     
-    # Unified process and evaluate button
+    # Move instructions/info to the top of the tab
+    st.info("""
+    **Instrucciones:**
+    1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
+    2. Revise los resultados de cada rúbrica en la tabla interactiva.
+    3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
+    4. Descargue todos los resultados y evidencias en un archivo ZIP.
+    """)
+    # Unified process, evaluate, and download button
     st.markdown("#### Procesamiento y Evaluación de Documento")
     st.markdown('---')
     if st.button('Procesar y Evaluar'):
@@ -2376,9 +2384,8 @@ with tab3:
 
                     # --- Interactive Bar Plot for Rubric Scores by Dimension/Subdimension ---
                     st.markdown(f"**Visualización de Puntuaciones por Dimensión/Subdimensión para: {rubric_name}**")
-                    # Assume rubric_analysis_df has 'Criterio', 'Score', 'Análisis', 'Evidencia', 'Rúbrica', 'Error'
-                    # Try to extract dimension/subdimension if present in 'Criterio' (e.g., 'Dimension: Subdimension - Criterio')
                     import re
+                    import plotly.express as px
                     def split_criterion(crit):
                         match = re.match(r"(.+?)\s*[:-]\s*(.+)", str(crit))
                         if match:
@@ -2391,20 +2398,32 @@ with tab3:
                     rubric_analysis_df[['Dimensión', 'Subdimensión']] = rubric_analysis_df['Criterio'].apply(lambda x: pd.Series(split_criterion(x)))
                     # Aggregate by Dimensión/Subdimensión
                     dim_scores = rubric_analysis_df.groupby('Dimensión', dropna=False)['Score'].mean().reset_index()
-                    subdim_scores = rubric_analysis_df.groupby(['Dimensión','Subdimensión'], dropna=False)['Score'].mean().reset_index()
-                    import plotly.express as px
-                    # Bar plot for dimensions
-                    if not dim_scores['Dimensión'].isnull().all():
-                        fig_dim = px.bar(dim_scores, x='Dimensión', y='Score', title=f'Puntuación Promedio por Dimensión ({rubric_name})',
-                                         color='Score', color_continuous_scale='Blues', text_auto='.2f', height=350)
-                        fig_dim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Dimensión', yaxis_title='Puntuación')
-                        st.plotly_chart(fig_dim, use_container_width=True)
-                    # Bar plot for subdimensions
-                    if not subdim_scores['Subdimensión'].isnull().all():
-                        fig_subdim = px.bar(subdim_scores, x='Subdimensión', y='Score', color='Dimensión', barmode='group',
-                                            title=f'Puntuación Promedio por Subdimensión ({rubric_name})', text_auto='.2f', height=350)
-                        fig_subdim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Subdimensión', yaxis_title='Puntuación')
-                        st.plotly_chart(fig_subdim, use_container_width=True)
+                    # --- Fix for Performance plot: Use correct axis and grouping logic ---
+                    if rubric_name.lower().startswith('desempeño') or 'performance' in rubric_name.lower():
+                        # For Performance, ensure correct axis and group handling
+                        subdim_scores = rubric_analysis_df.groupby(['Subdimensión','Dimensión'], dropna=False)['Score'].mean().reset_index()
+                        if not dim_scores['Dimensión'].isnull().all():
+                            fig_dim = px.bar(dim_scores, x='Dimensión', y='Score', title=f'Puntuación Promedio por Dimensión ({rubric_name})',
+                                             color='Score', color_continuous_scale='Blues', text_auto='.2f', height=350)
+                            fig_dim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Dimensión', yaxis_title='Puntuación')
+                            st.plotly_chart(fig_dim, use_container_width=True)
+                        if not subdim_scores['Subdimensión'].isnull().all():
+                            fig_subdim = px.bar(subdim_scores, x='Subdimensión', y='Score', color='Dimensión', barmode='group',
+                                                title=f'Puntuación Promedio por Subdimensión ({rubric_name})', text_auto='.2f', height=350)
+                            fig_subdim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Subdimensión', yaxis_title='Puntuación')
+                            st.plotly_chart(fig_subdim, use_container_width=True)
+                    else:
+                        subdim_scores = rubric_analysis_df.groupby(['Dimensión','Subdimensión'], dropna=False)['Score'].mean().reset_index()
+                        if not dim_scores['Dimensión'].isnull().all():
+                            fig_dim = px.bar(dim_scores, x='Dimensión', y='Score', title=f'Puntuación Promedio por Dimensión ({rubric_name})',
+                                             color='Score', color_continuous_scale='Blues', text_auto='.2f', height=350)
+                            fig_dim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Dimensión', yaxis_title='Puntuación')
+                            st.plotly_chart(fig_dim, use_container_width=True)
+                        if not subdim_scores['Subdimensión'].isnull().all():
+                            fig_subdim = px.bar(subdim_scores, x='Subdimensión', y='Score', color='Dimensión', barmode='group',
+                                                title=f'Puntuación Promedio por Subdimensión ({rubric_name})', text_auto='.2f', height=350)
+                            fig_subdim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Subdimensión', yaxis_title='Puntuación')
+                            st.plotly_chart(fig_subdim, use_container_width=True)
                     st.markdown('---')
 
                     # Show evidence as a separate table for user clarity
@@ -2413,15 +2432,6 @@ with tab3:
                         st.dataframe(rubric_analysis_df[['Criterio','Evidencia']], use_container_width=True)
                 else:
                     st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
-
-            # UI instructions for unified workflow and visualizations
-            st.info("""
-            **Instrucciones:**
-            1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
-            2. Revise los resultados de cada rúbrica en la tabla interactiva.
-            3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
-            4. Descargue todos los resultados y evidencias en un archivo ZIP.
-            """)
             # Provide a zip download for both results
             import io, zipfile
             zip_buffer = io.BytesIO()
