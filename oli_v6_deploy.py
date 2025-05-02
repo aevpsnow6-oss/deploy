@@ -1452,19 +1452,21 @@ with tab1:
                 marker_color='#3498db',
                 hovertemplate='%{y}: %{x} recomendaciones'
             ))
+            # Dynamic height: 60px per country, min 350, max 700
+            bar_height = min(max(len(country_counts) * 60, 350), 700)
             fig1.update_layout(
                 xaxis_title='Número de Recomendaciones',
                 yaxis_title='País',
-                margin=dict(t=30, l=120, r=30, b=30),
-                font=dict(size=28),
-                height=600,
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=bar_height,
                 plot_bgcolor='white',
                 showlegend=False
             )
             fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
             fig1.update_yaxes(showgrid=False)
             st.plotly_chart(fig1, use_container_width=True)
-        with fig_col2:
+        with row1_col2:
             st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
             year_counts = filtered_df_unique['year'].value_counts().sort_index()
             fig2 = go.Figure()
@@ -1479,9 +1481,9 @@ with tab1:
             fig2.update_layout(
                 xaxis_title='Año',
                 yaxis_title='Número de Recomendaciones',
-                margin=dict(t=30, l=30, r=30, b=90),
-                font=dict(size=28),
-                height=600,
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=500,
                 plot_bgcolor='white',
                 showlegend=False
             )
