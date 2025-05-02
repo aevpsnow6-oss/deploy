@@ -1232,7 +1232,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- KPI Metrics Row ---
-# Ensure filtered_df_unique is defined
+# Ensure filtered_df and filtered_df_unique are defined
+filtered_df = df.copy()
 filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
 total_recs = len(filtered_df_unique)
 num_countries = filtered_df_unique['Country(ies)'].nunique()
