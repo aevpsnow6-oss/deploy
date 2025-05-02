@@ -654,11 +654,14 @@ def create_composition_plot(filtered_df, var_name, title):
     # Harmonize for 'dimension' and 'rec_intervention_approach' (Enfoque de Intervención)
     filtered_df = filtered_df.copy()
     if var_name == 'dimension':
-        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'nan': None, 'none': None, 'processes': 'process', 'process': 'process'})
         filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['dimension'].notna() & (filtered_df['dimension'] != 'None')]
     elif var_name == 'rec_intervention_approach':
-        filtered_df[var_name] = filtered_df[var_name].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df[var_name] = filtered_df[var_name].astype(str).str.strip().str.lower().replace({'nan': None, 'none': None, 'processes': 'process', 'process': 'process'})
         filtered_df[var_name] = filtered_df[var_name].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df[var_name].notna() & (filtered_df[var_name] != 'None')]
+
     # Group by year and variable, then count
     var_by_year = filtered_df.groupby(['year', var_name]).size().unstack(fill_value=0)
     # Calculate percentages
@@ -692,7 +695,7 @@ def create_composition_plot(filtered_df, var_name, title):
     
     # Update layout
     # Remove undefined or empty title
-    layout_title = title if title and title != 'undefined' else None
+    layout_title = title if title and str(title).strip().lower() != 'undefined' and str(title).strip() != '' else None
     fig.update_layout(
         title=layout_title,
         xaxis_title='Año',
