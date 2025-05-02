@@ -2335,38 +2335,54 @@ with tab3:
             document_text = st.session_state.get('full_document_text', '')
             if not document_text:
                 st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
-                return
+                st.stop()
             rubrics = [
                 ("Participación (Engagement)", engagement_rubric),
                 ("Desempeño (Performance)", performance_rubric)
             ]
             rubric_results = []
-            # Evaluate both rubrics and collect results in memory
+            # Evaluate both rubrics and collect results in memory (parallelized)
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            MAX_WORKERS = 12
+            def eval_one_criterion(args):
+                crit, descriptions, rubric_name = args
+                try:
+                    result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                    return {
+                        'Criterio': crit,
+                        'Score': result.get('score', 0),
+                        'Análisis': result.get('analysis', ''),
+                        'Evidencia': result.get('evidence', ''),
+                        'Error': result.get('error', '') if 'error' in result else '',
+                        'Rúbrica': rubric_name
+                    }
+                except Exception as e:
+                    return {
+                        'Criterio': crit,
+                        'Score': 0,
+                        'Análisis': '',
+                        'Evidencia': '',
+                        'Error': str(e),
+                        'Rúbrica': rubric_name
+                    }
+
             for rubric_name, rubric_dict in rubrics:
                 rubric_analysis_data = []
                 n_criteria = len(rubric_dict)
                 progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
                 with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
-                    for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
-                        try:
-                            result = evaluate_criterion_with_llm(document_text, crit, descriptions)
-                            row_data = {
-                                'Criterio': crit,
-                                'Score': result.get('score', 0),
-                                'Análisis': result.get('analysis', ''),
-                                'Evidencia': result.get('evidence', ''),
-                                'Error': result.get('error', '') if 'error' in result else ''
-                            }
-                        except Exception as e:
-                            row_data = {
-                                'Criterio': crit,
-                                'Score': 0,
-                                'Análisis': '',
-                                'Evidencia': '',
-                                'Error': str(e)
-                            }
-                        rubric_analysis_data.append(row_data)
-                        progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
+                    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                        futures = {
+                            executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
+                            for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+                        }
+                        completed = 0
+                        for future in as_completed(futures):
+                            result = future.result()
+                            rubric_analysis_data.append(result)
+                            completed += 1
+                            crit, idx = futures[future]
+                            progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
                 rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
             # After both rubrics are evaluated, update the UI
             for rubric_name, rubric_analysis_df in rubric_results:
