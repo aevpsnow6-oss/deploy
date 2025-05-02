@@ -651,10 +651,14 @@ def create_composition_plot(filtered_df, var_name, title):
     if var_name not in filtered_df.columns or filtered_df.empty:
         st.warning(f"No data available for {var_name} with the selected filters.")
         return
-    # Harmonize 'process' and 'processes' into 'Process' if plotting by dimension
+    # Harmonize for 'dimension' and 'rec_intervention_approach' (Enfoque de Intervención)
+    filtered_df = filtered_df.copy()
     if var_name == 'dimension':
-        filtered_df = filtered_df.copy()
-        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
+    elif var_name == 'rec_intervention_approach':
+        filtered_df[var_name] = filtered_df[var_name].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df[var_name] = filtered_df[var_name].replace({'process': 'Process'})
     # Group by year and variable, then count
     var_by_year = filtered_df.groupby(['year', var_name]).size().unstack(fill_value=0)
     # Calculate percentages
@@ -687,8 +691,10 @@ def create_composition_plot(filtered_df, var_name, title):
         cumulative['cum'] += var_by_year_pct[category]
     
     # Update layout
+    # Remove undefined or empty title
+    layout_title = title if title and title != 'undefined' else None
     fig.update_layout(
-        title=title,
+        title=layout_title,
         xaxis_title='Año',
         yaxis_title='Porcentaje (%)',
         barmode='stack',
