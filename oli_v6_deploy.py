@@ -1286,6 +1286,12 @@ tab1, tab2, tab3 = st.tabs(["Análisis de Recomendaciones",
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
+    st.markdown("""
+    <h3 style='color:#3498db; margin-top:0;'>¿Cómo funciona el análisis de textos?</h3>
+    <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+    Selecciona las fuentes de texto relevantes y personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, acciones recomendadas y actores clave de las recomendaciones seleccionadas, usando IA avanzada. El resultado será un resumen claro y útil para la toma de decisiones.
+    </div>
+    """, unsafe_allow_html=True)
     st.header("Análisis de Textos y Recomendaciones Similares")
 
     # Sidebar for filters
@@ -1551,9 +1557,16 @@ with tab1:
     else:
         st.write("No data available for the selected filters.")
 
-    # Add a text area for the user to input the custom combine template part
-    user_template_part = st.sidebar.text_area("Instrucción de análisis", 
-                                          value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""")
+    # Add a text area for the user to input the custom combine template part (now in main panel)
+    st.markdown("""
+    <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+    """, unsafe_allow_html=True)
+    user_template_part = st.text_area(
+        "",
+        value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""",
+        height=180,
+        key="user_template_part_main"
+    )
 
     combine_template_prefix = "The following is a set of summaries:\n{text}\n"
 
