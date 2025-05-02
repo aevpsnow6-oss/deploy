@@ -1500,11 +1500,14 @@ with tab1:
         # Second row: Treemap by Dimension (full width)
 
         st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
-        # Harmonize 'process' and 'processes' 
-        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        import numpy as np
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
         filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
-        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df = filtered_df[filtered_df['dimension'].notna()]
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
         filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
+
         dimension_counts = filtered_df.groupby('dimension').agg({
             'index_df': 'nunique'
         }).reset_index()
