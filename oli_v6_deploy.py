@@ -1429,14 +1429,14 @@ with tab1:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
         fig1, ax1 = plt.subplots(figsize=(18, 17))
         country_counts.plot(kind='barh', ax=ax1)
-        ax1.set_xlabel('Número de Recomendaciones', fontsize=18)
-        ax1.set_ylabel('País', fontsize=20)
-        ax1.set_title('Número de Recomendaciones por País', fontsize=18)
-        ax1.tick_params(axis='x', labelsize=14)
-        ax1.tick_params(axis='y', labelsize=14)
+        ax1.set_xlabel('Número de Recomendaciones', fontsize=26)
+        ax1.set_ylabel('País', fontsize=26)
+        ax1.set_title('Número de Recomendaciones por País', fontsize=28)
+        ax1.tick_params(axis='x', labelsize=20)
+        ax1.tick_params(axis='y', labelsize=20)
         for i in ax1.patches:
             ax1.text(i.get_width() + 0.3, i.get_y() + 0.5, 
-                    str(round((i.get_width()), 2)), fontsize=14, color='dimgrey')
+                    str(round((i.get_width()), 2)), fontsize=20, color='dimgrey')
 
         # Treemap: Recommendations by Dimension
         dimension_counts = filtered_df.groupby('dimension').agg({
@@ -1446,21 +1446,32 @@ with tab1:
         dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
         dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
 
-        fig3 = px.treemap(dimension_counts, path=['dimension'], values='index_df',
-                        title='Composición de Recomendaciones por Dimensión',
-                        hover_data={'text': True, 'index_df': False, 'percentage': False},
-                        custom_data=['text'])
-
-        fig3.update_traces(textinfo='label+value', hovertemplate='%{customdata[0]}')
-        fig3.update_layout(margin=dict(t=50, l=25, r=25, b=25), width=800, height=400)
+        fig3 = px.treemap(
+            dimension_counts, path=['dimension'], values='index_df',
+            title='Composición de Recomendaciones por Dimensión',
+            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            custom_data=['text']
+        )
+        fig3.update_traces(
+            textinfo='label+value', hovertemplate='%{customdata[0]}',
+            textfont_size=24
+        )
+        fig3.update_layout(
+            margin=dict(t=50, l=25, r=25, b=25), width=800, height=400,
+            title_font_size=28,
+            font=dict(size=22),
+            legend_font_size=22
+        )
 
         # Plot for recommendations by year
         year_counts = filtered_df_unique['year'].value_counts().sort_index()
         fig2, ax2 = plt.subplots(figsize=(18, 14))
         year_counts.plot(kind='bar', ax=ax2)
-        ax2.set_title('Número de Recomendaciones por Año', fontsize = 20)
-        ax2.set_xlabel('Año', fontsize = 20)
-        ax2.set_ylabel('Número de Recomendaciones')
+        ax2.set_title('Número de Recomendaciones por Año', fontsize=28)
+        ax2.set_xlabel('Año', fontsize=24)
+        ax2.set_ylabel('Número de Recomendaciones', fontsize=24)
+        ax2.tick_params(axis='x', labelsize=20)
+        ax2.tick_params(axis='y', labelsize=20)
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
 
         # Treemap: Recommendations by Subdimension
@@ -1471,13 +1482,22 @@ with tab1:
         subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
         subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10  # Scale font size
 
-        fig4 = px.treemap(subdimension_counts, path=['dimension', 'subdim'], values='index_df',
-                        title='Composición de Recomendaciones por Subdimensión',
-                        hover_data={'text': True, 'index_df': False, 'percentage': False},
-                        custom_data=['text'])
-
-        fig4.update_traces(textinfo='label+value', hovertemplate='%{customdata[0]}')
-        fig4.update_layout(margin=dict(t=50, l=25, r=25, b=25), width=800, height=400)
+        fig4 = px.treemap(
+            subdimension_counts, path=['dimension', 'subdim'], values='index_df',
+            title='Composición de Recomendaciones por Subdimensión',
+            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            custom_data=['text']
+        )
+        fig4.update_traces(
+            textinfo='label+value', hovertemplate='%{customdata[0]}',
+            textfont_size=24
+        )
+        fig4.update_layout(
+            margin=dict(t=50, l=25, r=25, b=25), width=800, height=400,
+            title_font_size=28,
+            font=dict(size=22),
+            legend_font_size=22
+        )
 
         # Display plots side by side
         col1, col2 = st.columns(2)
