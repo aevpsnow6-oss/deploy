@@ -899,95 +899,66 @@ def add_advanced_visualization_section(filtered_df):
     Adds an advanced visualization section to the Streamlit app.
     """
     st.markdown("#### Visualizaciones Avanzadas")
-    
-    # Create tabs for different visualization types
-    viz_tabs = st.tabs([
-        "Evolución de Puntuaciones", 
-        "Composición por Variable", 
-        # "Composición de Etiquetas",
-        "Clasificación de Dificultad"
-    ])
-    
-    # Tab 1: Score Evolution
-    with viz_tabs[0]:
-        st.markdown("##### Evolución de Puntuaciones Promedio por Año")
-        score_fig = plot_score_evolution(filtered_df)
-        if score_fig:
-            st.plotly_chart(score_fig, use_container_width=True)
-    
-    # Tab 2: Variable Composition
-    with viz_tabs[1]:
-        st.markdown("##### Composición por Variable")
-        
-        # List of variables that can be visualized
-        available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
-        
-        if available_vars:
-            var_mapping = {
-                'rec_innovation_score': 'Nivel de Innovación',
-                'rec_precision_and_clarity': 'Precisión y Claridad',
-                'rec_expected_impact': 'Impacto Esperado',
-                'rec_intervention_approach': 'Enfoque de Intervención',
-                'rec_operational_feasibility': 'Factibilidad Operativa',
-                'rec_timeline': 'Plazo de Implementación'
+
+    # --- Score Evolution ---
+    st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
+    score_fig = plot_score_evolution(filtered_df)
+    if score_fig:
+        # Remove inline title from plot
+        score_fig.update_layout(title=None)
+        st.plotly_chart(score_fig, use_container_width=True)
+
+    # --- Variable Composition ---
+    st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
+    available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
+    if available_vars:
+        var_mapping = {
+            'rec_innovation_score': 'Nivel de Innovación',
+            'rec_precision_and_clarity': 'Precisión y Claridad',
+            'rec_expected_impact': 'Impacto Esperado',
+            'rec_intervention_approach': 'Enfoque de Intervención',
+            'rec_operational_feasibility': 'Factibilidad Operativa',
+            'rec_timeline': 'Plazo de Implementación'
+        }
+        var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
+        if var_options:
+            selected_var_label = st.selectbox(
+                "Seleccione una variable para visualizar:", 
+                options=list(var_options.keys())
+            )
+            selected_var = var_options[selected_var_label]
+            var_titles = {
+                'rec_innovation_score': 'Composición de Niveles de Innovación por Año',
+                'rec_precision_and_clarity': 'Composición de Niveles de Precisión y Claridad por Año',
+                'rec_expected_impact': 'Composición de Niveles de Impacto Esperado por Año',
+                'rec_intervention_approach': 'Composición de Enfoques de Intervención por Año',
+                'rec_operational_feasibility': 'Composición de Niveles de Factibilidad Operativa por Año',
+                'rec_timeline': 'Composición de Plazos de Implementación por Año'
             }
-            
-            # Filter to only variables that exist in the dataframe
-            var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
-            
-            if var_options:
-                selected_var_label = st.selectbox(
-                    "Seleccione una variable para visualizar:", 
-                    options=list(var_options.keys())
-                )
-                
-                selected_var = var_options[selected_var_label]
-                
-                var_titles = {
-                    'rec_innovation_score': 'Composición de Niveles de Innovación por Año',
-                    'rec_precision_and_clarity': 'Composición de Niveles de Precisión y Claridad por Año',
-                    'rec_expected_impact': 'Composición de Niveles de Impacto Esperado por Año',
-                    'rec_intervention_approach': 'Composición de Enfoques de Intervención por Año',
-                    'rec_operational_feasibility': 'Composición de Niveles de Factibilidad Operativa por Año',
-                    'rec_timeline': 'Composición de Plazos de Implementación por Año'
-                }
-                
-                composition_fig = create_composition_plot(
-                    filtered_df, 
-                    selected_var, 
-                    var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
-                )
-                
-                if composition_fig:
-                    st.plotly_chart(composition_fig, use_container_width=True)
-            else:
-                st.warning("No se encontraron variables de composición en los datos filtrados.")
+            composition_fig = create_composition_plot(
+                filtered_df, 
+                selected_var, 
+                var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
+            )
+            if composition_fig:
+                composition_fig.update_layout(title=None)
+                st.plotly_chart(composition_fig, use_container_width=True)
         else:
             st.warning("No se encontraron variables de composición en los datos filtrados.")
-    
-    # # Tab 3: Tag Composition
-    # with viz_tabs[2]:
-    #     st.markdown("##### Evolución de la Composición de Etiquetas")
-        
-    #     if 'tags' in filtered_df.columns:
-    #         top_n = st.slider("Número de etiquetas principales a mostrar:", min_value=3, max_value=15, value=8)
-    #         tag_fig = create_tag_composition_plot(filtered_df, top_n)
-    #         if tag_fig:
-    #             st.plotly_chart(tag_fig, use_container_width=True)
-    #     else:
-    #         st.warning("No se encontraron datos de etiquetas en los datos filtrados.")
-    
-    # Tab 4: Difficulty Classification
-    with viz_tabs[2]:
-        st.markdown("##### Clasificación de Dificultad de Rechazo")
-        
-        if 'clean_tags' in filtered_df.columns:
-            top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
-            diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
-            if diff_fig:
-                st.plotly_chart(diff_fig, use_container_width=True)
-        else:
-            st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+    else:
+        st.warning("No se encontraron variables de composición en los datos filtrados.")
+
+    # --- Difficulty Classification ---
+    st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
+    if 'clean_tags' in filtered_df.columns:
+        top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
+        diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
+        if diff_fig:
+            diff_fig.update_layout(title=None)
+            st.plotly_chart(diff_fig, use_container_width=True)
+    else:
+        st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+
 
 # ============= DATA LOADING FUNCTIONS =============
 
