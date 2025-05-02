@@ -1225,6 +1225,7 @@ def summarize_text(text, prompt_template):
 # ============= MAIN APP CODE =============
 
 # Set page config
+st.set_page_config(layout="wide")
 st.markdown("""
     <h4 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h4>
     <hr style='border-top: 2px solid #3498db;'>
@@ -1432,16 +1433,14 @@ with tab1:
     # Display plots if data is available
     if not filtered_df.empty:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
-        # st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
-        # Arrange figures in a 2x2 dashboard layout with clear, concise subtitles
+        # Responsive dashboard layout for all major plots
         st.markdown("""
             <style>
             .dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}
             </style>
         """, unsafe_allow_html=True)
-        fig_col1, fig_col2 = st.columns(2)
-        # First row: Bar by Country | Bar by Year
-        with fig_col1:
+        row1_col1, row1_col2 = st.columns(2)
+        with row1_col1:
             st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
             fig1 = go.Figure()
             fig1.add_trace(go.Bar(
