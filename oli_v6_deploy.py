@@ -1398,11 +1398,12 @@ with tab1:
     # Display plots if data is available
     if not filtered_df.empty:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
+        st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
         fig1, ax1 = plt.subplots(figsize=(18, 17))
         country_counts.plot(kind='barh', ax=ax1)
         ax1.set_xlabel('Número de Recomendaciones', fontsize=34)
         ax1.set_ylabel('País', fontsize=34)
-        ax1.set_title('Número de Recomendaciones por País', fontsize=38)
+        ax1.set_title('', fontsize=38)  # Remove internal title
         ax1.tick_params(axis='x', labelsize=28)
         ax1.tick_params(axis='y', labelsize=28)
         for i in ax1.patches:
@@ -1436,9 +1437,10 @@ with tab1:
 
         # Plot for recommendations by year
         year_counts = filtered_df_unique['year'].value_counts().sort_index()
+        st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por Año</h3>", unsafe_allow_html=True)
         fig2, ax2 = plt.subplots(figsize=(18, 14))
         year_counts.plot(kind='bar', ax=ax2)
-        ax2.set_title('Número de Recomendaciones por Año', fontsize=38)
+        ax2.set_title('', fontsize=38)  # Remove internal title
         ax2.set_xlabel('Año', fontsize=34)
         ax2.set_ylabel('Número de Recomendaciones', fontsize=34)
         ax2.tick_params(axis='x', labelsize=28)
