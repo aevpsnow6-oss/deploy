@@ -1226,7 +1226,6 @@ def summarize_text(text, prompt_template):
 
 # Set page config
 st.markdown("""
-    <h1 style='text-align:center; color:#2c3e50; margin-bottom:0.2em;'>📊 Dashboard de Recomendaciones</h1>
     <h4 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h4>
     <hr style='border-top: 2px solid #3498db;'>
 """, unsafe_allow_html=True)
@@ -1416,15 +1415,19 @@ with tab1:
 
     # Display summary table with better formatting
     st.markdown("#### Información General")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("##### Recurrencia")
-        st.table(summary_df.head(4).set_index('Métrica').style.hide(axis="index"))
-
-    with col2:
-        st.markdown("##### Respuesta de Gerencia")
-        st.table(summary_df.tail(6).set_index('Métrica').style.hide(axis="index"))
+    # KPIs for management response statuses (Respuesta de Gerencia)
+    mgmt_labels = [
+        ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0]),
+        ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0]),
+        ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0]),
+        ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0]),
+        ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0]),
+        ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0]),
+    ]
+    st.markdown("#### Respuesta de Gerencia")
+    kpi_cols = st.columns(3)
+    for i, (label, value) in enumerate(mgmt_labels):
+        kpi_cols[i % 3].metric(label, value)
 
     # Display plots if data is available
     if not filtered_df.empty:
