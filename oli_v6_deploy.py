@@ -1549,13 +1549,30 @@ with tab1:
 
     # Button to download the filtered dataframe as Excel file
     if st.button('Descargar Datos Filtrados'):
-        # Sanitize 'Evidencia' column to avoid ArrowInvalid errors
-        if 'Evidencia' in filtered_df.columns:
-            filtered_df['Evidencia'] = filtered_df['Evidencia'].apply(
-                lambda x: ', '.join(map(str, x)) if isinstance(x, list) else str(x)
-            )
-        filtered_data = to_excel(filtered_df)
-        st.download_button(label='📥 Descargar Excel', data=filtered_data, file_name='filtered_data.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        try:
+            # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+            def sanitize_cell(x):
+                if isinstance(x, list):
+                    return ', '.join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+
+            sanitized_df = filtered_df.copy()
+            for col in sanitized_df.columns:
+                if sanitized_df[col].dtype == 'O':
+                    sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+
+            filtered_data = to_excel(sanitized_df)
+            st.download_button(
+                label='📥 Descargar Excel',
+                data=filtered_data,
+                file_name='filtered_data.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            st.error(f"No se pudo exportar los datos filtrados: {e}")
+            import traceback
+            st.error(traceback.format_exc())
 
 # Tab 2: Search
 with tab2:
