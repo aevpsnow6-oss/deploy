@@ -1231,8 +1231,17 @@ st.markdown("""
     <hr style='border-top: 2px solid #3498db;'>
 """, unsafe_allow_html=True)
 
+# Initialize data and embeddings - wrap in try/except for better error handling
+try:
+    # Use the extended data loading function that includes the new visualizations data
+    df, df_raw = load_extended_data()
+    doc_embeddings, structured_embeddings, index = load_embeddings()
+    doc_texts = df_raw['Recommendation_description'].tolist()
+except Exception as e:
+    st.error(f"Error loading data: {str(e)}")
+    st.stop()
+
 # --- KPI Metrics Row ---
-# Ensure filtered_df and filtered_df_unique are defined
 filtered_df = df.copy()
 filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
 total_recs = len(filtered_df_unique)
