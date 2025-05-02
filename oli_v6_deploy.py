@@ -2335,11 +2335,13 @@ with tab3:
             document_text = st.session_state.get('full_document_text', '')
             if not document_text:
                 st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
-                st.stop()
+                return
             rubrics = [
                 ("Participación (Engagement)", engagement_rubric),
                 ("Desempeño (Performance)", performance_rubric)
             ]
+            rubric_results = []
+            # Evaluate both rubrics and collect results in memory
             for rubric_name, rubric_dict in rubrics:
                 rubric_analysis_data = []
                 n_criteria = len(rubric_dict)
@@ -2347,7 +2349,6 @@ with tab3:
                 with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                     for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
                         try:
-                            st.info(f"Evaluando criterio: {crit}")
                             result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                             row_data = {
                                 'Criterio': crit,
@@ -2366,7 +2367,9 @@ with tab3:
                             }
                         rubric_analysis_data.append(row_data)
                         progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
-                rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
+                rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+            # After both rubrics are evaluated, update the UI
+            for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                 if not rubric_analysis_df.empty:
                     st.dataframe(rubric_analysis_df, use_container_width=True)
