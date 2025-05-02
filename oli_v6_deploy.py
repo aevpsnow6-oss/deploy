@@ -685,7 +685,11 @@ def create_composition_plot(filtered_df, var_name, title):
     
     # Update layout
     # Remove undefined or empty title
-    layout_title = title if title and str(title).strip().lower() != 'undefined' and str(title).strip() != '' else None
+    # Fix undefined or empty title: if title is None, '', or 'undefined' (any case/whitespace), do not show a title
+    if title is None or str(title).strip() == '' or str(title).strip().lower() == 'undefined':
+        layout_title = ''
+    else:
+        layout_title = title
     fig.update_layout(
         title=layout_title,
         xaxis_title='Año',
@@ -1494,9 +1498,16 @@ with tab1:
             fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
             st.plotly_chart(fig2, use_container_width=True)
         # Second row: Treemap by Dimension (full width)
+        title = st.title
+        if title is None or title.strip().lower() == 'undefined':
+            title = ''
+        st.title(title)
         st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
-        # Harmonize 'process' and 'processes' before plotting
-        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        # Harmonize 'process' and 'processes' 
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
         dimension_counts = filtered_df.groupby('dimension').agg({
             'index_df': 'nunique'
         }).reset_index()
@@ -1505,6 +1516,7 @@ with tab1:
         dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
 
         fig3 = px.treemap(
+{{ ... }}
             dimension_counts, path=['dimension'], values='index_df',
             title='Composición de Recomendaciones por Dimensión',
             hover_data={'text': True, 'index_df': False, 'percentage': False},
