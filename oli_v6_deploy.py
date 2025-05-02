@@ -1227,7 +1227,7 @@ def summarize_text(text, prompt_template):
 # Set page config
 st.set_page_config(layout="wide")
 st.markdown("""
-    <h4 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h4>
+    <h2 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h4>
     <hr style='border-top: 2px solid #3498db;'>
 """, unsafe_allow_html=True)
 
@@ -1280,9 +1280,9 @@ except Exception as e:
 
 # Tabs
 # Modify the tabs in oli_v5_deploy.py
-tab1, tab2, tab3 = st.tabs(["Análisis de Textos y Recomendaciones Similares", 
+tab1, tab2, tab3 = st.tabs(["Análisis de Recomendaciones", 
                            "Búsqueda de Recomendaciones",
-                           "Subir y Procesar Documentos"])
+                           "Análisis por Rúbricas de para Documentos de Evaluación"])
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
