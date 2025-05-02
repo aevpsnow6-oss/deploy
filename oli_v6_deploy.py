@@ -1514,9 +1514,8 @@ with tab1:
         st.plotly_chart(fig3)
         st.plotly_chart(fig4)
         
-        # Add the advanced visualization section
-        with st.expander("Visualizaciones Avanzadas", expanded=False):
-            add_advanced_visualization_section(filtered_df)
+        # Add the advanced visualization section directly to the main panel
+        add_advanced_visualization_section(filtered_df)
     else:
         st.write("No data available for the selected filters.")
 
