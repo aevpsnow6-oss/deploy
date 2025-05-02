@@ -646,17 +646,19 @@ def plot_score_evolution(filtered_df):
 def create_composition_plot(filtered_df, var_name, title):
     """
     Creates a stacked bar chart showing the composition of a variable over time.
+    Harmonizes 'process' and 'processes' if var_name is 'dimension'.
     """
     if var_name not in filtered_df.columns or filtered_df.empty:
         st.warning(f"No data available for {var_name} with the selected filters.")
         return
-    
+    # Harmonize 'process' and 'processes' into 'Process' if plotting by dimension
+    if var_name == 'dimension':
+        filtered_df = filtered_df.copy()
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
     # Group by year and variable, then count
     var_by_year = filtered_df.groupby(['year', var_name]).size().unstack(fill_value=0)
-    
     # Calculate percentages
     var_by_year_pct = var_by_year.div(var_by_year.sum(axis=1), axis=0) * 100
-    
     # Only proceed if we have data
     if var_by_year_pct.empty:
         st.warning(f"No data available for {var_name} with the selected years.")
@@ -677,7 +679,7 @@ def create_composition_plot(filtered_df, var_name, title):
             text=var_by_year_pct[category].round(1).astype(str) + '%',
             textposition='inside',
             insidetextanchor='middle',
-            textfont=dict(size=14),
+            textfont=dict(size=20),  # Increased label font size
             hoverinfo='name+y'
         ))
         
@@ -1477,7 +1479,8 @@ with tab1:
                 text=year_counts.values.tolist(),
                 textposition='auto',
                 marker_color='#3498db',
-                hovertemplate='Año %{x}: %{y} recomendaciones'
+                hovertemplate='Año %{x}: %{y} recomendaciones',
+                textfont=dict(size=22)
             ))
             fig2.update_layout(
                 xaxis_title='Año',
@@ -1488,13 +1491,15 @@ with tab1:
                 plot_bgcolor='white',
                 showlegend=False
             )
-            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45)
-            fig2.update_yaxes(showgrid=True, gridcolor='LightGray')
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
             st.plotly_chart(fig2, use_container_width=True)
         # Second row: Treemap by Dimension (full width)
         st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
+        # Harmonize 'process' and 'processes' before plotting
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
         dimension_counts = filtered_df.groupby('dimension').agg({
-        'index_df': 'nunique'
+            'index_df': 'nunique'
         }).reset_index()
         dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
         dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
@@ -1519,8 +1524,10 @@ with tab1:
         st.plotly_chart(fig3, use_container_width=True)
 
         # Treemap: Recommendations by Subdimension
+        # Harmonize 'process' and 'processes' before plotting subdimensions as well
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
         subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
-        'index_df': 'nunique'
+            'index_df': 'nunique'
         }).reset_index()
         subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
         subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
