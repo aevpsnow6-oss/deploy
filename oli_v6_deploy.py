@@ -1499,14 +1499,7 @@ with tab1:
             legend_font_size=22
         )
 
-        # Display plots side by side
-        col1, col2 = st.columns(2)
-        with col1:
-            st.pyplot(fig1)
-
-        with col2:
-            st.pyplot(fig2)
-
+        # Display treemap plots
         st.plotly_chart(fig3)
         st.plotly_chart(fig4)
         
