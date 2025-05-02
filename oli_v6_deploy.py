@@ -1516,7 +1516,6 @@ with tab1:
         dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
 
         fig3 = px.treemap(
-{{ ... }}
             dimension_counts, path=['dimension'], values='index_df',
             title='Composición de Recomendaciones por Dimensión',
             hover_data={'text': True, 'index_df': False, 'percentage': False},
