@@ -1498,10 +1498,7 @@ with tab1:
             fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
             st.plotly_chart(fig2, use_container_width=True)
         # Second row: Treemap by Dimension (full width)
-        title = st.title
-        if title is None or title.strip().lower() == 'undefined':
-            title = ''
-        st.title(title)
+
         st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
         # Harmonize 'process' and 'processes' 
         filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process'})
