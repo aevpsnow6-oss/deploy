@@ -1429,14 +1429,14 @@ with tab1:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
         fig1, ax1 = plt.subplots(figsize=(18, 17))
         country_counts.plot(kind='barh', ax=ax1)
-        ax1.set_xlabel('Número de Recomendaciones', fontsize=26)
-        ax1.set_ylabel('País', fontsize=26)
-        ax1.set_title('Número de Recomendaciones por País', fontsize=28)
-        ax1.tick_params(axis='x', labelsize=20)
-        ax1.tick_params(axis='y', labelsize=20)
+        ax1.set_xlabel('Número de Recomendaciones', fontsize=34)
+        ax1.set_ylabel('País', fontsize=34)
+        ax1.set_title('Número de Recomendaciones por País', fontsize=38)
+        ax1.tick_params(axis='x', labelsize=28)
+        ax1.tick_params(axis='y', labelsize=28)
         for i in ax1.patches:
             ax1.text(i.get_width() + 0.3, i.get_y() + 0.5, 
-                    str(round((i.get_width()), 2)), fontsize=20, color='dimgrey')
+                    str(round((i.get_width()), 2)), fontsize=28, color='dimgrey')
 
         # Treemap: Recommendations by Dimension
         dimension_counts = filtered_df.groupby('dimension').agg({
@@ -1467,12 +1467,16 @@ with tab1:
         year_counts = filtered_df_unique['year'].value_counts().sort_index()
         fig2, ax2 = plt.subplots(figsize=(18, 14))
         year_counts.plot(kind='bar', ax=ax2)
-        ax2.set_title('Número de Recomendaciones por Año', fontsize=28)
-        ax2.set_xlabel('Año', fontsize=24)
-        ax2.set_ylabel('Número de Recomendaciones', fontsize=24)
-        ax2.tick_params(axis='x', labelsize=20)
-        ax2.tick_params(axis='y', labelsize=20)
+        ax2.set_title('Número de Recomendaciones por Año', fontsize=38)
+        ax2.set_xlabel('Año', fontsize=34)
+        ax2.set_ylabel('Número de Recomendaciones', fontsize=34)
+        ax2.tick_params(axis='x', labelsize=28)
+        ax2.tick_params(axis='y', labelsize=28)
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
+        # Add value labels on top of each bar
+        for bar in ax2.patches:
+            ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+                    str(int(bar.get_height())), ha='center', fontsize=28, color='dimgrey')
 
         # Treemap: Recommendations by Subdimension
         subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
