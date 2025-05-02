@@ -1295,7 +1295,7 @@ with tab1:
     st.header("Análisis de Textos y Recomendaciones Similares")
 
     # Sidebar for filters
-    st.sidebar.title('Criterios de Búsqueda')
+    st.sidebar.title('Filtros para Recomendaciones')
 
     with st.sidebar.expander("Oficina Regional", expanded=False):
         office_options = ['All'] + list(df['Recommendation_administrative_unit'].unique())
@@ -2226,177 +2226,158 @@ with tab3:
     # Document upload interface
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
     
-    if uploaded_file is not None:
-        with st.spinner("Procesando documento..."):
-            try:
-                # Save uploaded file to temp
-                tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                tmp_file.write(uploaded_file.read())
-                tmp_file.close()
-                
-                progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-                
-                # Parse document structure
-                doc_result = docx2python(tmp_file.name)
-                df = extract_docx_structure(tmp_file.name)
-                progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
-                
-                # Process sections with LLM to clean up text - Updated for OpenAI v0.28
-                header_1_values = df['header_1'].dropna().unique()
-                llm_summary_rows = []
-                llm_progress = st.progress(0, text="Procesando secciones con LLM...")
-                total_sections = len(header_1_values)
-                
-                for idx, header in enumerate(header_1_values):
-                    section_df = df[df['header_1'] == header].copy()
-                    full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                    
-                    if not full_text:
-                        llm_output = ""
-                    else:
-                        llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
-                        try:
-                            # Use OpenAI v0.28 syntax
-                            response = openai.ChatCompletion.create(
-                                model="gpt-4o-mini",
-                                messages=[
-                                    {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
-                                    {"role": "user", "content": full_text}
-                                ],
-                                max_tokens=1024,
-                                temperature=0.01,
-                            )
-                            llm_output = response["choices"][0]["message"]["content"].strip()
-                        except Exception as e:
-                            llm_output = f"[LLM ERROR: {e}]"
-                            
-                    llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
-                
-                llm_progress.progress(1.0, text="LLM parsing completado.")
-                
-                # Create dataframes
-                llm_summary_df = pd.DataFrame(llm_summary_rows)
-                llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
-                
-                # Prepare structured paragraphs
-                exploded_df = llm_summary_df.assign(
-                    llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                ).explode('llm_paragraph')
-                exploded_df = exploded_df.reset_index(drop=True)
-                exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                
-                # Store the full document text in one variable for direct evaluation
-                full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
-                
-                # Calculate document stats
-                file_size = os.path.getsize(tmp_file.name)
-                n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                n_paragraphs = len(exploded_df)
-                
-                # Store in session state for reuse
-                st.session_state['full_document_text'] = full_document_text
-                st.session_state['document_stats'] = {
-                    'file_size': file_size,
-                    'n_words': n_words,
-                    'n_paragraphs': n_paragraphs
-                }
-                st.session_state['exploded_df'] = exploded_df
-                
-                # Clean up temp file
-                try:
-                    os.unlink(tmp_file.name)
-                except:
-                    pass
-                
-                progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
-                
-                # Display document summary
-                st.info(f"**Resumen del documento:**\n\n" + 
-                       f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                       f"- Número de palabras: {n_words}\n" + 
-                       f"- Número de párrafos: {n_paragraphs}")
-                
-                # Show extracted content
-                st.markdown("#### Estructura extraída del documento:")
-                st.dataframe(exploded_df, use_container_width=True)
-                
-                progress_bar.progress(1.0, text="Procesamiento completo.")
-                
-            except Exception as e:
-                st.error(f"Error procesando el documento: {e}")
-                import traceback
-                st.error(traceback.format_exc())
-                st.stop()
-        
-        # Rubric evaluation for both Engagement and Performance in a single button
-        st.markdown("#### Evaluación por Rúbrica (Ambas)")
-        st.markdown('---')
-        if st.button('Evaluar ambas rúbricas'):
-            document_text = st.session_state.get('full_document_text', '')
-            if not document_text:
-                st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
-                st.stop()
-            rubrics = [
-                ("Participación (Engagement)", engagement_rubric),
-                ("Desempeño (Performance)", performance_rubric)
-            ]
-            rubric_results = []
-            # Evaluate both rubrics and collect results in memory (parallelized)
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            MAX_WORKERS = 12
-            def eval_one_criterion(args):
-                crit, descriptions, rubric_name = args
-                try:
-                    result = evaluate_criterion_with_llm(document_text, crit, descriptions)
-                    return {
-                        'Criterio': crit,
-                        'Score': result.get('score', 0),
-                        'Análisis': result.get('analysis', ''),
-                        'Evidencia': result.get('evidence', ''),
-                        'Error': result.get('error', '') if 'error' in result else '',
-                        'Rúbrica': rubric_name
-                    }
-                except Exception as e:
-                    return {
-                        'Criterio': crit,
-                        'Score': 0,
-                        'Análisis': '',
-                        'Evidencia': '',
-                        'Error': str(e),
-                        'Rúbrica': rubric_name
-                    }
-
-            for rubric_name, rubric_dict in rubrics:
-                rubric_analysis_data = []
-                n_criteria = len(rubric_dict)
-                progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
-                with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
-                    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                        futures = {
-                            executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
-                            for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+    # Unified process and evaluate button
+    st.markdown("#### Procesamiento y Evaluación de Documento")
+    st.markdown('---')
+    if st.button('Procesar y Evaluar'):
+        # Only process if file is uploaded and not already processed for this file
+        if uploaded_file is not None:
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('last_file_hash') != file_hash:
+                with st.spinner("Procesando documento..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                        doc_result = docx2python(tmp_file.name)
+                        df = extract_docx_structure(tmp_file.name)
+                        progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                        header_1_values = df['header_1'].dropna().unique()
+                        llm_summary_rows = []
+                        llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+                        total_sections = len(header_1_values)
+                        for idx, header in enumerate(header_1_values):
+                            section_df = df[df['header_1'] == header].copy()
+                            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                            if not full_text:
+                                llm_output = ""
+                            else:
+                                llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+                                try:
+                                    response = openai.ChatCompletion.create(
+                                        model="gpt-4o-mini",
+                                        messages=[
+                                            {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                                            {"role": "user", "content": full_text}
+                                        ],
+                                        max_tokens=1024,
+                                        temperature=0.01,
+                                    )
+                                    llm_output = response["choices"][0]["message"]["content"].strip()
+                                except Exception as e:
+                                    llm_output = f"[LLM ERROR: {e}]"
+                            llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+                        llm_progress.progress(1.0, text="LLM parsing completado.")
+                        llm_summary_df = pd.DataFrame(llm_summary_rows)
+                        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                        exploded_df = llm_summary_df.assign(
+                            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                        ).explode('llm_paragraph')
+                        exploded_df = exploded_df.reset_index(drop=True)
+                        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                        full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                        file_size = os.path.getsize(tmp_file.name)
+                        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                        n_paragraphs = len(exploded_df)
+                        st.session_state['full_document_text'] = full_document_text
+                        st.session_state['document_stats'] = {
+                            'file_size': file_size,
+                            'n_words': n_words,
+                            'n_paragraphs': n_paragraphs
                         }
-                        completed = 0
-                        for future in as_completed(futures):
-                            result = future.result()
-                            rubric_analysis_data.append(result)
-                            completed += 1
-                            crit, idx = futures[future]
-                            progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
-                rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
-            # After both rubrics are evaluated, update the UI
+                        st.session_state['exploded_df'] = exploded_df
+                        st.session_state['last_file_hash'] = file_hash
+                        try:
+                            os.unlink(tmp_file.name)
+                        except:
+                            pass
+                        progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+                        st.info(f"**Resumen del documento:**\n\n" + 
+                               f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+                               f"- Número de palabras: {n_words}\n" + 
+                               f"- Número de párrafos: {n_paragraphs}")
+                        st.markdown("#### Estructura extraída del documento:")
+                        st.dataframe(exploded_df, use_container_width=True)
+                        progress_bar.progress(1.0, text="Procesamiento completo.")
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
+        # Now, always run rubric evaluation if document is processed
+        document_text = st.session_state.get('full_document_text', '')
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+            st.stop()
+        rubrics = [
+            ("Participación (Engagement)", engagement_rubric),
+            ("Desempeño (Performance)", performance_rubric)
+        ]
+        rubric_results = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        MAX_WORKERS = 12
+        def eval_one_criterion(args):
+            crit, descriptions, rubric_name = args
+            try:
+                result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                return {
+                    'Criterio': crit,
+                    'Score': result.get('score', 0),
+                    'Análisis': result.get('analysis', ''),
+                    'Evidencia': result.get('evidence', ''),
+                    'Error': result.get('error', '') if 'error' in result else '',
+                    'Rúbrica': rubric_name
+                }
+            except Exception as e:
+                return {
+                    'Criterio': crit,
+                    'Score': 0,
+                    'Análisis': '',
+                    'Evidencia': '',
+                    'Error': str(e),
+                    'Rúbrica': rubric_name
+                }
+        for rubric_name, rubric_dict in rubrics:
+            rubric_analysis_data = []
+            n_criteria = len(rubric_dict)
+            progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+            with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = {
+                        executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
+                        for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+                    }
+                    completed = 0
+                    for future in as_completed(futures):
+                        result = future.result()
+                        rubric_analysis_data.append(result)
+                        completed += 1
+                        crit, idx = futures[future]
+                        progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+            rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+        # Show and allow download of both results only after evaluation
+        if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                 if not rubric_analysis_df.empty:
                     st.dataframe(rubric_analysis_df, use_container_width=True)
+            # Provide a zip download for both results
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
                     csv = rubric_analysis_df.to_csv(index=False)
-                    st.download_button(
-                        label=f"Descargar resultados {rubric_name} como CSV",
-                        data=csv,
-                        file_name=f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.warning(f"No se generaron resultados para la rúbrica {rubric_name}.")
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
+                    zipf.writestr(arcname, csv)
+            zip_buffer.seek(0)
+            st.download_button(
+                label="Descargar ambos resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip"
+            )
         else:
-            st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para evaluar ambas rúbricas.")
+            st.warning("No se generaron resultados para ninguna rúbrica.")
+    else:
+        st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
