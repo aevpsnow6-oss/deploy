@@ -2361,7 +2361,67 @@ with tab3:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                 if not rubric_analysis_df.empty:
+                    # Ensure 'Evidencia' column is present and first for visibility
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    # Reorder columns to show 'Evidencia' after 'Análisis' if present
+                    cols = rubric_analysis_df.columns.tolist()
+                    if 'Análisis' in cols and 'Evidencia' in cols:
+                        new_order = cols.copy()
+                        if new_order.index('Evidencia') < new_order.index('Análisis'):
+                            new_order.remove('Evidencia')
+                            new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                        rubric_analysis_df = rubric_analysis_df[new_order]
                     st.dataframe(rubric_analysis_df, use_container_width=True)
+
+                    # --- Interactive Bar Plot for Rubric Scores by Dimension/Subdimension ---
+                    st.markdown(f"**Visualización de Puntuaciones por Dimensión/Subdimensión para: {rubric_name}**")
+                    # Assume rubric_analysis_df has 'Criterio', 'Score', 'Análisis', 'Evidencia', 'Rúbrica', 'Error'
+                    # Try to extract dimension/subdimension if present in 'Criterio' (e.g., 'Dimension: Subdimension - Criterio')
+                    import re
+                    def split_criterion(crit):
+                        match = re.match(r"(.+?)\s*[:-]\s*(.+)", str(crit))
+                        if match:
+                            parts = match.group(1).split('/')
+                            if len(parts) == 2:
+                                return parts[0].strip(), parts[1].strip()
+                            return match.group(1).strip(), match.group(2).strip()
+                        else:
+                            return '', crit
+                    rubric_analysis_df[['Dimensión', 'Subdimensión']] = rubric_analysis_df['Criterio'].apply(lambda x: pd.Series(split_criterion(x)))
+                    # Aggregate by Dimensión/Subdimensión
+                    dim_scores = rubric_analysis_df.groupby('Dimensión', dropna=False)['Score'].mean().reset_index()
+                    subdim_scores = rubric_analysis_df.groupby(['Dimensión','Subdimensión'], dropna=False)['Score'].mean().reset_index()
+                    import plotly.express as px
+                    # Bar plot for dimensions
+                    if not dim_scores['Dimensión'].isnull().all():
+                        fig_dim = px.bar(dim_scores, x='Dimensión', y='Score', title=f'Puntuación Promedio por Dimensión ({rubric_name})',
+                                         color='Score', color_continuous_scale='Blues', text_auto='.2f', height=350)
+                        fig_dim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Dimensión', yaxis_title='Puntuación')
+                        st.plotly_chart(fig_dim, use_container_width=True)
+                    # Bar plot for subdimensions
+                    if not subdim_scores['Subdimensión'].isnull().all():
+                        fig_subdim = px.bar(subdim_scores, x='Subdimensión', y='Score', color='Dimensión', barmode='group',
+                                            title=f'Puntuación Promedio por Subdimensión ({rubric_name})', text_auto='.2f', height=350)
+                        fig_subdim.update_layout(yaxis=dict(range=[0,10]), font=dict(size=18), title_font_size=22, xaxis_title='Subdimensión', yaxis_title='Puntuación')
+                        st.plotly_chart(fig_subdim, use_container_width=True)
+                    st.markdown('---')
+
+                    # Show evidence as a separate table for user clarity
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        st.markdown(f"**Evidencia utilizada en la evaluación ({rubric_name}):**")
+                        st.dataframe(rubric_analysis_df[['Criterio','Evidencia']], use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+
+            # UI instructions for unified workflow and visualizations
+            st.info("""
+            **Instrucciones:**
+            1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
+            2. Revise los resultados de cada rúbrica en la tabla interactiva.
+            3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
+            4. Descargue todos los resultados y evidencias en un archivo ZIP.
+            """)
             # Provide a zip download for both results
             import io, zipfile
             zip_buffer = io.BytesIO()
