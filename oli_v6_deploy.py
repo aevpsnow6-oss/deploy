@@ -1433,32 +1433,64 @@ with tab1:
     if not filtered_df.empty:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
         # st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
-        st.markdown("<h4 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
-        # Interactive Plotly horizontal bar chart
-        fig1 = go.Figure()
-        fig1.add_trace(go.Bar(
-            y=country_counts.index.tolist(),
-            x=country_counts.values.tolist(),
-            orientation='h',
-            text=country_counts.values.tolist(),
-            textposition='auto',
-            marker_color='#3498db',
-            hovertemplate='%{y}: %{x} recomendaciones'
-        ))
-        fig1.update_layout(
-            xaxis_title='Número de Recomendaciones',
-            yaxis_title='País',
-            margin=dict(t=30, l=120, r=30, b=30),
-            font=dict(size=28),
-            height=600,
-            plot_bgcolor='white',
-            showlegend=False
-        )
-        fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
-        fig1.update_yaxes(showgrid=False)
-        st.plotly_chart(fig1, use_container_width=True)
-
-        # Treemap: Recommendations by Dimension
+        # Arrange figures in a 2x2 dashboard layout with clear, concise subtitles
+        st.markdown("""
+            <style>
+            .dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}
+            </style>
+        """, unsafe_allow_html=True)
+        fig_col1, fig_col2 = st.columns(2)
+        # First row: Bar by Country | Bar by Year
+        with fig_col1:
+            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Bar(
+                y=country_counts.index.tolist(),
+                x=country_counts.values.tolist(),
+                orientation='h',
+                text=country_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='%{y}: %{x} recomendaciones'
+            ))
+            fig1.update_layout(
+                xaxis_title='Número de Recomendaciones',
+                yaxis_title='País',
+                margin=dict(t=30, l=120, r=30, b=30),
+                font=dict(size=28),
+                height=600,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+            fig1.update_yaxes(showgrid=False)
+            st.plotly_chart(fig1, use_container_width=True)
+        with fig_col2:
+            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
+            year_counts = filtered_df_unique['year'].value_counts().sort_index()
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=year_counts.index.astype(str).tolist(),
+                y=year_counts.values.tolist(),
+                text=year_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='Año %{x}: %{y} recomendaciones'
+            ))
+            fig2.update_layout(
+                xaxis_title='Año',
+                yaxis_title='Número de Recomendaciones',
+                margin=dict(t=30, l=30, r=30, b=90),
+                font=dict(size=28),
+                height=600,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45)
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray')
+            st.plotly_chart(fig2, use_container_width=True)
+        # Second row: Treemap by Dimension (full width)
+        st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
         dimension_counts = filtered_df.groupby('dimension').agg({
         'index_df': 'nunique'
         }).reset_index()
@@ -1482,32 +1514,7 @@ with tab1:
             font=dict(size=22),
             legend_font_size=22
         )
-
-        # Plot for recommendations by year
-        year_counts = filtered_df_unique['year'].value_counts().sort_index()
-        st.markdown("<h4 style='margin-top:2em;'>Número de Recomendaciones por Año</h3>", unsafe_allow_html=True)
-        # Interactive Plotly vertical bar chart
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(
-            x=year_counts.index.astype(str).tolist(),
-            y=year_counts.values.tolist(),
-            text=year_counts.values.tolist(),
-            textposition='auto',
-            marker_color='#3498db',
-            hovertemplate='Año %{x}: %{y} recomendaciones'
-        ))
-        fig2.update_layout(
-            xaxis_title='Año',
-            yaxis_title='Número de Recomendaciones',
-            margin=dict(t=30, l=30, r=30, b=90),
-            font=dict(size=28),
-            height=600,
-            plot_bgcolor='white',
-            showlegend=False
-        )
-        fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45)
-        fig2.update_yaxes(showgrid=True, gridcolor='LightGray')
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig3, use_container_width=True)
 
         # Treemap: Recommendations by Subdimension
         subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
