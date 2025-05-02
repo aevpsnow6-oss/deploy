@@ -1225,7 +1225,26 @@ def summarize_text(text, prompt_template):
 # ============= MAIN APP CODE =============
 
 # Set page config
-st.markdown("<h3 style='text-align: center;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h3>", unsafe_allow_html=True)
+st.markdown("""
+    <h1 style='text-align:center; color:#2c3e50; margin-bottom:0.2em;'>📊 Dashboard de Recomendaciones</h1>
+    <h4 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h4>
+    <hr style='border-top: 2px solid #3498db;'>
+""", unsafe_allow_html=True)
+
+# --- KPI Metrics Row ---
+total_recs = len(filtered_df_unique)
+num_countries = filtered_df_unique['Country(ies)'].nunique()
+num_years = filtered_df_unique['year'].nunique()
+num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total Recomendaciones", total_recs)
+col2.metric("Países", num_countries)
+col3.metric("Años", num_years)
+col4.metric("Evaluaciones", num_evals)
+
+st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+
 
 # Check for API key before running the app
 if not openai_api_key:
@@ -1398,7 +1417,8 @@ with tab1:
     # Display plots if data is available
     if not filtered_df.empty:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
-        st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
+        # st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
+        st.markdown("<h4 style='margin-top:2em;'>Número de Recomendaciones por País</h3>", unsafe_allow_html=True)
         # Interactive Plotly horizontal bar chart
         fig1 = go.Figure()
         fig1.add_trace(go.Bar(
@@ -1450,7 +1470,7 @@ with tab1:
 
         # Plot for recommendations by year
         year_counts = filtered_df_unique['year'].value_counts().sort_index()
-        st.markdown("<h3 style='margin-top:2em;'>Número de Recomendaciones por Año</h3>", unsafe_allow_html=True)
+        st.markdown("<h4 style='margin-top:2em;'>Número de Recomendaciones por Año</h3>", unsafe_allow_html=True)
         # Interactive Plotly vertical bar chart
         fig2 = go.Figure()
         fig2.add_trace(go.Bar(
