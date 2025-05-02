@@ -1452,14 +1452,14 @@ with tab1:
                 marker_color='#3498db',
                 hovertemplate='%{y}: %{x} recomendaciones'
             ))
-            # Dynamic height: 60px per country, min 350, max 700
-            bar_height = min(max(len(country_counts) * 60, 350), 700)
+            # Fixed height for alignment with year plot
+            fixed_height = 500
             fig1.update_layout(
                 xaxis_title='Número de Recomendaciones',
                 yaxis_title='País',
                 margin=dict(t=10, l=10, r=10, b=40),
                 font=dict(size=22),
-                height=bar_height,
+                height=fixed_height,
                 plot_bgcolor='white',
                 showlegend=False
             )
