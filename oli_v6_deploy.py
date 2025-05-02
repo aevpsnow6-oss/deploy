@@ -2328,69 +2328,56 @@ with tab3:
                 st.error(traceback.format_exc())
                 st.stop()
         
-        # Rubric selection UI
-        st.markdown("#### Evaluación por Rúbrica")
-        rubric_type = st.selectbox(
-            "Seleccione tipo de rúbrica para evaluación:",
-            ["Participación (Engagement)", "Desempeño (Performance)"]
-        )
-        
-        # Select appropriate rubric
-        if rubric_type == "Participación (Engagement)":
-            rubric_dict = engagement_rubric
-        else:
-            rubric_dict = performance_rubric
-        
-        # Direct evaluation button
+        # Rubric evaluation for both Engagement and Performance in a single button
+        st.markdown("#### Evaluación por Rúbrica (Ambas)")
         st.markdown('---')
-        
-        if st.button('Evaluar por rúbrica'):
-            # Get document text from session state
+        if st.button('Evaluar ambas rúbricas'):
             document_text = st.session_state.get('full_document_text', '')
-            
             if not document_text:
                 st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
                 st.stop()
-            
-            # Create a dataframe to store analysis results
-            rubric_analysis_data = []
-            
-            # Process each criterion
-            n_criteria = len(rubric_dict)
-            progress = st.progress(0, text="Iniciando evaluación por rúbrica...")
-            
-            with st.spinner('Evaluando documento por rúbrica...'):
-                for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
-                    st.info(f"Evaluando criterio: {crit}")
-                    
-                    # Direct evaluation with LLM
-                    result = evaluate_criterion_with_llm(document_text, crit, descriptions)
-                    
-                    # Create a dictionary with all fields - Removed confidence and recommendations
-                    row_data = {
-                        'Criterio': crit,
-                        'Score': result.get('score', 0),
-                        'Análisis': result.get('analysis', ''),
-                        'Evidencia': result.get('evidence', ''),
-                        'Error': result.get('error', '') if 'error' in result else ''
-                    }
-                    
-                    rubric_analysis_data.append(row_data)
-                    progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
-            
-            # Create dataframe and display results
-            rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
-            st.markdown('#### Resultados de la evaluación por rúbrica:')
-            st.dataframe(rubric_analysis_df, use_container_width=True)
-            
-            # Download button
-            csv = rubric_analysis_df.to_csv(index=False)
-            st.download_button(
-                label="Descargar resultados como CSV",
-                data=csv,
-                file_name="evaluacion_rubrica.csv",
-                mime="text/csv"
-            )
-            
-    else:
-        st.info("Por favor suba un archivo DOCX para comenzar.")
+            rubrics = [
+                ("Participación (Engagement)", engagement_rubric),
+                ("Desempeño (Performance)", performance_rubric)
+            ]
+            for rubric_name, rubric_dict in rubrics:
+                rubric_analysis_data = []
+                n_criteria = len(rubric_dict)
+                progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+                with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+                    for idx, (crit, descriptions) in enumerate(rubric_dict.items()):
+                        try:
+                            st.info(f"Evaluando criterio: {crit}")
+                            result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                            row_data = {
+                                'Criterio': crit,
+                                'Score': result.get('score', 0),
+                                'Análisis': result.get('analysis', ''),
+                                'Evidencia': result.get('evidence', ''),
+                                'Error': result.get('error', '') if 'error' in result else ''
+                            }
+                        except Exception as e:
+                            row_data = {
+                                'Criterio': crit,
+                                'Score': 0,
+                                'Análisis': '',
+                                'Evidencia': '',
+                                'Error': str(e)
+                            }
+                        rubric_analysis_data.append(row_data)
+                        progress.progress((idx+1)/n_criteria, text=f"Evaluando criterio: {crit}")
+                rubric_analysis_df = pd.DataFrame(rubric_analysis_data)
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                    csv = rubric_analysis_df.to_csv(index=False)
+                    st.download_button(
+                        label=f"Descargar resultados {rubric_name} como CSV",
+                        data=csv,
+                        file_name=f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica {rubric_name}.")
+        else:
+            st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para evaluar ambas rúbricas.")
