@@ -1388,7 +1388,7 @@ with tab4:
                                 model="gpt-4.1-mini",
                                 messages=messages,
                                 max_tokens=2048,
-                                temperature=0.2
+                                temperature=0.3
                             )
                             answer = response['choices'][0]['message']['content'].strip()
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
@@ -1442,7 +1442,7 @@ with tab4:
                                     model="gpt-4.1-mini",
                                     messages=messages,
                                     max_tokens=2048,
-                                    temperature=0.2
+                                    temperature=0.3
                                 )
                                 answer = response['choices'][0]['message']['content'].strip()
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
