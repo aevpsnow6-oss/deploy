@@ -1353,7 +1353,7 @@ with tab4:
                     response = openai.ChatCompletion.create(
                         model="gpt-4o-mini",  # gpt-40-mini
                         messages=messages,
-                        max_tokens=512,
+                        max_tokens=4096,
                         temperature=0.2
                     )
                     answer = response['choices'][0]['message']['content'].strip()
