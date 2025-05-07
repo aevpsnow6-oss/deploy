@@ -1337,7 +1337,7 @@ with tab4:
     # Chat interface
     if st.session_state['doc_chat_docs']:
         with st.form("doc_chat_form", clear_on_submit=True):
-            user_input = st.text_area("Escribe tu pregunta al documento:", key="doc_chat_input")
+            user_input = st.text_area("Escribe tu preguntas (para las respuestas se considera el texto completo de los documentos cargados):", key="doc_chat_input")
             submitted = st.form_submit_button("Enviar pregunta")
             if submitted and user_input.strip():
                 # Add user message to history
@@ -1348,16 +1348,16 @@ with tab4:
                 all_text = "\n\n".join(doc['text'] for doc in st.session_state['doc_chat_docs'])
                 chunk_size = 7000
                 chunks = [all_text[i:i+chunk_size] for i in range(0, len(all_text), chunk_size)]
+                import concurrent.futures
                 import openai
-                for chunk_idx, chunk in enumerate(chunks):
+                def get_openai_response(chunk_idx, chunk, chat_history, num_chunks):
+                    messages = [
+                        {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                        {"role": "system", "content": f"DOCUMENTO (parte {chunk_idx+1} de {num_chunks}):\n{chunk}"}
+                    ]
+                    for msg in chat_history[-5:]:
+                        messages.append(msg)
                     try:
-                        messages = [
-                            {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
-                            {"role": "system", "content": f"DOCUMENTO (parte {chunk_idx+1} de {len(chunks)}):\n{chunk}"}
-                        ]
-                        # Add last 5 chat rounds for context
-                        for msg in st.session_state['doc_chat_history'][-5:]:
-                            messages.append(msg)
                         response = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
                             messages=messages,
@@ -1365,11 +1365,21 @@ with tab4:
                             temperature=0.2
                         )
                         answer = response['choices'][0]['message']['content'].strip()
-                        if len(chunks) > 1:
-                            answer = f"[Parte {chunk_idx+1} de {len(chunks)}]\n" + answer
-                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                        if num_chunks > 1:
+                            answer = f"[Parte {chunk_idx+1} de {num_chunks}]\n" + answer
+                        return {"role": "assistant", "content": answer}
                     except Exception as e:
-                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta para parte {chunk_idx+1}: {str(e)}]"})
+                        return {"role": "assistant", "content": f"[Error al obtener respuesta para parte {chunk_idx+1}: {str(e)}]"}
+
+                # Parallelize chunk requests
+                with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+                    futures = [
+                        executor.submit(get_openai_response, idx, chunk, st.session_state['doc_chat_history'], len(chunks))
+                        for idx, chunk in enumerate(chunks)
+                    ]
+                    results = [future.result() for future in futures]
+                for result in results:
+                    st.session_state['doc_chat_history'].append(result)
 
         # Display chat history in a persistent, scrollable container
         st.markdown(
