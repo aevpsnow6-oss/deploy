@@ -1353,7 +1353,7 @@ with tab4:
                 import numpy as np
                 import faiss
                 # 1. Split all docs into larger, overlapping chunks (~1500 chars, 300 overlap)
-                def chunk_text(text, chunk_size=1500, overlap=300):
+                def chunk_text(text, chunk_size=2000, overlap=300):
                     chunks = []
                     start = 0
                     while start < len(text):
@@ -1388,7 +1388,7 @@ with tab4:
                                 model="gpt-4.1-mini",
                                 messages=messages,
                                 max_tokens=2048,
-                                temperature=0.3
+                                temperature=0.2
                             )
                             answer = response['choices'][0]['message']['content'].strip()
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
@@ -1442,7 +1442,7 @@ with tab4:
                                     model="gpt-4.1-mini",
                                     messages=messages,
                                     max_tokens=2048,
-                                    temperature=0.3
+                                    temperature=0.2
                                 )
                                 answer = response['choices'][0]['message']['content'].strip()
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
@@ -1452,7 +1452,7 @@ with tab4:
         # Display chat history in a persistent, scrollable container
         st.markdown(
             '''
-            <div style="height:420px; overflow-y:auto; border:1px solid #333; border-radius:8px; padding:1em; background:#18191a; margin-bottom:1em;">
+            <div style="height:600px; overflow-y:auto; border:1px solid #333; border-radius:8px; padding:1em; background:#18191a; margin-bottom:1em;">
             '''
             +
             "".join(
