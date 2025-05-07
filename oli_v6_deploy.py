@@ -1369,7 +1369,7 @@ with tab4:
                         "resumen", "conclusiones", "hallazgos", "principales", "summary", "conclusion"
                     ]
                     is_summary_query = any(kw in question.lower() for kw in summary_keywords)
-                    emb_model = "text-embedding-3-small"
+                    emb_model = "text-embedding-3-large"
                     if is_summary_query:
                         # Fallback: use as much of the full document(s) as fits
                         context = "\n---\n".join(doc['text'][:12000] for doc in st.session_state['doc_chat_docs'])
@@ -1384,7 +1384,7 @@ with tab4:
                                 model="gpt-4o-mini",
                                 messages=messages,
                                 max_tokens=2048,
-                                temperature=0.2
+                                temperature=0.3
                             )
                             answer = response['choices'][0]['message']['content'].strip()
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
@@ -1438,7 +1438,7 @@ with tab4:
                                     model="gpt-4o-mini",
                                     messages=messages,
                                     max_tokens=2048,
-                                    temperature=0.2
+                                    temperature=0.3
                                 )
                                 answer = response['choices'][0]['message']['content'].strip()
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
