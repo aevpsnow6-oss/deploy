@@ -1345,41 +1345,56 @@ with tab4:
                     st.session_state['doc_chat_history'] = []
                 st.session_state['doc_chat_history'].append({"role": "user", "content": user_input.strip()})
                 # Chunking: combine all docs, split into 7000-character chunks for safety
-                all_text = "\n\n".join(doc['text'] for doc in st.session_state['doc_chat_docs'])
-                chunk_size = 7000
-                chunks = [all_text[i:i+chunk_size] for i in range(0, len(all_text), chunk_size)]
-                import concurrent.futures
                 import openai
-                def get_openai_response(chunk_idx, chunk, chat_history, num_chunks):
-                    messages = [
-                        {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
-                        {"role": "system", "content": f"DOCUMENTO (parte {chunk_idx+1} de {num_chunks}):\n{chunk}"}
-                    ]
-                    for msg in chat_history[-5:]:
-                        messages.append(msg)
-                    try:
-                        response = openai.ChatCompletion.create(
-                            model="gpt-4o-mini",
-                            messages=messages,
-                            max_tokens=2048,
-                            temperature=0.2
-                        )
-                        answer = response['choices'][0]['message']['content'].strip()
-                        if num_chunks > 1:
-                            answer = f"[Parte {chunk_idx+1} de {num_chunks}]\n" + answer
-                        return {"role": "assistant", "content": answer}
-                    except Exception as e:
-                        return {"role": "assistant", "content": f"[Error al obtener respuesta para parte {chunk_idx+1}: {str(e)}]"}
-
-                # Parallelize chunk requests
-                with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
-                    futures = [
-                        executor.submit(get_openai_response, idx, chunk, st.session_state['doc_chat_history'], len(chunks))
-                        for idx, chunk in enumerate(chunks)
-                    ]
-                    results = [future.result() for future in futures]
-                for result in results:
-                    st.session_state['doc_chat_history'].append(result)
+                import numpy as np
+                # 1. Split all docs into ~700-character chunks (by paragraph, then merge if short)
+                all_chunks = []
+                for doc in st.session_state['doc_chat_docs']:
+                    paragraphs = [p for p in doc['text'].split('\n') if p.strip()]
+                    chunk = ''
+                    for para in paragraphs:
+                        if len(chunk) + len(para) < 700:
+                            chunk += (' ' if chunk else '') + para
+                        else:
+                            if chunk:
+                                all_chunks.append(chunk)
+                            chunk = para
+                    if chunk:
+                        all_chunks.append(chunk)
+                # 2. Get embeddings for user question and all chunks
+                question = user_input.strip()
+                emb_model = "text-embedding-3-small"
+                question_emb = openai.Embedding.create(input=question, model=emb_model)["data"][0]["embedding"]
+                chunk_embs = [openai.Embedding.create(input=chunk, model=emb_model)["data"][0]["embedding"] for chunk in all_chunks]
+                # 3. Compute cosine similarity
+                def cosine_sim(a, b):
+                    a = np.array(a)
+                    b = np.array(b)
+                    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+                sims = [cosine_sim(question_emb, emb) for emb in chunk_embs]
+                # 4. Select top N relevant chunks
+                top_n = 15
+                top_idx = np.argsort(sims)[-top_n:][::-1]
+                selected_chunks = [all_chunks[i] for i in top_idx]
+                context = '\n---\n'.join(selected_chunks)
+                # 5. Send to LLM
+                messages = [
+                    {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                    {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
+                ]
+                for msg in st.session_state['doc_chat_history'][-5:]:
+                    messages.append(msg)
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        max_tokens=2048,
+                        temperature=0.2
+                    )
+                    answer = response['choices'][0]['message']['content'].strip()
+                    st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                except Exception as e:
+                    st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
 
         # Display chat history in a persistent, scrollable container
         st.markdown(
