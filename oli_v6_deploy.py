@@ -1285,11 +1285,93 @@ except Exception as e:
 
 # Tabs
 # Modify the tabs in oli_v5_deploy.py
-tab1, tab2, tab3 = st.tabs(["Análisis de Recomendaciones", 
-                           "Búsqueda de Recomendaciones",
-                           "Análisis por Rúbricas de para Documentos de Evaluación"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Análisis de Recomendaciones",
+    "Búsqueda de Recomendaciones",
+    "Análisis por Rúbricas de para Documentos de Evaluación",
+    "Document Chat"
+])
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
+
+# ================== TAB 4: DOCUMENT CHAT =====================
+with tab4:
+    st.header("Document Chat: Chatea con tu Documento")
+    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4o). Tus preguntas y respuestas aparecerán aquí.")
+
+    # Session state for chat and document
+    if 'doc_chat_history' not in st.session_state:
+        st.session_state['doc_chat_history'] = []
+    if 'doc_chat_text' not in st.session_state:
+        st.session_state['doc_chat_text'] = ''
+    if 'doc_chat_filename' not in st.session_state:
+        st.session_state['doc_chat_filename'] = ''
+
+    uploaded_file = st.file_uploader("Sube un archivo DOCX o TXT para chatear:", type=["docx", "txt"])
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith(".docx"):
+                # Extract text from DOCX
+                from docx import Document
+                doc = Document(uploaded_file)
+                full_text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+            else:
+                # TXT file
+                full_text = uploaded_file.read().decode("utf-8", errors="ignore")
+            st.session_state['doc_chat_text'] = full_text
+            st.session_state['doc_chat_filename'] = uploaded_file.name
+            st.success(f"Documento '{uploaded_file.name}' cargado y listo para chatear.")
+            # Optionally reset chat on new upload
+            st.session_state['doc_chat_history'] = []
+        except Exception as e:
+            st.error(f"Error al procesar el documento: {str(e)}")
+
+    # Show filename and preview
+    if st.session_state['doc_chat_filename']:
+        st.info(f"Documento activo: {st.session_state['doc_chat_filename']}")
+        with st.expander("Vista previa del documento (primeros 500 caracteres)"):
+            st.write(st.session_state['doc_chat_text'][:500] + ("..." if len(st.session_state['doc_chat_text']) > 500 else ""))
+
+    # Chat interface
+    if st.session_state['doc_chat_text']:
+        with st.form("doc_chat_form", clear_on_submit=True):
+            user_input = st.text_area("Escribe tu pregunta al documento:", key="doc_chat_input")
+            submitted = st.form_submit_button("Enviar pregunta")
+            if submitted and user_input.strip():
+                # Add user message to history
+                st.session_state['doc_chat_history'].append({"role": "user", "content": user_input.strip()})
+                # Call OpenAI GPT-4o with document context
+                try:
+                    import openai
+                    messages = [
+                        {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                        {"role": "system", "content": f"DOCUMENTO:\n{st.session_state['doc_chat_text'][:8000]}"}  # Limit context for token safety
+                    ]
+                    # Add last 5 chat rounds for context
+                    for msg in st.session_state['doc_chat_history'][-5:]:
+                        messages.append(msg)
+                    response = openai.chat.completions.create(
+                        model="gpt-4o",  # gpt-40-mini
+                        messages=messages,
+                        max_tokens=512,
+                        temperature=0.2
+                    )
+                    answer = response.choices[0].message.content.strip()
+                    st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                except Exception as e:
+                    st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
+
+        # Display chat history
+        st.markdown("---")
+        st.subheader("Historial de conversación")
+        for i, msg in enumerate(st.session_state['doc_chat_history']):
+            if msg['role'] == 'user':
+                st.markdown(f"<div style='color: #2980b9;'><b>Tú:</b> {msg['content']}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div style='color: #27ae60;'><b>Asistente:</b> {msg['content']}</div>", unsafe_allow_html=True)
+
+    elif st.session_state['doc_chat_filename']:
+        st.info("Sube un documento válido para comenzar el chat.")
 with tab1:
     
     st.header("Análisis de Textos y Recomendaciones Similares")
