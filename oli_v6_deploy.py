@@ -1309,23 +1309,27 @@ with tab4:
     if 'doc_chat_docs' not in st.session_state:
         st.session_state['doc_chat_docs'] = []
     if uploaded_files:
-        st.session_state['doc_chat_docs'] = []
-        for uploaded_file in uploaded_files:
-            try:
-                if uploaded_file.name.endswith(".docx"):
-                    from docx import Document
-                    doc = Document(uploaded_file)
-                    full_text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
-                else:
-                    full_text = uploaded_file.read().decode("utf-8", errors="ignore")
-                st.session_state['doc_chat_docs'].append({
-                    "filename": uploaded_file.name,
-                    "text": full_text
-                })
-            except Exception as e:
-                st.error(f"Error al procesar el documento '{uploaded_file.name}': {str(e)}")
-        st.session_state['doc_chat_history'] = []  # Optionally reset chat on new upload
-        st.success(f"{len(st.session_state['doc_chat_docs'])} documento(s) cargado(s) y listo(s) para chatear.")
+        # Only reset docs and chat history if files changed
+        uploaded_filenames = sorted([f.name for f in uploaded_files])
+        existing_filenames = sorted([doc['filename'] for doc in st.session_state['doc_chat_docs']]) if st.session_state['doc_chat_docs'] else []
+        if uploaded_filenames != existing_filenames:
+            st.session_state['doc_chat_docs'] = []
+            for uploaded_file in uploaded_files:
+                try:
+                    if uploaded_file.name.endswith(".docx"):
+                        from docx import Document
+                        doc = Document(uploaded_file)
+                        full_text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+                    else:
+                        full_text = uploaded_file.read().decode("utf-8", errors="ignore")
+                    st.session_state['doc_chat_docs'].append({
+                        "filename": uploaded_file.name,
+                        "text": full_text
+                    })
+                except Exception as e:
+                    st.error(f"Error al procesar el documento '{uploaded_file.name}': {str(e)}")
+            st.session_state['doc_chat_history'] = []  # Only reset chat when new files uploaded
+            st.success(f"{len(st.session_state['doc_chat_docs'])} documento(s) cargado(s) y listo(s) para chatear.")
 
     # Show filenames and previews
     if st.session_state['doc_chat_docs']:
