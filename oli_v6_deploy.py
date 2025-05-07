@@ -1412,6 +1412,7 @@ with tab4:
                         if chunk_embs and question_emb:
                             import faiss
                             import numpy as np
+                            import re
                             dim = len(chunk_embs[0])
                             xb = np.array(chunk_embs).astype('float32')
                             index = faiss.IndexFlatIP(dim)
@@ -1422,17 +1423,27 @@ with tab4:
                             top_n = 50
                             D, I = index.search(xq, top_n)
                             selected_chunks = [all_chunks[i] for i in I[0] if i < len(all_chunks)]
-                            # Deduplicate and merge
+                            # Also retrieve all chunks with exact matches for key question terms
+                            stopwords = set([
+                                'el','la','los','las','de','del','y','en','a','un','una','que','por','con','para','es','al','se','su','sus','o','u','como','más','menos','le','lo','su','the','and','of','in','to','for','is','on','at','by','an','or','as','be','are','was','were','from','it','this','that','with','but','not','can','may','do','does'
+                            ])
+                            qwords = [w for w in re.findall(r'\w+', question.lower()) if w not in stopwords and len(w) > 2]
+                            keyword_chunks = []
+                            for chunk in all_chunks:
+                                chunk_lc = chunk.lower()
+                                if any(qw in chunk_lc for qw in qwords):
+                                    keyword_chunks.append(chunk)
+                            # Merge, deduplicate (embedding + keyword)
                             seen = set()
                             merged_chunks = []
-                            for chunk in selected_chunks:
+                            for chunk in selected_chunks + keyword_chunks:
                                 if chunk not in seen:
                                     merged_chunks.append(chunk)
                                     seen.add(chunk)
                             context = '\n---\n'.join(merged_chunks)
                             # 6. Send to LLM
                             messages = [
-                                {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                                {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado. Si la información no es explícita, infiere la respuesta usando pistas contextuales y tu capacidad de síntesis."},
                                 {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
                             ]
                             for msg in st.session_state['doc_chat_history'][-5:]:
