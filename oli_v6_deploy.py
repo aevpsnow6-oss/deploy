@@ -1415,7 +1415,7 @@ with tab4:
                             faiss.normalize_L2(xb)
                             xq = np.array([question_emb]).astype('float32')
                             faiss.normalize_L2(xq)
-                            top_n = 25
+                            top_n = 50
                             D, I = index.search(xq, top_n)
                             selected_chunks = [all_chunks[i] for i in I[0] if i < len(all_chunks)]
                             # Deduplicate and merge
