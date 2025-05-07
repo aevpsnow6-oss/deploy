@@ -1350,13 +1350,13 @@ with tab4:
                     # Add last 5 chat rounds for context
                     for msg in st.session_state['doc_chat_history'][-5:]:
                         messages.append(msg)
-                    response = openai.chat.completions.create(
+                    response = openai.ChatCompletion.create(
                         model="gpt-4o-mini",  # gpt-40-mini
                         messages=messages,
                         max_tokens=512,
                         temperature=0.2
                     )
-                    answer = response.choices[0].message.content.strip()
+                    answer = response['choices'][0]['message']['content'].strip()
                     st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
                 except Exception as e:
                     st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
