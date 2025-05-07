@@ -1348,55 +1348,34 @@ with tab4:
                 import openai
                 import numpy as np
                 import faiss
-                # 1. Split all docs into ~700-character chunks (by paragraph, then merge if short)
+                # 1. Split all docs into larger, overlapping chunks (~1500 chars, 300 overlap)
+                def chunk_text(text, chunk_size=1500, overlap=300):
+                    chunks = []
+                    start = 0
+                    while start < len(text):
+                        end = min(start + chunk_size, len(text))
+                        chunks.append(text[start:end])
+                        start += chunk_size - overlap
+                    return chunks
                 all_chunks = []
                 for doc in st.session_state['doc_chat_docs']:
-                    paragraphs = [p for p in doc['text'].split('\n') if p.strip()]
-                    chunk = ''
-                    for para in paragraphs:
-                        if len(chunk) + len(para) < 700:
-                            chunk += (' ' if chunk else '') + para
-                        else:
-                            if chunk:
-                                all_chunks.append(chunk)
-                            chunk = para
-                    if chunk:
-                        all_chunks.append(chunk)
+                    all_chunks.extend(chunk_text(doc['text']))
                 if not all_chunks:
                     st.session_state['doc_chat_history'].append({"role": "assistant", "content": "[No se encontraron fragmentos en los documentos.]"})
                 else:
-                    # 2. Get embeddings for all chunks (batch)
+                    question = user_input.strip()
+                    # 2. Detect summary/broad queries
+                    summary_keywords = [
+                        "resumen", "conclusiones", "hallazgos", "principales", "summary", "conclusion"
+                    ]
+                    is_summary_query = any(kw in question.lower() for kw in summary_keywords)
                     emb_model = "text-embedding-3-small"
-                    try:
-                        chunk_embs_resp = openai.Embedding.create(input=all_chunks, model=emb_model)
-                        chunk_embs = [item["embedding"] for item in chunk_embs_resp["data"]]
-                    except Exception as e:
-                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embeddings de los fragmentos: {str(e)}]"})
-                        chunk_embs = []
-                    # 3. Embed user question
-                    try:
-                        question = user_input.strip()
-                        question_emb = openai.Embedding.create(input=question, model=emb_model)["data"][0]["embedding"]
-                    except Exception as e:
-                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embedding de la pregunta: {str(e)}]"})
-                        question_emb = None
-                    # 4. Use faiss to retrieve top N relevant chunks
-                    if chunk_embs and question_emb:
-                        dim = len(chunk_embs[0])
-                        xb = np.array(chunk_embs).astype('float32')
-                        index = faiss.IndexFlatIP(dim)
-                        # Normalize for cosine similarity
-                        faiss.normalize_L2(xb)
-                        xq = np.array([question_emb]).astype('float32')
-                        faiss.normalize_L2(xq)
-                        top_n = 10
-                        D, I = index.search(xq, top_n)
-                        selected_chunks = [all_chunks[i] for i in I[0] if i < len(all_chunks)]
-                        context = '\n---\n'.join(selected_chunks)
-                        # 5. Send to LLM
+                    if is_summary_query:
+                        # Fallback: use as much of the full document(s) as fits
+                        context = "\n---\n".join(doc['text'][:12000] for doc in st.session_state['doc_chat_docs'])
                         messages = [
                             {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
-                            {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
+                            {"role": "system", "content": f"Texto del documento:\n{context}"}
                         ]
                         for msg in st.session_state['doc_chat_history'][-5:]:
                             messages.append(msg)
@@ -1411,6 +1390,60 @@ with tab4:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
+                    else:
+                        # 3. Get embeddings for all chunks (batch)
+                        try:
+                            chunk_embs_resp = openai.Embedding.create(input=all_chunks, model=emb_model)
+                            chunk_embs = [item["embedding"] for item in chunk_embs_resp["data"]]
+                        except Exception as e:
+                            st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embeddings de los fragmentos: {str(e)}]"})
+                            chunk_embs = []
+                        # 4. Embed user question
+                        try:
+                            question_emb = openai.Embedding.create(input=question, model=emb_model)["data"][0]["embedding"]
+                        except Exception as e:
+                            st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embedding de la pregunta: {str(e)}]"})
+                            question_emb = None
+                        # 5. Use faiss to retrieve top N relevant chunks
+                        if chunk_embs and question_emb:
+                            import faiss
+                            import numpy as np
+                            dim = len(chunk_embs[0])
+                            xb = np.array(chunk_embs).astype('float32')
+                            index = faiss.IndexFlatIP(dim)
+                            # Normalize for cosine similarity
+                            faiss.normalize_L2(xb)
+                            xq = np.array([question_emb]).astype('float32')
+                            faiss.normalize_L2(xq)
+                            top_n = 25
+                            D, I = index.search(xq, top_n)
+                            selected_chunks = [all_chunks[i] for i in I[0] if i < len(all_chunks)]
+                            # Deduplicate and merge
+                            seen = set()
+                            merged_chunks = []
+                            for chunk in selected_chunks:
+                                if chunk not in seen:
+                                    merged_chunks.append(chunk)
+                                    seen.add(chunk)
+                            context = '\n---\n'.join(merged_chunks)
+                            # 6. Send to LLM
+                            messages = [
+                                {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                                {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
+                            ]
+                            for msg in st.session_state['doc_chat_history'][-5:]:
+                                messages.append(msg)
+                            try:
+                                response = openai.ChatCompletion.create(
+                                    model="gpt-4o-mini",
+                                    messages=messages,
+                                    max_tokens=2048,
+                                    temperature=0.2
+                                )
+                                answer = response['choices'][0]['message']['content'].strip()
+                                st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                            except Exception as e:
+                                st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
 
         # Display chat history in a persistent, scrollable container
         st.markdown(
