@@ -1361,14 +1361,21 @@ with tab4:
                 except Exception as e:
                     st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
 
-        # Display chat history
-        st.markdown("---")
-        st.subheader("Historial de conversación")
-        for i, msg in enumerate(st.session_state['doc_chat_history']):
-            if msg['role'] == 'user':
-                st.markdown(f"<div style='color: #2980b9;'><b>Tú:</b> {msg['content']}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div style='color: #27ae60;'><b>Asistente:</b> {msg['content']}</div>", unsafe_allow_html=True)
+        # Display chat history in a persistent, scrollable container
+        st.markdown(
+            '''
+            <div style="height:420px; overflow-y:auto; border:1px solid #333; border-radius:8px; padding:1em; background:#18191a; margin-bottom:1em;">
+            '''
+            +
+            "".join(
+                f"<div style='margin-bottom:1em; color:#2980b9;'><b>Tú:</b> {msg['content']}</div>" if msg['role']=='user'
+                else f"<div style='margin-bottom:1em; color:#27ae60;'><b>Asistente:</b> {msg['content']}</div>"
+                for msg in st.session_state['doc_chat_history']
+            )
+            +
+            '</div>',
+            unsafe_allow_html=True
+        )
 
     elif st.session_state['doc_chat_filename']:
         st.info("Sube un documento válido para comenzar el chat.")
