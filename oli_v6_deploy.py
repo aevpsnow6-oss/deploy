@@ -1351,7 +1351,7 @@ with tab4:
                     for msg in st.session_state['doc_chat_history'][-5:]:
                         messages.append(msg)
                     response = openai.chat.completions.create(
-                        model="gpt-4o",  # gpt-40-mini
+                        model="gpt-4o-mini",  # gpt-40-mini
                         messages=messages,
                         max_tokens=512,
                         temperature=0.2
