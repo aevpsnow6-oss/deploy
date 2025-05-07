@@ -1381,7 +1381,7 @@ with tab4:
                             messages.append(msg)
                         try:
                             response = openai.ChatCompletion.create(
-                                model="gpt-4o-mini",
+                                model="gpt-4.1-mini",
                                 messages=messages,
                                 max_tokens=2048,
                                 temperature=0.3
@@ -1435,7 +1435,7 @@ with tab4:
                                 messages.append(msg)
                             try:
                                 response = openai.ChatCompletion.create(
-                                    model="gpt-4o-mini",
+                                    model="gpt-4.1-mini",
                                     messages=messages,
                                     max_tokens=2048,
                                     temperature=0.3
