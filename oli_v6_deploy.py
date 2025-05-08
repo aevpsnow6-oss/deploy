@@ -1321,11 +1321,7 @@ if st.session_state['current_page'] == "home":
     st.markdown("<div style='margin-bottom:2em; color:#183b6b; font-size:1.2em;'>Seleccione una sección para comenzar:</div>", unsafe_allow_html=True)
     nav_cols = st.columns(len(nav_pages))
     for i, (label, page_key, color) in enumerate(nav_pages):
-        button_style = f"""
-        <div style='text-align: center; padding: 1em; border-radius: 10px; background-color: {color}; color: white; font-weight: bold; cursor: pointer; margin: 0.5em;'>
-            {label}
-        </div>
-        """
+        button_style = f'<div style="text-align: center; padding: 1em; border-radius: 10px; background-color: {color}; color: white; font-weight: bold; cursor: pointer; margin: 0.5em;">{label}</div>'
         with nav_cols[i]:
             if st.markdown(button_style, unsafe_allow_html=True):
                 st.session_state['current_page'] = page_key
@@ -1450,11 +1446,7 @@ if st.session_state['current_page'] == 'page_analysis':
     if not filtered_df.empty:
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
         # Responsive dashboard layout for all major plots
-        st.markdown("""
-<style>
-.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}
-</style>
-""", unsafe_allow_html=True)
+        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
         row1_col1, row1_col2 = st.columns(2)
         with row1_col1:
             st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
