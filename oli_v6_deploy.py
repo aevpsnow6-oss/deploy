@@ -1092,9 +1092,11 @@ def load_embeddings():
     
     return doc_embeddings, structured_embeddings, index
 
+import concurrent.futures
+
 def process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part):
     """
-    Process text analysis in chunks and combine results.
+    Process text analysis in chunks and combine results (parallelized).
     
     Parameters:
     -----------
@@ -1114,22 +1116,43 @@ def process_text_analysis(combined_text, map_template, combine_template_prefix, 
     """
     if not combined_text:
         return None
-        
+    
     text_chunks = split_text(combined_text)
     chunk_summaries = []
-    
-    for chunk in text_chunks:
-        summary = summarize_text(chunk, map_template)
-        if summary:
-            chunk_summaries.append(summary)
-            time.sleep(1)  # Rate limiting
-    
-    if chunk_summaries:
-        combined_summaries = " ".join(chunk_summaries)
+    MAX_WORKERS = min(8, len(text_chunks)) if text_chunks else 1
+
+    def summarize_chunk(chunk):
+        return summarize_text(chunk, map_template)
+
+    # Parallelize chunk summarization
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(summarize_chunk, chunk) for chunk in text_chunks]
+        for future in concurrent.futures.as_completed(futures):
+            summary = future.result()
+            if summary:
+                chunk_summaries.append(summary)
+
+    # Preserve original chunk order (since as_completed doesn't)
+    chunk_summaries_ordered = []
+    if chunk_summaries and len(chunk_summaries) == len(text_chunks):
+        # If all succeeded, sort by chunk order
+        chunk_map = {futures[i]: i for i in range(len(futures))}
+        # But as_completed gives no order, so instead:
+        # Re-run in order
+        for i in range(len(text_chunks)):
+            result = futures[i].result()
+            if result:
+                chunk_summaries_ordered.append(result)
+    else:
+        chunk_summaries_ordered = chunk_summaries
+
+    if chunk_summaries_ordered:
+        combined_summaries = " ".join(chunk_summaries_ordered)
         final_template = combine_template_prefix + user_template_part
         return summarize_text(combined_summaries, final_template)
     
     return None
+
 
 def split_text(text, max_length=1500):
     """
