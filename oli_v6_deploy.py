@@ -1334,6 +1334,18 @@ if st.session_state['current_page'] == 'page_analysis':
     # These variables should be defined before being referenced
     selected_dimensions = []
     selected_subdimensions = []
+    selected_offices = ['All']
+    selected_countries = ['All']
+    
+    # Office filter
+    office_options = ['All'] + list(df['Recommendation_administrative_unit'].unique())
+    with st.sidebar.expander("Unidad Administrativa", expanded=False):
+        selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All')
+        
+    # Country filter
+    country_options = ['All'] + list(df['Country(ies)'].unique())
+    with st.sidebar.expander("País", expanded=False):
+        selected_countries = st.multiselect('País', options=country_options, default='All')
     
     # Now add the theme filter
     evaltheme_options = ['All'] + list(df['Theme_cl'].unique())
