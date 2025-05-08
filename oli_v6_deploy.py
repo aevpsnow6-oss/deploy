@@ -1316,6 +1316,7 @@ nav_pages = [
 if 'current_page' not in st.session_state:
     st.session_state['current_page'] = "home"
 
+# Create tabs for different sections
 if st.session_state['current_page'] == "home":
     st.title("Bienvenido a la Plataforma de Recomendaciones")
     st.markdown("<div style='margin-bottom:2em; color:#183b6b; font-size:1.2em;'>Seleccione una sección para comenzar:</div>", unsafe_allow_html=True)
@@ -1325,17 +1326,20 @@ if st.session_state['current_page'] == "home":
         with nav_cols[i]:
             if st.markdown(button_style, unsafe_allow_html=True):
                 st.session_state['current_page'] = page_key
+                st.experimental_rerun()
 
-# Analysis page content
-if st.session_state['current_page'] == 'page_analysis':
+elif st.session_state['current_page'] == 'page_analysis':
+    # Add a back button
+    if st.button("← Volver al inicio"):
+        st.session_state['current_page'] = "home"
+        st.experimental_rerun()
+        
     st.title("Análisis de Recomendaciones")
     
     # Define filter options first
     # These variables should be defined before being referenced
     selected_dimensions = []
     selected_subdimensions = []
-    selected_offices = ['All']
-    selected_countries = ['All']
     
     # Office filter
     office_options = ['All'] + list(df['Recommendation_administrative_unit'].unique())
@@ -1655,8 +1659,13 @@ if st.session_state['current_page'] == 'page_analysis':
             import traceback
             st.error(traceback.format_exc())
 
-# Tab 2: Search
-
+# Search page content
+elif st.session_state['current_page'] == 'page_search':
+    # Add a back button
+    if st.button("← Volver al inicio"):
+        st.session_state['current_page'] = "home"
+        st.experimental_rerun()
+        
     st.header("Búsqueda de Recomendaciones")
     
     # Chat section for querying similar recommendations
@@ -1974,8 +1983,13 @@ if st.session_state['current_page'] == 'page_analysis':
 #             import traceback
 #             st.error(traceback.format_exc())
 #     else:
-#         st.info("Por favor suba un archivo DOCX para comenzar.")
-
+# Rubrics page content
+elif st.session_state['current_page'] == 'page_rubrics':
+    # Add a back button
+    if st.button("← Volver al inicio"):
+        st.session_state['current_page'] = "home"
+        st.experimental_rerun()
+        
     st.header("Subir y Evaluar Documento DOCX")
     
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2416,3 +2430,19 @@ if st.session_state['current_page'] == 'page_analysis':
             st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+
+# Document Chat page content
+elif st.session_state['current_page'] == 'page_chat':
+    # Add a back button
+    if st.button("← Volver al inicio"):
+        st.session_state['current_page'] = "home"
+        st.experimental_rerun()
+        
+    st.header("Document Chat")
+    st.info("Esta función permite chatear con documentos cargados. Próximamente disponible.")
+    
+    # Placeholder for future document chat functionality
+    uploaded_file = st.file_uploader("Suba un documento para chatear:", type=["pdf", "docx", "txt"])
+    if uploaded_file is not None:
+        st.success(f"Documento cargado: {uploaded_file.name}")
+        st.info("La funcionalidad de chat con documentos estará disponible en una próxima actualización.")
