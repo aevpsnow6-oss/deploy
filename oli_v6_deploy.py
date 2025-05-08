@@ -1125,7 +1125,7 @@ def process_text_analysis(combined_text, map_template, combine_template_prefix, 
         return summarize_text(chunk, map_template)
 
     # Parallelize chunk summarization
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
         futures = [executor.submit(summarize_chunk, chunk) for chunk in text_chunks]
         for future in concurrent.futures.as_completed(futures):
             summary = future.result()
