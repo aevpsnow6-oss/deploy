@@ -1328,6 +1328,14 @@ with tab1:
     with st.sidebar.expander("País", expanded=False):
         selected_countries = st.multiselect('País', options=country_options, default='All')
     
+    # Year filter with slider
+    filtered_df = df.copy()
+    min_year = int(df['year'].min())
+    max_year = int(df['year'].max())
+    with st.sidebar.expander("Año", expanded=False):
+        selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year))
+        filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
+    
     # Now add the theme filter
     evaltheme_options = ['All'] + list(df['Theme_cl'].unique())
     with st.sidebar.expander("Tema (Evaluación)", expanded=False):
@@ -1367,7 +1375,7 @@ with tab1:
             analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
 
     # Filter dataframe based on user selection
-    # The year filter is now handled above using selected_year_range and filtered_df
+    # The year filter is already handled above using selected_year_range and filtered_df
     # Apply remaining filters in sequence to filtered_df
     if 'All' not in selected_offices:
         filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices)]
