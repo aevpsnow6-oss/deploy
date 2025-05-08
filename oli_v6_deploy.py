@@ -1306,35 +1306,12 @@ except Exception as e:
     st.error(f"Error loading data: {str(e)}")
     st.stop()
 
-# --- Custom Navigation Buttons (UN/ILO palette) ---
-nav_pages = [
-    ("Análisis de Recomendaciones", "page_analysis", "#183b6b"),  # Navy
-    ("Búsqueda de Recomendaciones", "page_search", "#0057b7"),    # UN Blue
-    ("Análisis por Rúbricas de para Documentos de Evaluación", "page_rubrics", "#e10600"),  # ILO Red
-    ("Document Chat", "page_chat", "#19324d")  # Deep Navy
-]
-if 'current_page' not in st.session_state:
-    st.session_state['current_page'] = "home"
+# Tabs
+tab1, tab2, tab3, tab4 = st.tabs(["Análisis de Recomendaciones", "Búsqueda de Recomendaciones", "Análisis por Rúbricas", "Document Chat"])
 
-# Create tabs for different sections
-if st.session_state['current_page'] == "home":
-    st.title("Bienvenido a la Plataforma de Recomendaciones")
-    st.markdown("<div style='margin-bottom:2em; color:#183b6b; font-size:1.2em;'>Seleccione una sección para comenzar:</div>", unsafe_allow_html=True)
-    nav_cols = st.columns(len(nav_pages))
-    for i, (label, page_key, color) in enumerate(nav_pages):
-        button_style = f'<div style="text-align: center; padding: 1em; border-radius: 10px; background-color: {color}; color: white; font-weight: bold; cursor: pointer; margin: 0.5em;">{label}</div>'
-        with nav_cols[i]:
-            if st.markdown(button_style, unsafe_allow_html=True):
-                st.session_state['current_page'] = page_key
-                st.experimental_rerun()
-
-elif st.session_state['current_page'] == 'page_analysis':
-    # Add a back button
-    if st.button("← Volver al inicio"):
-        st.session_state['current_page'] = "home"
-        st.experimental_rerun()
-        
-    st.title("Análisis de Recomendaciones")
+# Tab 1: Filters, Text Analysis and Similar Recommendations
+with tab1:
+    st.header("Análisis de Recomendaciones")
     
     # Define filter options first
     # These variables should be defined before being referenced
@@ -1659,13 +1636,8 @@ elif st.session_state['current_page'] == 'page_analysis':
             import traceback
             st.error(traceback.format_exc())
 
-# Search page content
-elif st.session_state['current_page'] == 'page_search':
-    # Add a back button
-    if st.button("← Volver al inicio"):
-        st.session_state['current_page'] = "home"
-        st.experimental_rerun()
-        
+# Tab 2: Search
+with tab2:
     st.header("Búsqueda de Recomendaciones")
     
     # Chat section for querying similar recommendations
@@ -1983,13 +1955,8 @@ elif st.session_state['current_page'] == 'page_search':
 #             import traceback
 #             st.error(traceback.format_exc())
 #     else:
-# Rubrics page content
-elif st.session_state['current_page'] == 'page_rubrics':
-    # Add a back button
-    if st.button("← Volver al inicio"):
-        st.session_state['current_page'] = "home"
-        st.experimental_rerun()
-        
+# Tab 3: Rubrics
+with tab3:
     st.header("Subir y Evaluar Documento DOCX")
     
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2431,13 +2398,8 @@ elif st.session_state['current_page'] == 'page_rubrics':
     else:
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
-# Document Chat page content
-elif st.session_state['current_page'] == 'page_chat':
-    # Add a back button
-    if st.button("← Volver al inicio"):
-        st.session_state['current_page'] = "home"
-        st.experimental_rerun()
-        
+# Tab 4: Document Chat
+with tab4:
     st.header("Document Chat")
     st.info("Esta función permite chatear con documentos cargados. Próximamente disponible.")
     
