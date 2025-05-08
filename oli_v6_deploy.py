@@ -1516,12 +1516,15 @@ with tab1:
         selected_countries = st.multiselect('País', options=country_options, default='All')
 
     with st.sidebar.expander("Año", expanded=False):
-        year_options = ['All'] + list(df['year'].unique())
-        selected_years = st.multiselect('Año', options=year_options, default='All')
+        min_year, max_year = int(df['year'].min()), int(df['year'].max())
+        selected_year_range = st.slider('Año', min_value=min_year, max_value=max_year, value=(min_year, max_year), step=1)
         
+    # Filter by selected year range before other filters
+    filtered_df = df[(df['year'] >= selected_year_range[0]) & (df['year'] <= selected_year_range[1])].copy()
+
     # Dimension filter
     with st.sidebar.expander("Dimensión", expanded=False):
-        dimension_options = ['All'] + list(df['dimension'].unique())
+        dimension_options = ['All'] + list(filtered_df['dimension'].unique())
         selected_dimensions = st.multiselect('Dimensión', options=dimension_options, default='All')
 
     # Subdimension filter
