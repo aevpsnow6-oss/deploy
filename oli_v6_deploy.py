@@ -1708,7 +1708,7 @@ elif st.session_state['current_page'] == "page_chat":
             st.error(traceback.format_exc())
 
 # Tab 2: Search
-with tab2:
+
     st.header("Búsqueda de Recomendaciones")
     
     # Chat section for querying similar recommendations
@@ -1755,7 +1755,7 @@ with tab2:
                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
                     display_results(results)
 # # Tab 3: Document Upload and Parsing
-# with tab3:
+# 
 #     st.header("Subir y Evaluar Documento DOCX")
     
 #     # Cache the document processing function to persist between Streamlit re-runs
@@ -2027,7 +2027,7 @@ with tab2:
 #             st.error(traceback.format_exc())
 #     else:
 #         st.info("Por favor suba un archivo DOCX para comenzar.")
-with tab3:
+
     st.header("Subir y Evaluar Documento DOCX")
     
     # Read rubrics from Excel files as in megaparse_example.py
