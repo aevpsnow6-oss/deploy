@@ -1322,8 +1322,28 @@ if st.session_state['current_page'] == "home":
     nav_cols = st.columns(len(nav_pages))
     for i, (label, page_key, color) in enumerate(nav_pages):
         button_style = f"""
-        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
+        <div style='text-align: center; padding: 1em; border-radius: 10px; background-color: {color}; color: white; font-weight: bold; cursor: pointer; margin: 0.5em;'>
+            {label}
+        </div>
+        """
+        with nav_cols[i]:
+            if st.markdown(button_style, unsafe_allow_html=True):
+                st.session_state['current_page'] = page_key
 
+# Analysis page content
+if st.session_state['current_page'] == 'page_analysis':
+    st.title("Análisis de Recomendaciones")
+    
+    # Define filter options first
+    # These variables should be defined before being referenced
+    selected_dimensions = []
+    selected_subdimensions = []
+    
+    # Now add the theme filter
+    evaltheme_options = ['All'] + list(df['Theme_cl'].unique())
+    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
+        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
+    
     # Recommendation theme filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme:
         rectheme_options = ['All'] + list(df['Recommendation_theme'].unique())
