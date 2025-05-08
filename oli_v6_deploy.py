@@ -1579,14 +1579,12 @@ with tab1:
             analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
 
     # Filter dataframe based on user selection
-    filtered_df = df.copy()
-
+    # The year filter is now handled above using selected_year_range and filtered_df
+    # Apply remaining filters in sequence to filtered_df
     if 'All' not in selected_offices:
         filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices)]
     if 'All' not in selected_countries:
         filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries)]
-    if 'All' not in selected_years:
-        filtered_df = filtered_df[filtered_df['year'].isin(selected_years)]
     if 'All' not in selected_dimensions:
         filtered_df = filtered_df[filtered_df['dimension'].isin(selected_dimensions)]
     if 'All' not in selected_subdimensions:
