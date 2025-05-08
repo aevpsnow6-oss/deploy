@@ -1313,53 +1313,56 @@ tab1, tab2, tab3, tab4 = st.tabs(["Análisis de Recomendaciones", "Búsqueda de 
 with tab1:
     st.header("Análisis de Recomendaciones")
     
+    # Initialize filtered dataframe
+    filtered_df = df.copy()
+    
     # Define filter options first
     # These variables should be defined before being referenced
-    selected_dimensions = []
-    selected_subdimensions = []
+    selected_dimensions = ['All']
+    selected_subdimensions = ['All']
     
     # Office filter
-    office_options = ['All'] + list(df['Recommendation_administrative_unit'].unique())
+    office_options = ['All'] + sorted(list(df['Recommendation_administrative_unit'].unique()))
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
         selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All')
         
     # Country filter
-    country_options = ['All'] + list(df['Country(ies)'].unique())
+    country_options = ['All'] + sorted(list(df['Country(ies)'].unique()))
     with st.sidebar.expander("País", expanded=False):
         selected_countries = st.multiselect('País', options=country_options, default='All')
     
     # Year filter with slider
-    filtered_df = df.copy()
     min_year = int(df['year'].min())
     max_year = int(df['year'].max())
     with st.sidebar.expander("Año", expanded=False):
         selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year))
+        # Apply year filter
         filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
     
     # Now add the theme filter
-    evaltheme_options = ['All'] + list(df['Theme_cl'].unique())
+    evaltheme_options = ['All'] + sorted(list(df['Theme_cl'].unique()))
     with st.sidebar.expander("Tema (Evaluación)", expanded=False):
         selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
     
     # Recommendation theme filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme:
-        rectheme_options = ['All'] + list(df['Recommendation_theme'].unique())
+        rectheme_options = ['All'] + sorted(list(df['Recommendation_theme'].unique()))
     else:
-        rectheme_options = ['All'] + list(df[(df['dimension'].isin(selected_dimensions)) & 
-                                            (df['subdim'].isin(selected_subdimensions)) & 
-                                            (df['Theme_cl'].isin(selected_evaltheme))]['Recommendation_theme'].unique())
+        rectheme_options = ['All'] + sorted(list(df[(df['dimension'].isin(selected_dimensions)) & 
+                                             (df['subdim'].isin(selected_subdimensions)) & 
+                                             (df['Theme_cl'].isin(selected_evaltheme))]['Recommendation_theme'].unique()))
 
     with st.sidebar.expander("Tema (Recomendación)", expanded=False):
         selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All')
 
     # Management response filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or 'All' in selected_rectheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme or not selected_rectheme:
-        mgtres_options = ['All'] + list(df['Management_response'].unique())
+        mgtres_options = ['All'] + sorted(list(df['Management_response'].unique()))
     else:
-        mgtres_options = ['All'] + list(df[(df['dimension'].isin(selected_dimensions)) & 
-                                        (df['subdim'].isin(selected_subdimensions)) & 
-                                        (df['Theme_cl'].isin(selected_evaltheme)) & 
-                                        (df['Recommendation_theme'].isin(selected_rectheme))]['Management_response'].unique())
+        mgtres_options = ['All'] + sorted(list(df[(df['dimension'].isin(selected_dimensions)) & 
+                                         (df['subdim'].isin(selected_subdimensions)) & 
+                                         (df['Theme_cl'].isin(selected_evaltheme)) & 
+                                         (df['Recommendation_theme'].isin(selected_rectheme))]['Management_response'].unique()))
 
     with st.sidebar.expander("Respuesta de gerencia", expanded=False):
         selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All')
@@ -1377,19 +1380,19 @@ with tab1:
     # Filter dataframe based on user selection
     # The year filter is already handled above using selected_year_range and filtered_df
     # Apply remaining filters in sequence to filtered_df
-    if 'All' not in selected_offices:
+    if 'All' not in selected_offices and selected_offices:
         filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices)]
-    if 'All' not in selected_countries:
+    if 'All' not in selected_countries and selected_countries:
         filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries)]
-    if 'All' not in selected_dimensions:
+    if 'All' not in selected_dimensions and selected_dimensions:
         filtered_df = filtered_df[filtered_df['dimension'].isin(selected_dimensions)]
-    if 'All' not in selected_subdimensions:
+    if 'All' not in selected_subdimensions and selected_subdimensions:
         filtered_df = filtered_df[filtered_df['subdim'].isin(selected_subdimensions)]
-    if 'All' not in selected_evaltheme:
+    if 'All' not in selected_evaltheme and selected_evaltheme:
         filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme)]
-    if 'All' not in selected_rectheme:
+    if 'All' not in selected_rectheme and selected_rectheme:
         filtered_df = filtered_df[filtered_df['Recommendation_theme'].isin(selected_rectheme)]
-    if 'All' not in selected_mgtres:
+    if 'All' not in selected_mgtres and selected_mgtres:
         filtered_df = filtered_df[filtered_df['Management_response'].isin(selected_mgtres)]
 
     # Extract unique texts
