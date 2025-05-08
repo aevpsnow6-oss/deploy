@@ -1431,10 +1431,10 @@ if st.session_state['current_page'] == "home":
         country_counts = filtered_df_unique['Country(ies)'].value_counts()
         # Responsive dashboard layout for all major plots
         st.markdown("""
-            <style>
-            .dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}
-            </style>
-        """, unsafe_allow_html=True)
+<style>
+.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}
+</style>
+""", unsafe_allow_html=True)
         row1_col1, row1_col2 = st.columns(2)
         with row1_col1:
             st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
