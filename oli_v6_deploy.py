@@ -190,7 +190,7 @@ class SimpleHierarchicalStore:
         """
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert document evaluator that provides detailed analysis and scoring based on specific criteria."},
                     {"role": "user", "content": prompt}
@@ -1216,7 +1216,7 @@ def summarize_text(text, prompt_template):
     try:
         # Use only the older OpenAI SDK (<1.0.0)
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",  # or whatever model you're using
+            model="gpt-4.1-mini",  # or whatever model you're using
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
                 {"role": "user", "content": prompt}
@@ -1297,7 +1297,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ================== TAB 4: DOCUMENT CHAT =====================
 with tab4:
     st.header("Document Chat: Chatea con tu Documento")
-    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4o). Tus preguntas y respuestas aparecerán aquí.")
+    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
 
     # Session state for chat and document
     if 'doc_chat_history' not in st.session_state:
@@ -2311,7 +2311,7 @@ with tab3:
         # Call LLM using OpenAI v0.28 syntax with reduced token limit
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
@@ -2372,7 +2372,7 @@ with tab3:
         # Call LLM for synthesis using OpenAI v0.28 syntax with reduced token limit
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
                     {"role": "user", "content": synthesis_prompt}
@@ -2451,7 +2451,7 @@ with tab3:
                                 llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                                 try:
                                     response = openai.ChatCompletion.create(
-                                        model="gpt-4o-mini",
+                                        model="gpt-4.1-mini",
                                         messages=[
                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                             {"role": "user", "content": full_text}
