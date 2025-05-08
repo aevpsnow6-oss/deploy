@@ -1322,12 +1322,14 @@ with tab1:
     selected_subdimensions = ['All']
     
     # Office filter
-    office_options = ['All'] + sorted(list(df['Recommendation_administrative_unit'].unique()))
+    # Convert to strings before sorting to avoid type comparison errors
+    office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
         selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All')
         
     # Country filter
-    country_options = ['All'] + sorted(list(df['Country(ies)'].unique()))
+    # Convert to strings before sorting to avoid type comparison errors
+    country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("País", expanded=False):
         selected_countries = st.multiselect('País', options=country_options, default='All')
     
@@ -1340,29 +1342,36 @@ with tab1:
         filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
     
     # Now add the theme filter
-    evaltheme_options = ['All'] + sorted(list(df['Theme_cl'].unique()))
+    # Convert to strings before sorting to avoid type comparison errors
+    evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Tema (Evaluación)", expanded=False):
         selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
     
     # Recommendation theme filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme:
-        rectheme_options = ['All'] + sorted(list(df['Recommendation_theme'].unique()))
+        # Convert to strings before sorting to avoid type comparison errors
+        rectheme_options = ['All'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
     else:
-        rectheme_options = ['All'] + sorted(list(df[(df['dimension'].isin(selected_dimensions)) & 
-                                             (df['subdim'].isin(selected_subdimensions)) & 
-                                             (df['Theme_cl'].isin(selected_evaltheme))]['Recommendation_theme'].unique()))
+        filtered_theme_df = df[(df['dimension'].isin(selected_dimensions)) & 
+                             (df['subdim'].isin(selected_subdimensions)) & 
+                             (df['Theme_cl'].isin(selected_evaltheme))]
+        # Convert to strings before sorting to avoid type comparison errors
+        rectheme_options = ['All'] + sorted([str(x) for x in filtered_theme_df['Recommendation_theme'].unique() if not pd.isna(x)])
 
     with st.sidebar.expander("Tema (Recomendación)", expanded=False):
         selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All')
 
     # Management response filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or 'All' in selected_rectheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme or not selected_rectheme:
-        mgtres_options = ['All'] + sorted(list(df['Management_response'].unique()))
+        # Convert to strings before sorting to avoid type comparison errors
+        mgtres_options = ['All'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
     else:
-        mgtres_options = ['All'] + sorted(list(df[(df['dimension'].isin(selected_dimensions)) & 
-                                         (df['subdim'].isin(selected_subdimensions)) & 
-                                         (df['Theme_cl'].isin(selected_evaltheme)) & 
-                                         (df['Recommendation_theme'].isin(selected_rectheme))]['Management_response'].unique()))
+        filtered_mgtres_df = df[(df['dimension'].isin(selected_dimensions)) & 
+                              (df['subdim'].isin(selected_subdimensions)) & 
+                              (df['Theme_cl'].isin(selected_evaltheme)) & 
+                              (df['Recommendation_theme'].isin(selected_rectheme))]
+        # Convert to strings before sorting to avoid type comparison errors
+        mgtres_options = ['All'] + sorted([str(x) for x in filtered_mgtres_df['Management_response'].unique() if not pd.isna(x)])
 
     with st.sidebar.expander("Respuesta de gerencia", expanded=False):
         selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All')
@@ -1381,19 +1390,19 @@ with tab1:
     # The year filter is already handled above using selected_year_range and filtered_df
     # Apply remaining filters in sequence to filtered_df
     if 'All' not in selected_offices and selected_offices:
-        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices)]
+        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].astype(str).isin(selected_offices)]
     if 'All' not in selected_countries and selected_countries:
-        filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries)]
+        filtered_df = filtered_df[filtered_df['Country(ies)'].astype(str).isin(selected_countries)]
     if 'All' not in selected_dimensions and selected_dimensions:
-        filtered_df = filtered_df[filtered_df['dimension'].isin(selected_dimensions)]
+        filtered_df = filtered_df[filtered_df['dimension'].astype(str).isin(selected_dimensions)]
     if 'All' not in selected_subdimensions and selected_subdimensions:
-        filtered_df = filtered_df[filtered_df['subdim'].isin(selected_subdimensions)]
+        filtered_df = filtered_df[filtered_df['subdim'].astype(str).isin(selected_subdimensions)]
     if 'All' not in selected_evaltheme and selected_evaltheme:
-        filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme)]
+        filtered_df = filtered_df[filtered_df['Theme_cl'].astype(str).isin(selected_evaltheme)]
     if 'All' not in selected_rectheme and selected_rectheme:
-        filtered_df = filtered_df[filtered_df['Recommendation_theme'].isin(selected_rectheme)]
+        filtered_df = filtered_df[filtered_df['Recommendation_theme'].astype(str).isin(selected_rectheme)]
     if 'All' not in selected_mgtres and selected_mgtres:
-        filtered_df = filtered_df[filtered_df['Management_response'].isin(selected_mgtres)]
+        filtered_df = filtered_df[filtered_df['Management_response'].astype(str).isin(selected_mgtres)]
 
     # Extract unique texts
     unique_texts = filtered_df['Recommendation_description'].unique()
