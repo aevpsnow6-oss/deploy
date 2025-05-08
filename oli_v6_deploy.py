@@ -1314,90 +1314,14 @@ nav_pages = [
     ("Document Chat", "page_chat", "#19324d")  # Deep Navy
 ]
 if 'current_page' not in st.session_state:
-    st.session_state['current_page'] = "page_analysis"
-nav_cols = st.columns(len(nav_pages))
-for i, (label, page_key, color) in enumerate(nav_pages):
-    button_style = f"""
-        <style>
-        .nav-btn-{i} > button {{
-            width: 100%;
-            height: 70px;
-            font-size: 1.2em;
-            font-weight: bold;
-            color: white;
-            background: {color};
-            border-radius: 12px;
-            border: none;
-            margin-bottom: 0.5em;
-            transition: background 0.2s;
-        }}
-        .nav-btn-{i} > button:hover {{
-            background: #222;
-            color: #fff;
-        }}
-        </style>
-    """
-    nav_cols[i].markdown(button_style, unsafe_allow_html=True)
-    if nav_cols[i].button(label, key=f"navbtn_{page_key}", use_container_width=True):
-        st.session_state['current_page'] = page_key
+    st.session_state['current_page'] = "home"
 
-# --- Render the selected page ---
-if st.session_state['current_page'] == "page_analysis":
-    st.header("Análisis de Textos y Recomendaciones Similares")
-    # --- Place all Tab 1 logic here (filters, analysis, etc.) ---
-    st.sidebar.title('Filtros para Recomendaciones')
-    with st.sidebar.expander("Oficina Regional", expanded=False):
-        office_options = ['All'] + list(df['Recommendation_administrative_unit'].unique())
-        selected_offices = st.multiselect('Oficina Regional', options=office_options, default='All')
-    with st.sidebar.expander("País", expanded=False):
-        country_options = ['All'] + list(df['Country(ies)'].unique())
-        selected_countries = st.multiselect('País', options=country_options, default='All')
-    # ... (rest of Tab 1 logic)
-
-elif st.session_state['current_page'] == "page_search":
-    st.header("Búsqueda de Recomendaciones")
-    # --- Place all Tab 2 logic here ---
-    # ...
-
-elif st.session_state['current_page'] == "page_rubrics":
-    st.header("Análisis por Rúbricas de para Documentos de Evaluación")
-    # --- Place all Tab 3 logic here ---
-    # ...
-
-elif st.session_state['current_page'] == "page_chat":
-    st.header("Document Chat: Chatea con tu Documento")
-    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
-    # --- Place all Tab 4 (Document Chat) logic here ---
-    # ... (copy all code from previous 'with tab4:' block here)
-
-    with st.sidebar.expander("Año", expanded=False):
-        min_year, max_year = int(df['year'].min()), int(df['year'].max())
-        selected_year_range = st.slider('Año', min_value=min_year, max_value=max_year, value=(min_year, max_year), step=1)
-        
-    # Filter by selected year range before other filters
-    filtered_df = df[(df['year'] >= selected_year_range[0]) & (df['year'] <= selected_year_range[1])].copy()
-
-    # Dimension filter
-    with st.sidebar.expander("Dimensión", expanded=False):
-        dimension_options = ['All'] + list(filtered_df['dimension'].unique())
-        selected_dimensions = st.multiselect('Dimensión', options=dimension_options, default='All')
-
-    # Subdimension filter
-    if 'All' in selected_dimensions or not selected_dimensions:
-        subdimension_options = ['All'] + list(df['subdim'].unique())
-    else:
-        subdimension_options = ['All'] + list(df[df['dimension'].isin(selected_dimensions)]['subdim'].unique())
-
-    with st.sidebar.expander("Subdimensión", expanded=False):
-        selected_subdimensions = st.multiselect('Subdimensión', options=subdimension_options, default='All')
-
-    # Evaluation theme filter
-    if 'All' in selected_dimensions or 'All' in selected_subdimensions or not selected_dimensions or not selected_subdimensions:
-        evaltheme_options = ['All'] + list(df['Theme_cl'].unique())
-    else:
-        evaltheme_options = ['All'] + list(df[(df['dimension'].isin(selected_dimensions)) & (df['subdim'].isin(selected_subdimensions))]['Theme_cl'].unique())
-
-    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
+if st.session_state['current_page'] == "home":
+    st.title("Bienvenido a la Plataforma de Recomendaciones")
+    st.markdown("<div style='margin-bottom:2em; color:#183b6b; font-size:1.2em;'>Seleccione una sección para comenzar:</div>", unsafe_allow_html=True)
+    nav_cols = st.columns(len(nav_pages))
+    for i, (label, page_key, color) in enumerate(nav_pages):
+        button_style = f"""
         selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
 
     # Recommendation theme filter
