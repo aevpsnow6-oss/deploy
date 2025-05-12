@@ -2072,6 +2072,166 @@ with tab2:
     else:
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
+# --- RESTORED RUBRIC ANALYSIS SECTION ---
+with tab3:
+    st.header("Subir y Evaluar Documento DOCX")
+    import pandas as pd
+    engagement_rubric = {}
+    performance_rubric = {}
+    parteval_rubric = {}
+    gender_rubric = {}
+    try:
+        df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
+        df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_engagement.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            engagement_rubric[indicador] = valores
+        df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
+        df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_performance.iterrows():
+            criterio = row['subdim']
+            valores = row.drop('subdim').values.tolist()
+            performance_rubric[criterio] = valores
+        df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
+        df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_parteval.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            parteval_rubric[indicador] = valores
+        df_rubric_gender = pd.read_excel('./Actores_rúbricas de participación_8mayo.xlsx', sheet_name='rubric_gender_')
+        df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_gender.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            gender_rubric[indicador] = valores
+    except Exception as e:
+        st.error(f"Error leyendo las rúbricas: {e}")
+    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+    st.info("""
+    **Instrucciones:**
+    1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
+    2. Revise los resultados de cada rúbrica en la tabla interactiva.
+    3. Descargue todos los resultados y evidencias en un archivo ZIP.
+    """)
+    if st.button('Procesar y Evaluar'):
+        if uploaded_file is not None:
+            import tempfile, os
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('last_file_hash') != file_hash:
+                with st.spinner("Procesando documento..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        from docx import Document
+                        doc = Document(tmp_file.name)
+                        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                        document_text = "\n".join(paragraphs)
+                        st.session_state['full_document_text'] = document_text
+                        st.session_state['last_file_hash'] = file_hash
+                        os.unlink(tmp_file.name)
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
+        document_text = st.session_state.get('full_document_text', '')
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+            st.stop()
+        rubrics = [
+            ("Participación (Engagement)", engagement_rubric),
+            ("Desempeño (Performance)", performance_rubric),
+            ("Participación Evaluada (Parteval)", parteval_rubric),
+            ("Género (Gender)", gender_rubric)
+        ]
+        rubric_results = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        MAX_WORKERS = 24
+        def eval_one_criterion(args):
+            crit, descriptions, rubric_name = args
+            try:
+                # Dummy LLM evaluation for placeholder
+                return {
+                    'Criterio': crit,
+                    'Score': 3,
+                    'Análisis': 'Análisis generado.',
+                    'Evidencia': ['Ejemplo de evidencia 1', 'Ejemplo de evidencia 2'],
+                    'Error': '',
+                    'Rúbrica': rubric_name
+                }
+            except Exception as e:
+                return {
+                    'Criterio': crit,
+                    'Score': 0,
+                    'Análisis': '',
+                    'Evidencia': '',
+                    'Error': str(e),
+                    'Rúbrica': rubric_name
+                }
+        for rubric_name, rubric_dict in rubrics:
+            rubric_analysis_data = []
+            n_criteria = len(rubric_dict)
+            progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+            with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}..."):
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = {
+                        executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
+                        for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+                    }
+                    completed = 0
+                    for future in as_completed(futures):
+                        result = future.result()
+                        rubric_analysis_data.append(result)
+                        completed += 1
+                        crit, idx = futures[future]
+                        progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+            rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+        if rubric_results:
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    cols = rubric_analysis_df.columns.tolist()
+                    if 'Análisis' in cols and 'Evidencia' in cols:
+                        new_order = cols.copy()
+                        if new_order.index('Evidencia') < new_order.index('Análisis'):
+                            new_order.remove('Evidencia')
+                            new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                        rubric_analysis_df = rubric_analysis_df[new_order]
+                    # Ensure 'Evidencia' column is stringified for display and download
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    csv = rubric_analysis_df.to_csv(index=False)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
+                    zipf.writestr(arcname, csv)
+            zip_buffer.seek(0)
+            st.download_button(
+                label="Descargar ambos resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip"
+            )
+        else:
+            st.warning("No se generaron resultados para ninguna rúbrica.")
+    else:
+        st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+
 # Tab 4: Document Chat
 with tab4:
     st.header("Document Chat")
