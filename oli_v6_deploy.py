@@ -2152,13 +2152,13 @@ with tab3:
         def eval_one_criterion(args):
             crit, descriptions, rubric_name = args
             try:
-                # Dummy LLM evaluation for placeholder
+                result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                 return {
                     'Criterio': crit,
-                    'Score': 3,
-                    'Análisis': 'Análisis generado.',
-                    'Evidencia': ['Ejemplo de evidencia 1', 'Ejemplo de evidencia 2'],
-                    'Error': '',
+                    'Score': result.get('score', 0),
+                    'Análisis': result.get('analysis', ''),
+                    'Evidencia': result.get('evidence', ''),
+                    'Error': result.get('error', '') if 'error' in result else '',
                     'Rúbrica': rubric_name
                 }
             except Exception as e:
