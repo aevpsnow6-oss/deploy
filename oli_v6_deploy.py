@@ -2049,6 +2049,7 @@ with tab3:
     engagement_rubric = {}
     performance_rubric = {}
     parteval_rubric = {}
+    gender_rubric = {}
     
     try:
         df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
