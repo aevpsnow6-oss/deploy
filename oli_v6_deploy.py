@@ -1307,11 +1307,11 @@ except Exception as e:
     st.stop()
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["Análisis de Recomendaciones", "Búsqueda de Recomendaciones", "Análisis por Rúbricas", "Document Chat"])
+tab1, tab2, tab3, tab4 = st.tabs(["Exploración de Evidencia", "Búsqueda de Recomendaciones", "Análisis por Rúbricas", "Document Chat"])
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
-    st.header("Análisis de Recomendaciones")
+    st.header("Exploración de Evidencia")
     
     # Initialize filtered dataframe
     filtered_df = df.copy()
