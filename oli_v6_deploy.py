@@ -2054,10 +2054,10 @@ with tab2:
             with zipfile.ZipFile(zip_buffer, "w") as zipf:
                 for rubric_name, rubric_analysis_df in rubric_results:
                     if 'Evidencia' in rubric_analysis_df.columns:
-    rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-        lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-    )
-csv = rubric_analysis_df.to_csv(index=False)
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    csv = rubric_analysis_df.to_csv(index=False)
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
                     zipf.writestr(arcname, csv)
             zip_buffer.seek(0)
