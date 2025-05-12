@@ -39,6 +39,20 @@ openai.api_key = openai_api_key
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+# Function to get embeddings from OpenAI
+def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
+    if not openai_api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        return None
+    for attempt in range(max_retries):
+        try:
+            response = openai.Embedding.create(input=text, model=model)
+            return np.array(response['data'][0]['embedding'])
+        except Exception as e:
+            st.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+            time.sleep(delay)
+    return None
+
 # ============= DOCX PARSING FUNCTIONS =============
 
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
