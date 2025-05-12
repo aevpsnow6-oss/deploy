@@ -53,6 +53,35 @@ def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3
             time.sleep(delay)
     return None
 
+# Function to find similar recommendations using embeddings
+
+def find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold=0.5, top_n=20):
+    # Normalize query embedding for cosine similarity
+    query_embedding = np.array(query_embedding).reshape(1, -1)
+    # Search the index
+    try:
+        distances, indices = index.search(query_embedding, index.ntotal)
+
+        # Filter results based on the score threshold
+        filtered_recommendations = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx < len(structured_embeddings) and dist >= score_threshold:
+                metadata = structured_embeddings[idx]
+                recommendation = {
+                    "recommendation": metadata["text"],
+                    "similarity": float(dist),  # Convert to float for JSON serialization
+                    "country": metadata["country"],
+                    "year": metadata["year"],
+                    "eval_id": metadata["eval_id"]
+                }
+                filtered_recommendations.append(recommendation)
+            if len(filtered_recommendations) >= top_n:
+                break
+        return filtered_recommendations
+    except Exception as e:
+        st.error(f"Error in similarity search: {str(e)}")
+        return []
+
 # ============= DOCX PARSING FUNCTIONS =============
 
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
