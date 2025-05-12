@@ -2071,6 +2071,13 @@ with tab3:
             indicador = row['Indicador']
             valores = row.drop('Indicador').values.tolist()
             parteval_rubric[indicador] = valores
+            
+        df_rubric_gender = pd.read_excel('./Actores_rúbricas de participación_8mayo.xlsx', sheet_name='rubric_gender_')
+        df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_gender.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            gender_rubric[indicador] = valores 
     except Exception as e:
         st.error(f"Error leyendo las rúbricas: {e}")
     
@@ -2400,11 +2407,13 @@ with tab3:
             st.stop()
         rubrics = [
             ("Participación (Engagement)", engagement_rubric),
-            ("Desempeño (Performance)", performance_rubric)
+            ("Desempeño (Performance)", performance_rubric),
+            ("Participación Evaluada (Parteval)", parteval_rubric),
+            ("Género (Gender)", gender_rubric)
         ]
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        MAX_WORKERS = 12
+        MAX_WORKERS = 18
         def eval_one_criterion(args):
             crit, descriptions, rubric_name = args
             try:
