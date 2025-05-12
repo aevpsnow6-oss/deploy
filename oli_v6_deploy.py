@@ -82,6 +82,28 @@ def find_similar_recommendations(query_embedding, index, doc_embeddings, structu
         st.error(f"Error in similarity search: {str(e)}")
         return []
 
+# Function to find recommendations by term matching
+
+def find_recommendations_by_term_matching(query, doc_texts, structured_embeddings, top_n=10):
+    try:
+        matched_recommendations = []
+        query_lower = query.lower()
+        for idx, text in enumerate(doc_texts):
+            if isinstance(text, str) and query_lower in text.lower():
+                if idx < len(structured_embeddings):
+                    metadata = structured_embeddings[idx]
+                    matched_recommendations.append({
+                        "recommendation": text,
+                        "country": metadata["country"],
+                        "year": metadata["year"],
+                        "eval_id": metadata["eval_id"]
+                    })
+        matched_recommendations = sorted(matched_recommendations, key=lambda x: len(str(x["recommendation"])))
+        return matched_recommendations[:top_n]
+    except Exception as e:
+        st.error(f"Error in term matching: {str(e)}")
+        return []
+
 # ============= DOCX PARSING FUNCTIONS =============
 
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
