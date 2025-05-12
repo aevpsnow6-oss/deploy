@@ -2149,6 +2149,65 @@ with tab3:
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 24
+        def evaluate_criterion_with_llm(text, criterion, descriptions):
+            """Evaluate a document against a specific criterion using LLM"""
+            try:
+                # Format the descriptions for better readability in the prompt
+                formatted_descriptions = "\n".join([f"{i+1}. {desc}" for i, desc in enumerate(descriptions)])
+                
+                # Create the prompt for the LLM
+                prompt = f"""Evaluate the following document against the criterion '{criterion}' using the following scoring descriptions:
+
+{formatted_descriptions}
+
+Document text:
+{text[:8000]}  # Limiting text length to avoid token limits
+
+Provide your evaluation in the following JSON format:
+{{
+  "score": <score as integer from 1 to {len(descriptions)}>,
+  "analysis": <brief analysis explaining the score>,
+  "evidence": <specific evidence from the document supporting your analysis>
+}}
+"""
+                
+                # Call the OpenAI API
+                response = openai.ChatCompletion.create(
+                    model="gpt-4-turbo",  # Using a capable model for evaluation
+                    messages=[
+                        {"role": "system", "content": "You are an expert document evaluator that provides objective assessments based on specific criteria."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2,  # Lower temperature for more consistent results
+                )
+                
+                # Extract and parse the response
+                result_text = response.choices[0].message.content.strip()
+                
+                # Try to extract JSON from the response
+                import re
+                import json
+                json_match = re.search(r'\{\s*"score".*\}', result_text, re.DOTALL)
+                if json_match:
+                    result_json = json.loads(json_match.group(0))
+                    return result_json
+                else:
+                    # Fallback if JSON parsing fails
+                    return {
+                        "score": 1,
+                        "analysis": "Could not parse LLM response properly.",
+                        "evidence": result_text[:200],
+                        "error": "JSON parsing failed"
+                    }
+                    
+            except Exception as e:
+                return {
+                    "score": 0,
+                    "analysis": "Error during evaluation.",
+                    "evidence": "",
+                    "error": str(e)
+                }
+        
         def eval_one_criterion(args):
             crit, descriptions, rubric_name = args
             try:
