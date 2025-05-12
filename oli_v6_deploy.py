@@ -2414,7 +2414,7 @@ with tab3:
         ]
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        MAX_WORKERS = 18
+        MAX_WORKERS = 24
         def eval_one_criterion(args):
             crit, descriptions, rubric_name = args
             try:
