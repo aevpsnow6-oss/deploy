@@ -2174,7 +2174,7 @@ with tab3:
             rubric_analysis_data = []
             n_criteria = len(rubric_dict)
             progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
-            with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}..."):
+            with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
                         executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
