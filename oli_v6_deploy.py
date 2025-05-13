@@ -686,7 +686,6 @@ def plot_score_evolution(filtered_df):
     
     # Update layout
     fig.update_layout(
-        title='Evolución de Puntuaciones Promedio por Año',
         xaxis_title='Año',
         yaxis_title='Puntuación Promedio (0-10)',
         yaxis=dict(range=[0, 10]),
@@ -927,7 +926,6 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     
     # Update layout
     fig.update_layout(
-        title='Evolución de la Composición de Clasificaciones de Dificultad de Rechazo por Año',
         xaxis_title='Año',
         yaxis_title='Porcentaje (%)',
         barmode='stack',
@@ -995,7 +993,6 @@ def add_advanced_visualization_section(filtered_df):
                 selected_var
             )
             if composition_fig:
-                composition_fig.update_layout(title=None)
                 st.plotly_chart(composition_fig, use_container_width=True)
         else:
             st.warning("No se encontraron variables de composición en los datos filtrados.")
@@ -1008,7 +1005,6 @@ def add_advanced_visualization_section(filtered_df):
         top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
         diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
         if diff_fig:
-            diff_fig.update_layout(title=None)
             st.plotly_chart(diff_fig, use_container_width=True)
     else:
         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
@@ -1017,8 +1013,6 @@ def add_advanced_visualization_section(filtered_df):
     st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
     score_fig = plot_score_evolution(filtered_df)
     if score_fig:
-        # Remove inline title from plot
-        score_fig.update_layout(title=None)
         st.plotly_chart(score_fig, use_container_width=True)
 
 
