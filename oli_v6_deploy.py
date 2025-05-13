@@ -2056,41 +2056,6 @@ with tab2:
         for i in range(1, 7):
             if style_name.lower().startswith(f'heading {i}'.lower()):
                 return i
-        return None
-
-    def header_dict():
-        return {f'header_{i}': current_headers[i] for i in range(1, 7)}
-
-    for para in doc.paragraphs:
-        para_counter += 1
-        level = get_header_level(para.style.name)
-        if level and 1 <= level <= 6:
-            current_headers[level] = para.text.strip()
-            for l in range(level+1, 7):
-                current_headers[l] = ''
-            rows.append({
-                'filename': filename,
-                **header_dict(),
-                'content': '',
-                'source_type': 'heading',
-                'paragraph_number': para_counter,
-                'page_number': None
-            })
-        elif para.text.strip():
-            rows.append({
-                'filename': filename,
-                **header_dict(),
-                'content': para.text.strip(),
-                'source_type': 'paragraph',
-                'paragraph_number': para_counter,
-                'page_number': None
-            })
-    # return pd.DataFrame(rows)
-
-# Function to split text into chunks respecting the token limit
-def split_text_into_chunks(text, max_tokens=6500):  # Reduced from 7000 to leave more room
-    import re
-    # Split by paragraphs first
     paragraphs = text.split('\n')
     chunks = []
     current_chunk = []
