@@ -2517,6 +2517,7 @@ else:
 # ================== TAB 4: DOCUMENT CHAT =====================
 with tab4:
     st.header("Document Chat: Chatea con tu Documento")
+    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4o). Tus preguntas y respuestas aparecerán aquí.")
     st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
 
     # Session state for chat and document
