@@ -1372,7 +1372,7 @@ except Exception as e:
     st.stop()
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["Exploración de Evidencia", "Búsqueda de Recomendaciones", "Análisis por Rúbricas", "Document Chat"])
+tab1, tab2, tab3 = st.tabs(["Exploración de Evidencia", "Análisis por Rúbricas", "Document Chat"])
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
@@ -1720,9 +1720,9 @@ with tab1:
             st.error(f"No se pudo exportar los datos filtrados: {e}")
             import traceback
             st.error(traceback.format_exc())
-
-# Tab 2: Search
-with tab2:
+            
+    # Add recommendation search functionality to the end of tab1
+    st.markdown("---")
     st.header("Búsqueda de Recomendaciones")
     
     # Chat section for querying similar recommendations
@@ -1768,9 +1768,10 @@ with tab2:
                 else:
                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
                     display_results(results)
-# # Tab 3: Document Upload and Parsing
-# 
-#     st.header("Subir y Evaluar Documento DOCX")
+
+# Tab 2: Analysis by Rubrics
+with tab2:
+    st.header("Análisis por Rúbricas")
     
 #     # Cache the document processing function to persist between Streamlit re-runs
 #     @st.cache_data
@@ -2022,59 +2023,62 @@ with tab2:
 #                         # Perform evaluation
 #                         rubric_analysis_df = evaluate_with_rubric(store, rubric_dict)
                         
-#                         # Display results
-#                         st.markdown('#### Resultados de la evaluación por rúbrica:')
-#                         if 'Evidencia' in rubric_analysis_df.columns:
-        if rubric_results:
+# Tab 2: Analysis by Rubrics
+with tab2:
+    st.header("Análisis por Rúbricas")
+    
+    # Placeholder for rubric results
+    rubric_results = []
+    
+    if rubric_results:
+        for rubric_name, rubric_analysis_df in rubric_results:
+            st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+            if not rubric_analysis_df.empty:
+                # Ensure 'Evidencia' column is present and first for visibility
+                if 'Evidencia' not in rubric_analysis_df.columns:
+                    rubric_analysis_df['Evidencia'] = ''
+                # Reorder columns to show 'Evidencia' after 'Análisis' if present
+                cols = rubric_analysis_df.columns.tolist()
+                if 'Análisis' in cols and 'Evidencia' in cols:
+                    new_order = cols.copy()
+                    if new_order.index('Evidencia') < new_order.index('Análisis'):
+                        new_order.remove('Evidencia')
+                        new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                    rubric_analysis_df = rubric_analysis_df[new_order]
+                # Ensure 'Evidencia' column is stringified for display and download
+                if 'Evidencia' in rubric_analysis_df.columns:
+                    rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                        lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                    )
+                st.dataframe(rubric_analysis_df, use_container_width=True)
+            else:
+                st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+        # Provide a zip download for both results
+        import io, zipfile
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zipf:
             for rubric_name, rubric_analysis_df in rubric_results:
-                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
-                if not rubric_analysis_df.empty:
-                    # Ensure 'Evidencia' column is present and first for visibility
-                    if 'Evidencia' not in rubric_analysis_df.columns:
-                        rubric_analysis_df['Evidencia'] = ''
-                    # Reorder columns to show 'Evidencia' after 'Análisis' if present
-                    cols = rubric_analysis_df.columns.tolist()
-                    if 'Análisis' in cols and 'Evidencia' in cols:
-                        new_order = cols.copy()
-                        if new_order.index('Evidencia') < new_order.index('Análisis'):
-                            new_order.remove('Evidencia')
-                            new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
-                        rubric_analysis_df = rubric_analysis_df[new_order]
-                    # Ensure 'Evidencia' column is stringified for display and download
-                    if 'Evidencia' in rubric_analysis_df.columns:
-                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-                        )
-                    st.dataframe(rubric_analysis_df, use_container_width=True)
-                else:
-                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
-            # Provide a zip download for both results
-            import io, zipfile
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zipf:
-                for rubric_name, rubric_analysis_df in rubric_results:
-                    if 'Evidencia' in rubric_analysis_df.columns:
-                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-                        )
-                    csv = rubric_analysis_df.to_csv(index=False)
-                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv)
-            zip_buffer.seek(0)
-            st.download_button(
-                label="Descargar ambos resultados como ZIP",
-                data=zip_buffer,
-                file_name="resultados_rubricas.zip",
-                mime="application/zip"
-            )
-        else:
-            st.warning("No se generaron resultados para ninguna rúbrica.")
+                if 'Evidencia' in rubric_analysis_df.columns:
+                    rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                        lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                    )
+                csv = rubric_analysis_df.to_csv(index=False)
+                arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
+                zipf.writestr(arcname, csv)
+        zip_buffer.seek(0)
+        st.download_button(
+            label="Descargar ambos resultados como ZIP",
+            data=zip_buffer,
+            file_name="resultados_rubricas.zip",
+            mime="application/zip"
+        )
     else:
+        st.warning("No se generaron resultados para ninguna rúbrica.")
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
-# --- RESTORED RUBRIC ANALYSIS SECTION ---
+# Tab 3: Document Chat
 with tab3:
-    st.header("Subir y Evaluar Documento DOCX")
+    st.header("Document Chat")
     import pandas as pd
     engagement_rubric = {}
     performance_rubric = {}
@@ -2247,6 +2251,7 @@ Provide your evaluation in the following JSON format:
                         crit, idx = futures[future]
                         progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+
         if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
