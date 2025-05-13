@@ -2048,7 +2048,6 @@ with tab2:
 #                             st.dataframe(rubric_analysis_df, use_container_width=True)
 #                         else:
 #                             st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
-#                 else:
 #                     st.warning("No se generaron resultados para ninguna rúbrica.")
 #             else:
 #                 st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
@@ -2056,11 +2055,14 @@ with tab2:
         for i in range(1, 7):
             if style_name.lower().startswith(f'heading {i}'.lower()):
                 return i
-    paragraphs = text.split('\n')
-    chunks = []
-    current_chunk = []
-    current_length = 0
 
+    def split_text_into_chunks(text, max_tokens=6500):  # Reduced from 7000 to leave more room
+        import re
+        # Split by paragraphs first
+        paragraphs = text.split('\n')
+        chunks = []
+        current_chunk = []
+        current_length = 0
     # Rough estimate: 1 token ≈ 4 characters in Spanish
     tokens_per_char = 0.25
 
