@@ -1590,7 +1590,10 @@ with tab1:
         filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
         filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
 
-        dimension_counts = filtered_df.groupby('dimension').agg({
+        # Filter out 'Sin Clasificar' category before creating the dimension treemap
+        dimension_df = filtered_df[~filtered_df['dimension'].str.lower().isin(['sin clasificar', 'sin clasificacion', 'sin clasificación'])]
+        
+        dimension_counts = dimension_df.groupby('dimension').agg({
             'index_df': 'nunique'
         }).reset_index()
         dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
@@ -1618,7 +1621,14 @@ with tab1:
         # Treemap: Recommendations by Subdimension
         # Harmonize 'process' and 'processes' before plotting subdimensions as well
         filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-        subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
+        
+        # Filter out 'Sin Clasificar' category for subdimension treemap
+        subdim_df = filtered_df[
+            (~filtered_df['dimension'].str.lower().isin(['sin clasificar', 'sin clasificacion', 'sin clasificación'])) &
+            (~filtered_df['subdim'].str.lower().isin(['sin clasificar', 'sin clasificacion', 'sin clasificación']))
+        ]
+        
+        subdimension_counts = subdim_df.groupby(['dimension', 'subdim']).agg({
             'index_df': 'nunique'
         }).reset_index()
         subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
