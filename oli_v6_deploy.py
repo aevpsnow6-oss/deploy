@@ -1642,9 +1642,9 @@ with tab1:
             legend_font_size=22
         )
 
-        # Display treemap plots
-        st.plotly_chart(fig3)
-        st.plotly_chart(fig4)
+        # The treemap for dimensions is already displayed above with use_container_width=True
+        # Display the subdimension treemap with consistent sizing
+        st.plotly_chart(fig4, use_container_width=True)
         
         # Add the advanced visualization section directly to the main panel
         add_advanced_visualization_section(filtered_df)
