@@ -2377,7 +2377,6 @@ if st.button('Procesar y Evaluar'):
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
                                 response = openai.ChatCompletion.create(
-                                    model="gpt-4o-mini",
                                     model="gpt-4.1-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
