@@ -968,18 +968,10 @@ def add_advanced_visualization_section(filtered_df):
     """
     Adds an advanced visualization section to the Streamlit app.
     """
-    st.markdown("#### Visualizaciones Avanzadas")
-
-    # --- Score Evolution ---
-    st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
-    score_fig = plot_score_evolution(filtered_df)
-    if score_fig:
-        # Remove inline title from plot
-        score_fig.update_layout(title=None)
-        st.plotly_chart(score_fig, use_container_width=True)
+    st.markdown("### Análisis por Atributos")
 
     # --- Variable Composition ---
-    st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin-top: 2em;'> </h4>", unsafe_allow_html=True)
     available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
     if available_vars:
         var_mapping = {
@@ -993,7 +985,7 @@ def add_advanced_visualization_section(filtered_df):
         var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
         if var_options:
             selected_var_label = st.selectbox(
-                "Seleccione una variable para visualizar:", 
+                "Seleccione una atributo para visualizar:", 
                 options=list(var_options.keys())
             )
             selected_var = var_options[selected_var_label]
@@ -1007,8 +999,8 @@ def add_advanced_visualization_section(filtered_df):
             }
             composition_fig = create_composition_plot(
                 filtered_df, 
-                selected_var, 
-                var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
+                selected_var
+                # var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
             )
             if composition_fig:
                 composition_fig.update_layout(title=None)
@@ -1017,7 +1009,7 @@ def add_advanced_visualization_section(filtered_df):
             st.warning("No se encontraron variables de composición en los datos filtrados.")
     else:
         st.warning("No se encontraron variables de composición en los datos filtrados.")
-
+        
     # --- Difficulty Classification ---
     st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
     if 'clean_tags' in filtered_df.columns:
@@ -1028,6 +1020,14 @@ def add_advanced_visualization_section(filtered_df):
             st.plotly_chart(diff_fig, use_container_width=True)
     else:
         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+        
+    # --- Score Evolution ---
+    st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
+    score_fig = plot_score_evolution(filtered_df)
+    if score_fig:
+        # Remove inline title from plot
+        score_fig.update_layout(title=None)
+        st.plotly_chart(score_fig, use_container_width=True)
 
 
 # ============= DATA LOADING FUNCTIONS =============
