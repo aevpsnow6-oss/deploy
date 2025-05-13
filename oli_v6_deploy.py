@@ -686,6 +686,7 @@ def plot_score_evolution(filtered_df):
     
     # Update layout
     fig.update_layout(
+        title='Evolución de Puntuaciones Promedio por Año',
         xaxis_title='Año',
         yaxis_title='Puntuación Promedio (0-10)',
         yaxis=dict(range=[0, 10]),
@@ -707,7 +708,7 @@ def plot_score_evolution(filtered_df):
     return fig
 
 # Function to create a composition plot (stacked bar chart)
-def create_composition_plot(filtered_df, var_name):
+def create_composition_plot(filtered_df, var_name, title):
     """
     Creates a stacked bar chart showing the composition of a variable over time.
     Harmonizes 'process' and 'processes' if var_name is 'dimension'.
@@ -748,7 +749,14 @@ def create_composition_plot(filtered_df, var_name):
         cumulative['cum'] += var_by_year_pct[category]
     
     # Update layout
+    # Remove undefined or empty title
+    # Fix undefined or empty title: if title is None, '', or 'undefined' (any case/whitespace), do not show a title
+    if title is None or str(title).strip() == '' or str(title).strip().lower() == 'undefined':
+        layout_title = ''
+    else:
+        layout_title = title
     fig.update_layout(
+        title=layout_title,
         xaxis_title='Año',
         yaxis_title='Porcentaje (%)',
         barmode='stack',
@@ -926,6 +934,7 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     
     # Update layout
     fig.update_layout(
+        title='Evolución de la Composición de Clasificaciones de Dificultad de Rechazo por Año',
         xaxis_title='Año',
         yaxis_title='Porcentaje (%)',
         barmode='stack',
@@ -959,10 +968,18 @@ def add_advanced_visualization_section(filtered_df):
     """
     Adds an advanced visualization section to the Streamlit app.
     """
-    st.markdown("### Análisis por Atributos")
+    st.markdown("#### Visualizaciones Avanzadas")
+
+    # --- Score Evolution ---
+    st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
+    score_fig = plot_score_evolution(filtered_df)
+    if score_fig:
+        # Remove inline title from plot
+        score_fig.update_layout(title=None)
+        st.plotly_chart(score_fig, use_container_width=True)
 
     # --- Variable Composition ---
-    st.markdown("<h4 style='margin-top: 2em;'> </h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
     available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
     if available_vars:
         var_mapping = {
@@ -976,7 +993,7 @@ def add_advanced_visualization_section(filtered_df):
         var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
         if var_options:
             selected_var_label = st.selectbox(
-                "Seleccione una atributo para visualizar:", 
+                "Seleccione una variable para visualizar:", 
                 options=list(var_options.keys())
             )
             selected_var = var_options[selected_var_label]
@@ -990,30 +1007,27 @@ def add_advanced_visualization_section(filtered_df):
             }
             composition_fig = create_composition_plot(
                 filtered_df, 
-                selected_var
+                selected_var, 
+                var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
             )
             if composition_fig:
+                composition_fig.update_layout(title=None)
                 st.plotly_chart(composition_fig, use_container_width=True)
         else:
             st.warning("No se encontraron variables de composición en los datos filtrados.")
     else:
         st.warning("No se encontraron variables de composición en los datos filtrados.")
-        
+
     # --- Difficulty Classification ---
     st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
     if 'clean_tags' in filtered_df.columns:
         top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
         diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
         if diff_fig:
+            diff_fig.update_layout(title=None)
             st.plotly_chart(diff_fig, use_container_width=True)
     else:
         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
-        
-    # --- Score Evolution ---
-    st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
-    score_fig = plot_score_evolution(filtered_df)
-    if score_fig:
-        st.plotly_chart(score_fig, use_container_width=True)
 
 
 # ============= DATA LOADING FUNCTIONS =============
@@ -1320,8 +1334,19 @@ except Exception as e:
     st.error(f"Error loading data: {str(e)}")
     st.stop()
 
-# Initialize dataframes
+# --- KPI Metrics Row ---
 filtered_df = df.copy()
+filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
+total_recs = len(filtered_df_unique)
+num_countries = filtered_df_unique['Country(ies)'].nunique()
+num_years = filtered_df_unique['year'].nunique()
+num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total Recomendaciones", total_recs)
+col2.metric("Países", num_countries)
+col3.metric("Años", num_years)
+col4.metric("Evaluaciones", num_evals)
 
 st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
 
@@ -1481,19 +1506,6 @@ with tab1:
 
     # Display summary table with better formatting
     st.markdown("#### Información General")
-    
-    # KPI Metrics using filtered data
-    filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
-    total_recs = len(filtered_df_unique)
-    num_countries = filtered_df_unique['Country(ies)'].nunique()
-    num_years = filtered_df_unique['year'].nunique()
-    num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Recomendaciones", total_recs)
-    col2.metric("Países", num_countries)
-    col3.metric("Años", num_years)
-    col4.metric("Evaluaciones", num_evals)
     # KPIs for management response statuses (Respuesta de Gerencia)
     mgmt_labels = [
         ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0]),
@@ -1576,10 +1588,7 @@ with tab1:
         filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
         filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
 
-        # Filter out 'Sin Clasificar' category before creating the dimension treemap
-        dimension_df = filtered_df[~filtered_df['dimension'].str.lower().isin(['sin clasificar', 'sin clasificacion', 'sin clasificación'])]
-        
-        dimension_counts = dimension_df.groupby('dimension').agg({
+        dimension_counts = filtered_df.groupby('dimension').agg({
             'index_df': 'nunique'
         }).reset_index()
         dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
@@ -1607,14 +1616,7 @@ with tab1:
         # Treemap: Recommendations by Subdimension
         # Harmonize 'process' and 'processes' before plotting subdimensions as well
         filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-        
-        # Filter out 'Sin Clasificar' category for subdimension treemap
-        subdim_df = filtered_df[
-            (~filtered_df['dimension'].str.lower().isin(['sin clasificar', 'sin clasificacion', 'sin clasificación'])) &
-            (~filtered_df['subdim'].str.lower().isin(['sin clasificar', 'sin clasificacion', 'sin clasificación']))
-        ]
-        
-        subdimension_counts = subdim_df.groupby(['dimension', 'subdim']).agg({
+        subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
             'index_df': 'nunique'
         }).reset_index()
         subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
@@ -1638,9 +1640,9 @@ with tab1:
             legend_font_size=22
         )
 
-        # The treemap for dimensions is already displayed above with use_container_width=True
-        # Display the subdimension treemap with consistent sizing
-        st.plotly_chart(fig4, use_container_width=True)
+        # Display treemap plots
+        st.plotly_chart(fig3)
+        st.plotly_chart(fig4)
         
         # Add the advanced visualization section directly to the main panel
         add_advanced_visualization_section(filtered_df)
@@ -1718,12 +1720,57 @@ with tab1:
             st.error(f"No se pudo exportar los datos filtrados: {e}")
             import traceback
             st.error(traceback.format_exc())
-            
 
-
-# Tab 2: Analysis by Rubrics
+# Tab 2: Search
 with tab2:
-    st.header("Análisis por Rúbricas")
+    st.header("Búsqueda de Recomendaciones")
+    
+    # Chat section for querying similar recommendations
+    st.markdown("### Búsqueda")
+
+    # Input for user query
+    user_query = st.text_input("Pregunte sobre las recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
+
+    # Search method selection
+    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
+
+    # Slider for similarity score threshold (only relevant for similarity search)
+    if search_method == "Por Similitud":
+        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+
+    # Function to display results
+    def display_results(results):
+        if results:
+            st.markdown("#### Recomendaciones similares")
+            for i, result in enumerate(results):
+                st.markdown(f"**Recomendación {i+1}:**")
+                st.markdown(f"**Texto:** {result['recommendation']}")
+                if "similarity" in result:
+                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+                st.markdown(f"**País:** {result['country']}")
+                st.markdown(f"**Año:** {result['year']}")
+                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+                st.markdown("---")
+        else:
+            st.write("No se encontraron recomendaciones para la búsqueda.")
+
+    # Button to search for recommendations
+    if st.button("Buscar Recomendaciones"):
+        if user_query:
+            with st.spinner('Buscando recomendaciones...'):
+                if search_method == "Por Similitud":
+                    query_embedding = get_embedding_with_retry(user_query)
+                    if query_embedding is not None:
+                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
+                        display_results(results)
+                    else:
+                        st.error("No se pudo generar el embedding para la consulta.")
+                else:
+                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
+                    display_results(results)
+# # Tab 3: Document Upload and Parsing
+# 
+#     st.header("Subir y Evaluar Documento DOCX")
     
 #     # Cache the document processing function to persist between Streamlit re-runs
 #     @st.cache_data
@@ -1975,62 +2022,59 @@ with tab2:
 #                         # Perform evaluation
 #                         rubric_analysis_df = evaluate_with_rubric(store, rubric_dict)
                         
-# Tab 2: Analysis by Rubrics
-with tab2:
-    st.header("Análisis por Rúbricas")
-    
-    # Placeholder for rubric results
-    rubric_results = []
-    
-    if rubric_results:
-        for rubric_name, rubric_analysis_df in rubric_results:
-            st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
-            if not rubric_analysis_df.empty:
-                # Ensure 'Evidencia' column is present and first for visibility
-                if 'Evidencia' not in rubric_analysis_df.columns:
-                    rubric_analysis_df['Evidencia'] = ''
-                # Reorder columns to show 'Evidencia' after 'Análisis' if present
-                cols = rubric_analysis_df.columns.tolist()
-                if 'Análisis' in cols and 'Evidencia' in cols:
-                    new_order = cols.copy()
-                    if new_order.index('Evidencia') < new_order.index('Análisis'):
-                        new_order.remove('Evidencia')
-                        new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
-                    rubric_analysis_df = rubric_analysis_df[new_order]
-                # Ensure 'Evidencia' column is stringified for display and download
-                if 'Evidencia' in rubric_analysis_df.columns:
-                    rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-                        lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-                    )
-                st.dataframe(rubric_analysis_df, use_container_width=True)
-            else:
-                st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
-        # Provide a zip download for both results
-        import io, zipfile
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+#                         # Display results
+#                         st.markdown('#### Resultados de la evaluación por rúbrica:')
+#                         if 'Evidencia' in rubric_analysis_df.columns:
+        if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
-                if 'Evidencia' in rubric_analysis_df.columns:
-                    rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-                        lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-                    )
-                csv = rubric_analysis_df.to_csv(index=False)
-                arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                zipf.writestr(arcname, csv)
-        zip_buffer.seek(0)
-        st.download_button(
-            label="Descargar ambos resultados como ZIP",
-            data=zip_buffer,
-            file_name="resultados_rubricas.zip",
-            mime="application/zip"
-        )
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    # Ensure 'Evidencia' column is present and first for visibility
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    # Reorder columns to show 'Evidencia' after 'Análisis' if present
+                    cols = rubric_analysis_df.columns.tolist()
+                    if 'Análisis' in cols and 'Evidencia' in cols:
+                        new_order = cols.copy()
+                        if new_order.index('Evidencia') < new_order.index('Análisis'):
+                            new_order.remove('Evidencia')
+                            new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                        rubric_analysis_df = rubric_analysis_df[new_order]
+                    # Ensure 'Evidencia' column is stringified for display and download
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            # Provide a zip download for both results
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    csv = rubric_analysis_df.to_csv(index=False)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
+                    zipf.writestr(arcname, csv)
+            zip_buffer.seek(0)
+            st.download_button(
+                label="Descargar ambos resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip"
+            )
+        else:
+            st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
-        st.warning("No se generaron resultados para ninguna rúbrica.")
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
-# Tab 3: Document Chat
+# --- RESTORED RUBRIC ANALYSIS SECTION ---
 with tab3:
-    st.header("Document Chat")
+    st.header("Subir y Evaluar Documento DOCX")
     import pandas as pd
     engagement_rubric = {}
     performance_rubric = {}
@@ -2203,7 +2247,6 @@ Provide your evaluation in the following JSON format:
                         crit, idx = futures[future]
                         progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
-
         if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
@@ -2248,13 +2291,13 @@ Provide your evaluation in the following JSON format:
     else:
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
-# # Tab 4: Document Chat
-# with tab4:
-#     st.header("Document Chat")
-#     st.info("Esta función permite chatear con documentos cargados. Próximamente disponible.")
+# Tab 4: Document Chat
+with tab4:
+    st.header("Document Chat")
+    st.info("Esta función permite chatear con documentos cargados. Próximamente disponible.")
     
-#     # Placeholder for future document chat functionality
-#     uploaded_file = st.file_uploader("Suba un documento para chatear:", type=["pdf", "docx", "txt"])
-#     if uploaded_file is not None:
-#         st.success(f"Documento cargado: {uploaded_file.name}")
-#         st.info("La funcionalidad de chat con documentos estará disponible en una próxima actualización.")
+    # Placeholder for future document chat functionality
+    uploaded_file = st.file_uploader("Suba un documento para chatear:", type=["pdf", "docx", "txt"])
+    if uploaded_file is not None:
+        st.success(f"Documento cargado: {uploaded_file.name}")
+        st.info("La funcionalidad de chat con documentos estará disponible en una próxima actualización.")
