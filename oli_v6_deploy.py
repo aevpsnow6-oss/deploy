@@ -2296,13 +2296,13 @@ Provide your evaluation in the following JSON format:
     else:
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
-# Tab 4: Document Chat
-with tab4:
-    st.header("Document Chat")
-    st.info("Esta función permite chatear con documentos cargados. Próximamente disponible.")
+# # Tab 4: Document Chat
+# with tab4:
+#     st.header("Document Chat")
+#     st.info("Esta función permite chatear con documentos cargados. Próximamente disponible.")
     
-    # Placeholder for future document chat functionality
-    uploaded_file = st.file_uploader("Suba un documento para chatear:", type=["pdf", "docx", "txt"])
-    if uploaded_file is not None:
-        st.success(f"Documento cargado: {uploaded_file.name}")
-        st.info("La funcionalidad de chat con documentos estará disponible en una próxima actualización.")
+#     # Placeholder for future document chat functionality
+#     uploaded_file = st.file_uploader("Suba un documento para chatear:", type=["pdf", "docx", "txt"])
+#     if uploaded_file is not None:
+#         st.success(f"Documento cargado: {uploaded_file.name}")
+#         st.info("La funcionalidad de chat con documentos estará disponible en una próxima actualización.")
