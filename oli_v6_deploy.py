@@ -999,7 +999,7 @@ def add_advanced_visualization_section(filtered_df):
             }
             composition_fig = create_composition_plot(
                 filtered_df, 
-                selected_var
+                selected_var,
                 var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
             )
             if composition_fig:
