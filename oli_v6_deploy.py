@@ -708,7 +708,7 @@ def plot_score_evolution(filtered_df):
     return fig
 
 # Function to create a composition plot (stacked bar chart)
-def create_composition_plot(filtered_df, var_name, title):
+def create_composition_plot(filtered_df, var_name):
     """
     Creates a stacked bar chart showing the composition of a variable over time.
     Harmonizes 'process' and 'processes' if var_name is 'dimension'.
@@ -749,14 +749,7 @@ def create_composition_plot(filtered_df, var_name, title):
         cumulative['cum'] += var_by_year_pct[category]
     
     # Update layout
-    # Remove undefined or empty title
-    # Fix undefined or empty title: if title is None, '', or 'undefined' (any case/whitespace), do not show a title
-    if title is None or str(title).strip() == '' or str(title).strip().lower() == 'undefined':
-        layout_title = ''
-    else:
-        layout_title = title
     fig.update_layout(
-        title=layout_title,
         xaxis_title='Año',
         yaxis_title='Porcentaje (%)',
         barmode='stack',
@@ -999,8 +992,7 @@ def add_advanced_visualization_section(filtered_df):
             }
             composition_fig = create_composition_plot(
                 filtered_df, 
-                selected_var,
-                var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
+                selected_var
             )
             if composition_fig:
                 composition_fig.update_layout(title=None)
