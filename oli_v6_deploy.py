@@ -2435,7 +2435,7 @@ if st.button('Procesar y Evaluar'):
     ]
     rubric_results = []
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    MAX_WORKERS = 12
+    MAX_WORKERS = 24
     def eval_one_criterion(args):
         crit, descriptions, rubric_name = args
         try:
@@ -2517,7 +2517,6 @@ else:
 # ================== TAB 4: DOCUMENT CHAT =====================
 with tab4:
     st.header("Document Chat: Chatea con tu Documento")
-    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4o). Tus preguntas y respuestas aparecerán aquí.")
     st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
 
     # Session state for chat and document
