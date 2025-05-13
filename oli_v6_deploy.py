@@ -1347,7 +1347,7 @@ except Exception as e:
     st.stop()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["Exploración de Evidencia", "Análisis por Rúbricas", "Document Chat"])
+tab1, tab2, tab3, tab4 = st.tabs(["Exploración de Evidencia", "Búsqueda de Recomendaciones", "Análisis por Rúbricas", "Document Chat"])
 
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
@@ -1719,53 +1719,7 @@ with tab1:
             import traceback
             st.error(traceback.format_exc())
             
-    # Add recommendation search functionality to the end of tab1
-    st.markdown("---")
-    st.header("Búsqueda de Recomendaciones")
-    
-    # Chat section for querying similar recommendations
-    st.markdown("### Búsqueda")
 
-    # Input for user query
-    user_query = st.text_input("Pregunte sobre las recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
-
-    # Search method selection
-    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
-
-    # Slider for similarity score threshold (only relevant for similarity search)
-    if search_method == "Por Similitud":
-        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-
-    # Function to display results
-    def display_results(results):
-        if results:
-            st.markdown("#### Recomendaciones similares")
-            for i, result in enumerate(results):
-                st.markdown(f"**Recomendación {i+1}:**")
-                st.markdown(f"**Texto:** {result['recommendation']}")
-                if "similarity" in result:
-                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
-                st.markdown(f"**País:** {result['country']}")
-                st.markdown(f"**Año:** {result['year']}")
-                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
-                st.markdown("---")
-        else:
-            st.write("No se encontraron recomendaciones para la búsqueda.")
-
-    # Button to search for recommendations
-    if st.button("Buscar Recomendaciones"):
-        if user_query:
-            with st.spinner('Buscando recomendaciones...'):
-                if search_method == "Por Similitud":
-                    query_embedding = get_embedding_with_retry(user_query)
-                    if query_embedding is not None:
-                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
-                        display_results(results)
-                    else:
-                        st.error("No se pudo generar el embedding para la consulta.")
-                else:
-                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
-                    display_results(results)
 
 # Tab 2: Analysis by Rubrics
 with tab2:
