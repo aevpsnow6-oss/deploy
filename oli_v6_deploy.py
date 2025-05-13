@@ -1968,147 +1968,90 @@ with tab2:
 #         return pd.DataFrame(rows)
     
 #     # Main document upload interface
-#     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+#     with tab3:
+#         uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
     
-#     if uploaded_file is not None:
-#         try:
-#             # Create a unique ID for this file to ensure proper caching
-#             file_id = f"{uploaded_file.name}_{hash(uploaded_file.getvalue())}"
+#         if uploaded_file is not None:
+#             try:
+#                 # Create a unique ID for this file to ensure proper caching
+#                 file_id = f"{uploaded_file.name}_{hash(uploaded_file.getvalue())}"
             
-#             # Process document with caching - this will persist between Streamlit reruns
-#             with st.spinner("Procesando documento..."):
-#                 progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+#                 # Process document with caching - this will persist between Streamlit reruns
+#                 with st.spinner("Procesando documento..."):
+#                     progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
                 
-#                 # Process the document - this is cached so it won't rerun on button clicks
-#                 processed_data = process_docx_with_llm(uploaded_file.getvalue(), uploaded_file.name)
+#                     # Process the document - this is cached so it won't rerun on button clicks
+#                     processed_data = process_docx_with_llm(uploaded_file.getvalue(), uploaded_file.name)
                 
-#                 # Extract results from cached processing
-#                 exploded_df = processed_data['exploded_df']
-#                 store = processed_data['store']
-#                 stats = processed_data['file_stats']
+#                     # Extract results from cached processing
+#                     exploded_df = processed_data['exploded_df']
+#                     store = processed_data['store']
+#                     stats = processed_data['file_stats']
                 
-#                 progress_bar.progress(0.8, text="Documento procesado y embeddings generados.")
+#                     progress_bar.progress(0.8, text="Documento procesado y embeddings generados.")
                 
-#                 # Display document summary
-#                 st.info(f"**Resumen del documento:**\n\n" + 
-#                        f"- Tamaño del archivo: {stats['file_size']/1024:.2f} KB\n" + 
-#                        f"- Número de palabras: {stats['n_words']}\n" + 
-#                        f"- Número de párrafos: {stats['n_paragraphs']}")
+#                     # Display document summary
+#                     st.info(f"**Resumen del documento:**\n\n" + 
+#                            f"- Tamaño del archivo: {stats['file_size']/1024:.2f} KB\n" + 
+#                            f"- Número de palabras: {stats['n_words']}\n" + 
+#                            f"- Número de párrafos: {stats['n_paragraphs']}")
                 
-#                 # Show extracted content
-#                 st.markdown("#### Estructura extraída del documento:")
-#                 st.dataframe(exploded_df, use_container_width=True)
+#                     # Show extracted content
+#                     st.markdown("#### Estructura extraída del documento:")
+#                     st.dataframe(exploded_df, use_container_width=True)
                 
-#                 progress_bar.progress(1.0, text="Procesamiento completo.")
+#                     progress_bar.progress(1.0, text="Procesamiento completo.")
                 
-#                 # Rubric selection UI
-#                 st.markdown("#### Evaluación por Rúbrica")
-#                 rubric_type = st.selectbox(
-#                     "Seleccione tipo de rúbrica para evaluación:",
-#                     ["Participación (Engagement)", "Desempeño (Performance)"]
-#                 )
+#                     # Rubric selection UI
+#                     st.markdown("#### Evaluación por Rúbrica")
+#                     rubric_type = st.selectbox(
+#                         "Seleccione tipo de rúbrica para evaluación:",
+#                         ["Participación (Engagement)", "Desempeño (Performance)"]
+#                     )
                 
-#                 # Select appropriate rubric based on user choice
-#                 if rubric_type == "Participación (Engagement)":
-#                     rubric_dict = engagement_rubric
-#                 else:
-#                     rubric_dict = performance_rubric
+#                     # Select appropriate rubric based on user choice
+#                     if rubric_type == "Participación (Engagement)":
+#                         rubric_dict = engagement_rubric
+#                     else:
+#                         rubric_dict = performance_rubric
                 
-#                 # Evaluate button
-#                 st.markdown('---')
-#                 if st.button('Evaluar por rúbrica'):
-#                     with st.spinner('Evaluando documento por rúbrica...'):
-#                         # Perform evaluation
-#                         rubric_analysis_df = evaluate_with_rubric(store, rubric_dict)
+#                     # Evaluate button
+#                     st.markdown('---')
+#                     if st.button('Evaluar por rúbrica'):
+#                         with st.spinner('Evaluando documento por rúbrica...'):
+#                             # Perform evaluation
+#                             rubric_analysis_df = evaluate_with_rubric(store, rubric_dict)
                         
-#                         # Display results
-#                         st.markdown('#### Resultados de la evaluación por rúbrica:')
-#                         if 'Evidencia' in rubric_analysis_df.columns:
-#     if rubric_results:
-#         for rubric_name, rubric_analysis_df in rubric_results:
-#             st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
-#             if not rubric_analysis_df.empty:
-#                 # Ensure 'Evidencia' column is present and first for visibility
-#                 if 'Evidencia' not in rubric_analysis_df.columns:
-#                     rubric_analysis_df['Evidencia'] = ''
-#                 # Reorder columns to show 'Evidencia' after 'Análisis' if present
-#                 cols = rubric_analysis_df.columns.tolist()
-#                 if 'Análisis' in cols and 'Evidencia' in cols:
-#                     new_order = cols.copy()
-#                     if new_order.index('Evidencia') < new_order.index('Análisis'):
-#                         new_order.remove('Evidencia')
-#                         new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
-#                     rubric_analysis_df = rubric_analysis_df[new_order]
-#                 # Ensure 'Evidencia' column is stringified for display and download
-#                 if 'Evidencia' in rubric_analysis_df.columns:
-#                     rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-#                         lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-#                     )
-#                 st.dataframe(rubric_analysis_df, use_container_width=True)
+#                             # Display results
+#                             st.markdown('#### Resultados de la evaluación por rúbrica:')
+#                             if 'Evidencia' in rubric_analysis_df.columns:
+#                 if rubric_results:
+#                     for rubric_name, rubric_analysis_df in rubric_results:
+#                         st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+#                         if not rubric_analysis_df.empty:
+#                             # Ensure 'Evidencia' column is present and first for visibility
+#                             if 'Evidencia' not in rubric_analysis_df.columns:
+#                                 rubric_analysis_df['Evidencia'] = ''
+#                             # Reorder columns to show 'Evidencia' after 'Análisis' if present
+#                             cols = rubric_analysis_df.columns.tolist()
+#                             if 'Análisis' in cols and 'Evidencia' in cols:
+#                                 new_order = cols.copy()
+#                                 if new_order.index('Evidencia') < new_order.index('Análisis'):
+#                                     new_order.remove('Evidencia')
+#                                     new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+#                                 rubric_analysis_df = rubric_analysis_df[new_order]
+#                             # Ensure 'Evidencia' column is stringified for display and download
+#                             if 'Evidencia' in rubric_analysis_df.columns:
+#                                 rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                                     lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                                 )
+#                             st.dataframe(rubric_analysis_df, use_container_width=True)
+#                         else:
+#                             st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+#                 else:
+#                     st.warning("No se generaron resultados para ninguna rúbrica.")
 #             else:
-#                 st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
-#         # Provide a zip download for both results
-#         import io, zipfile
-#         zip_buffer = io.BytesIO()
-#         with zipfile.ZipFile(zip_buffer, "w") as zipf:
-#             for rubric_name, rubric_analysis_df in rubric_results:
-#                 if 'Evidencia' in rubric_analysis_df.columns:
-#                     rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-#                         lambda x: "\n\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-#                     )
-#                 csv = rubric_analysis_df.to_csv(index=False)
-#                 arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-#                 zipf.writestr(arcname, csv)
-#         zip_buffer.seek(0)
-#         st.download_button(
-#             label="Descargar ambos resultados como ZIP",
-#             data=zip_buffer,
-#             file_name="resultados_rubricas.zip",
-#             mime="application/zip"
-#         )
-#     else:
-#         st.warning("No se generaron resultados para ninguna rúbrica.")
-# else:
-#     st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
-
-# --- RESTORED RUBRIC ANALYSIS SECTION ---
-with tab3:
-    st.header("Subir y Evaluar Documento DOCX")
-
-    # Read rubrics from Excel files as in megaparse_example.py
-    import pandas as pd
-    engagement_rubric = {}
-    performance_rubric = {}
-    parteval_rubric = {}
-
-    try:
-        df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
-        df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
-        for idx, row in df_rubric_engagement.iterrows():
-            indicador = row['Indicador']
-            valores = row.drop('Indicador').values.tolist()
-            engagement_rubric[indicador] = valores
-
-        df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
-        df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
-        for idx, row in df_rubric_performance.iterrows():
-            criterio = row['subdim']
-            valores = row.drop('subdim').values.tolist()
-            performance_rubric[criterio] = valores
-
-        df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
-        df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
-        for idx, row in df_rubric_parteval.iterrows():
-            indicador = row['Indicador']
-            valores = row.drop('Indicador').values.tolist()
-            parteval_rubric[indicador] = valores
-    except Exception as e:
-        st.error(f"Error leyendo las rúbricas: {e}")
-
-# Function to extract document structure
-def extract_docx_structure(docx_path):
-    from docx import Document
-    doc = Document(docx_path)
+#                 st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
     filename = os.path.basename(docx_path)
     rows = []
     current_headers = {i: '' for i in range(1, 7)}
