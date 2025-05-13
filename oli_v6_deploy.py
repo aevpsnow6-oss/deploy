@@ -2080,63 +2080,77 @@ with tab3:
     parteval_rubric = {}
     gender_rubric = {}
     try:
-            df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
-            df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
-            for idx, row in df_rubric_engagement.iterrows():
-                indicador = row['Indicador']
-                valores = row.drop('Indicador').values.tolist()
-                engagement_rubric[indicador] = valores
-            df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
-            df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
-            for idx, row in df_rubric_performance.iterrows():
-                criterio = row['subdim']
-                valores = row.drop('subdim').values.tolist()
-                performance_rubric[criterio] = valores
-            df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
-            df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
-            for idx, row in df_rubric_parteval.iterrows():
-                indicador = row['Indicador']
-                valores = row.drop('Indicador').values.tolist()
-                parteval_rubric[indicador] = valores
-            df_rubric_gender = pd.read_excel('./Actores_rúbricas de participación_8mayo.xlsx', sheet_name='rubric_gender_')
-            df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
-            for idx, row in df_rubric_gender.iterrows():
-                indicador = row['Indicador']
-                valores = row.drop('Indicador').values.tolist()
-                gender_rubric[indicador] = valores
-        except Exception as e:
-            st.error(f"Error leyendo las rúbricas: {e}")
-        uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
-        st.info("""
-        **Instrucciones:**
-        1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
-        2. Revise los resultados de cada rúbrica en la tabla interactiva.
-        3. Descargue todos los resultados y evidencias en un archivo ZIP.
-        """)
-        if st.button('Procesar y Evaluar'):
-            if uploaded_file is not None:
-                import tempfile, os
-                file_hash = hash(uploaded_file.getvalue())
-                if st.session_state.get('last_file_hash') != file_hash:
-                    with st.spinner("Procesando documento..."):
-                        try:
-                            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                            tmp_file.write(uploaded_file.read())
-                            tmp_file.close()
-                            from docx import Document
-                            doc = Document(tmp_file.name)
-                            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-                            document_text = "\n".join(paragraphs)
-                            st.session_state['full_document_text'] = document_text
-                            st.session_state['last_file_hash'] = file_hash
-                            os.unlink(tmp_file.name)
-                        except Exception as e:
-                            st.error(f"Error procesando el documento: {e}")
-                            import traceback
-                            st.error(traceback.format_exc())
-                            st.stop()
-    parteval_rubric = {}
-    gender_rubric = {}
+        df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
+        df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_engagement.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            engagement_rubric[indicador] = valores
+        df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
+        df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_performance.iterrows():
+            criterio = row['subdim']
+            valores = row.drop('subdim').values.tolist()
+            performance_rubric[criterio] = valores
+        df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
+        df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_parteval.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            parteval_rubric[indicador] = valores
+        df_rubric_gender = pd.read_excel('./Actores_rúbricas de participación_8mayo.xlsx', sheet_name='rubric_gender_')
+        df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_gender.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            gender_rubric[indicador] = valores
+    except Exception as e:
+        st.error(f"Error leyendo las rúbricas: {e}")
+    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+    st.info("""
+    **Instrucciones:**
+    1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
+    2. Revise los resultados de cada rúbrica en la tabla interactiva.
+    3. Descargue todos los resultados y evidencias en un archivo ZIP.
+    """)
+    if st.button('Procesar y Evaluar'):
+        if uploaded_file is not None:
+            import tempfile, os
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('last_file_hash') != file_hash:
+                with st.spinner("Procesando documento..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        from docx import Document
+                        doc = Document(tmp_file.name)
+                        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                        document_text = "\n".join(paragraphs)
+                        st.session_state['full_document_text'] = document_text
+                        st.session_state['last_file_hash'] = file_hash
+                        os.unlink(tmp_file.name)
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
+    document_text = st.session_state.get('full_document_text', '')
+    if not document_text:
+        st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+        st.stop()
+    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+    document_text = "\n".join(paragraphs)
+    st.session_state['full_document_text'] = document_text
+    st.session_state['last_file_hash'] = file_hash
+    os.unlink(tmp_file.name)
+except Exception as e:
+st.error(f"Error procesando el documento: {e}")
+import traceback
+st.error(traceback.format_exc())
+st.stop()
+parteval_rubric = {}
+gender_rubric = {}
 try:
     df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
     df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
