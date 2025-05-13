@@ -2235,7 +2235,6 @@ def evaluate_single_chunk(text_chunk, criterion, descriptions):
     # Call LLM using OpenAI v0.28 syntax with reduced token limit
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
@@ -2297,7 +2296,6 @@ def synthesize_evaluations(chunk_results, criterion, descriptions):
     # Call LLM for synthesis using OpenAI v0.28 syntax with reduced token limit
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
