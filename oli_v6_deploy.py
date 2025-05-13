@@ -2052,11 +2052,6 @@ with tab2:
 #                     st.warning("No se generaron resultados para ninguna rúbrica.")
 #             else:
 #                 st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
-    filename = os.path.basename(docx_path)
-    rows = []
-    current_headers = {i: '' for i in range(1, 7)}
-    para_counter = 0
-
     def get_header_level(style_name):
         for i in range(1, 7):
             if style_name.lower().startswith(f'heading {i}'.lower()):
@@ -2090,7 +2085,7 @@ with tab2:
                 'paragraph_number': para_counter,
                 'page_number': None
             })
-    return pd.DataFrame(rows)
+    # return pd.DataFrame(rows)
 
 # Function to split text into chunks respecting the token limit
 def split_text_into_chunks(text, max_tokens=6500):  # Reduced from 7000 to leave more room
