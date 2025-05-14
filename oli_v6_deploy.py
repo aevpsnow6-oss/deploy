@@ -975,7 +975,6 @@ def add_advanced_visualization_section(filtered_df):
     score_fig = plot_score_evolution(filtered_df)
     if score_fig:
         # Remove inline title from plot
-        score_fig.
         st.plotly_chart(score_fig, use_container_width=True)
 
     # --- Variable Composition ---
@@ -1011,7 +1010,6 @@ def add_advanced_visualization_section(filtered_df):
                 var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
             )
             if composition_fig:
-                composition_fig.
                 st.plotly_chart(composition_fig, use_container_width=True)
         else:
             st.warning("No se encontraron variables de composición en los datos filtrados.")
