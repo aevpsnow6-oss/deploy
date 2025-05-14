@@ -1375,7 +1375,7 @@ with tab1:
             active_df = df.copy()
         elif source == 'Lecciones Aprendidas':
             # Load lessons learned dataset
-            lessons_path = os.getenv('LESSONS_PATH', './lessons_learned.xlsx')
+            lessons_path = os.getenv('LESSONS_PATH', './40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
             lessons_df = pd.read_excel(lessons_path)
             # Harmonize columns
             lessons_df = lessons_df.rename(columns={
@@ -1400,7 +1400,7 @@ with tab1:
             active_df = lessons_df.copy()
         elif source == 'Buenas Prácticas':
             # Load good practices dataset
-            practices_path = os.getenv('PRACTICES_PATH', './good_practices.xlsx')
+            practices_path = os.getenv('PRACTICES_PATH', './40486578_Producto_3_BD_Buenas_Practicas.xlsx')
             practices_df = pd.read_excel(practices_path)
             # Harmonize columns
             practices_df = practices_df.rename(columns={
