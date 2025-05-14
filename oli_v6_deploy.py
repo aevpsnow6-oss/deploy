@@ -2188,7 +2188,7 @@ with tab2:
     Helpful Answer:"""
 
     # Analysis button logic
-    if st.button('Analizar Textos'):
+    if st.button('Analizar Textos', key='analyze_button_tab2'):
         selections = {
             'recommendations': analyze_recommendations,
             'lessons': analyze_lessons,
@@ -2209,7 +2209,7 @@ with tab2:
             st.warning("Por favor seleccione al menos una fuente de texto para analizar.")
 
     # Button to download the filtered dataframe as Excel file
-    if st.button('Descargar Datos Filtrados'):
+    if st.button('Descargar Datos Filtrados', key='download_button_tab2'):
         try:
             # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
             def sanitize_cell(x):
@@ -2266,7 +2266,7 @@ with tab2:
             st.write("No se encontraron recomendaciones para la búsqueda.")
 
     # Button to search for recommendations
-    if st.button("Buscar Recomendaciones"):
+    if st.button("Buscar Recomendaciones", key='search_button_tab2'):
         if user_query:
             with st.spinner('Buscando recomendaciones...'):
                 if search_method == "Por Similitud":
