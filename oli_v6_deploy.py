@@ -1809,46 +1809,46 @@ with tab2:
     # Convert to strings before sorting to avoid type comparison errors
     office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
-    selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab2')
+        selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab2')
         
-# Country filter
-country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
-with st.sidebar.expander("País", expanded=False):
-    selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
+    # Country filter
+    country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
+    with st.sidebar.expander("País", expanded=False):
+        selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
 
-# Year filter with slider
-min_year = int(df['year'].min())
-max_year = int(df['year'].max())
-with st.sidebar.expander("Año", expanded=False):
-    selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
-    # Apply year filter
-    filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
+    # Year filter with slider
+    min_year = int(df['year'].min())
+    max_year = int(df['year'].max())
+    with st.sidebar.expander("Año", expanded=False):
+        selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
+        # Apply year filter
+        filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
 
-# Now add the theme filter
-evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
-with st.sidebar.expander("Tema (Evaluación)", expanded=False):
-    selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All', key='tema_eval_tab2')
+    # Now add the theme filter
+    evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
+    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
+        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All', key='tema_eval_tab2')
 
-# Recommendation theme filter
-with st.sidebar.expander("Tema (Recomendación)", expanded=False):
-    selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All', key='tema_recomendacion_tab2')
+    # Recommendation theme filter
+    with st.sidebar.expander("Tema (Recomendación)", expanded=False):
+        selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All', key='tema_recomendacion_tab2')
 
-# Management response filter
-with st.sidebar.expander("Respuesta de gerencia", expanded=False):
-    selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All', key='respuesta_gerencia_tab2')
+    # Management response filter
+    with st.sidebar.expander("Respuesta de gerencia", expanded=False):
+        selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All', key='respuesta_gerencia_tab2')
 
-# Text source selection before analysis button
-with st.sidebar.expander("Fuentes de Texto", expanded=False):
-    analyze_recommendations = st.checkbox('Recomendaciones', value=True, key='recomendaciones_tab2')
-    analyze_lessons = st.checkbox('Lecciones Aprendidas', value=False, key='lecciones_aprendidas_tab2')
-    analyze_practices = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
-    analyze_plans = st.checkbox('Planes de Acción', value=False, key='planes_accion_tab2')
-    select_all = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
-    if select_all:
-        analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
-        select_all = st.checkbox('Seleccionar Todas las Fuentes')
+    # Text source selection before analysis button
+    with st.sidebar.expander("Fuentes de Texto", expanded=False):
+        analyze_recommendations = st.checkbox('Recomendaciones', value=True, key='recomendaciones_tab2')
+        analyze_lessons = st.checkbox('Lecciones Aprendidas', value=False, key='lecciones_aprendidas_tab2')
+        analyze_practices = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
+        analyze_plans = st.checkbox('Planes de Acción', value=False, key='planes_accion_tab2')
+        select_all = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
         if select_all:
             analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
+            select_all = st.checkbox('Seleccionar Todas las Fuentes')
+            if select_all:
+                analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
 
     # Filter dataframe based on user selection
     # The year filter is already handled above using selected_year_range and filtered_df
