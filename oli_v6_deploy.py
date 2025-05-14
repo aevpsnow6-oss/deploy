@@ -1353,8 +1353,9 @@ except Exception as e:
     st.stop()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["Exploración de Evidencia", "Análisis por Rúbricas", "Document Chat"])
-
+tab1, tab2, tab3, tab4 = st.tabs(["Exploración de Evidencia-Recomendaciones", "Exploración de Evidencia-Lecciones Aprendidas","Análisis por Rúbricas", "Document Chat"])
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
     st.header("Exploración de Evidencia")
@@ -1788,57 +1789,445 @@ with tab1:
                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
                     display_results(results)
 
-
-# # Tab 2: Search
-# with tab2:
-#     st.header("Búsqueda de Recomendaciones")
-#     # Chat section for querying similar recommendations
-#     st.markdown("### Búsqueda")
-
-#     # Input for user query
-#     user_query = st.text_input("Pregunte sobre las recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
-
-#     # Search method selection
-#     search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
-
-#     # Slider for similarity score threshold (only relevant for similarity search)
-#     if search_method == "Por Similitud":
-#         score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-
-#     # Function to display results
-#     def display_results(results):
-#         if results:
-#             st.markdown("#### Recomendaciones similares")
-#             for i, result in enumerate(results):
-#                 st.markdown(f"**Recomendación {i+1}:**")
-#                 st.markdown(f"**Texto:** {result['recommendation']}")
-#                 if "similarity" in result:
-#                     st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
-#                 st.markdown(f"**País:** {result['country']}")
-#                 st.markdown(f"**Año:** {result['year']}")
-#                 st.markdown(f"**Número de evaluación:** {result['eval_id']}")
-#                 st.markdown("---")
-#         else:
-#             st.write("No se encontraron recomendaciones para la búsqueda.")
-
-#     # Button to search for recommendations
-#     if st.button("Buscar Recomendaciones"):
-#         if user_query:
-#             with st.spinner('Buscando recomendaciones...'):
-#                 if search_method == "Por Similitud":
-#                     query_embedding = get_embedding_with_retry(user_query)
-#                     if query_embedding is not None:
-#                         results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
-#                         display_results(results)
-#                     else:
-#                         st.error("No se pudo generar el embedding para la consulta.")
-#                 else:
-#                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
-#                     display_results(results)
-
-
-# --- RESTORED RUBRIC ANALYSIS SECTION ---
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
+# Tab 2: Filters, Text Analysis and Similar Lessons Learned
 with tab2:
+    st.header("Exploración de Evidencia")
+    
+    # --- DATASET LOADING ---
+    # Only use the main recommendations dataset for all analysis
+    filtered_df = df.copy()
+    
+    # Define filter options first
+    # These variables should be defined before being referenced
+    selected_dimensions = ['All']
+    selected_subdimensions = ['All']
+    # (No change needed here, just keep using filtered_df for options below)
+    
+    # Office filter
+    # Convert to strings before sorting to avoid type comparison errors
+    office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
+    with st.sidebar.expander("Unidad Administrativa", expanded=False):
+        selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All')
+        
+    # Country filter
+    # Convert to strings before sorting to avoid type comparison errors
+    country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
+    with st.sidebar.expander("País", expanded=False):
+        selected_countries = st.multiselect('País', options=country_options, default='All')
+    
+    # Year filter with slider
+    min_year = int(df['year'].min())
+    max_year = int(df['year'].max())
+    with st.sidebar.expander("Año", expanded=False):
+        selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year))
+        # Apply year filter
+        filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
+    
+    # Now add the theme filter
+    # Convert to strings before sorting to avoid type comparison errors
+    evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
+    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
+        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
+    
+    # Recommendation theme filter
+    if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme:
+        # Convert to strings before sorting to avoid type comparison errors
+        rectheme_options = ['All'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
+    else:
+        filtered_theme_df = df[(df['dimension'].isin(selected_dimensions)) & 
+                             (df['subdim'].isin(selected_subdimensions)) & 
+                             (df['Theme_cl'].isin(selected_evaltheme))]
+        # Convert to strings before sorting to avoid type comparison errors
+        rectheme_options = ['All'] + sorted([str(x) for x in filtered_theme_df['Recommendation_theme'].unique() if not pd.isna(x)])
+
+    with st.sidebar.expander("Tema (Recomendación)", expanded=False):
+        selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All')
+
+    # Management response filter
+    if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or 'All' in selected_rectheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme or not selected_rectheme:
+        # Convert to strings before sorting to avoid type comparison errors
+        mgtres_options = ['All'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
+    else:
+        filtered_mgtres_df = df[(df['dimension'].isin(selected_dimensions)) & 
+                              (df['subdim'].isin(selected_subdimensions)) & 
+                              (df['Theme_cl'].isin(selected_evaltheme)) & 
+                              (df['Recommendation_theme'].isin(selected_rectheme))]
+        # Convert to strings before sorting to avoid type comparison errors
+        mgtres_options = ['All'] + sorted([str(x) for x in filtered_mgtres_df['Management_response'].unique() if not pd.isna(x)])
+
+    with st.sidebar.expander("Respuesta de gerencia", expanded=False):
+        selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All')
+
+    # Text source selection before analysis button
+    with st.sidebar.expander("Fuentes de Texto", expanded=False):
+        analyze_recommendations = st.checkbox('Recomendaciones', value=True)
+        analyze_lessons = st.checkbox('Lecciones Aprendidas', value=False) 
+        analyze_practices = st.checkbox('Buenas Prácticas', value=False)
+        analyze_plans = st.checkbox('Planes de Acción', value=False)
+        select_all = st.checkbox('Seleccionar Todas las Fuentes')
+        if select_all:
+            analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
+
+    # Filter dataframe based on user selection
+    # The year filter is already handled above using selected_year_range and filtered_df
+    # Apply remaining filters in sequence to filtered_df
+    if 'All' not in selected_offices and selected_offices:
+        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].astype(str).isin(selected_offices)]
+    if 'All' not in selected_countries and selected_countries:
+        filtered_df = filtered_df[filtered_df['Country(ies)'].astype(str).isin(selected_countries)]
+    if 'All' not in selected_dimensions and selected_dimensions:
+        filtered_df = filtered_df[filtered_df['dimension'].astype(str).isin(selected_dimensions)]
+    if 'All' not in selected_subdimensions and selected_subdimensions:
+        filtered_df = filtered_df[filtered_df['subdim'].astype(str).isin(selected_subdimensions)]
+    if 'All' not in selected_evaltheme and selected_evaltheme:
+        filtered_df = filtered_df[filtered_df['Theme_cl'].astype(str).isin(selected_evaltheme)]
+    if 'All' not in selected_rectheme and selected_rectheme:
+        filtered_df = filtered_df[filtered_df['Recommendation_theme'].astype(str).isin(selected_rectheme)]
+    if 'All' not in selected_mgtres and selected_mgtres:
+        filtered_df = filtered_df[filtered_df['Management_response'].astype(str).isin(selected_mgtres)]
+
+    # Extract unique texts
+    unique_texts = filtered_df['Recommendation_description'].unique()
+    unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
+
+    # Create summary table
+    filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
+    summary_data = {
+        'Métrica': [
+            'Número de Recomendaciones',
+            'Países',
+            'Años',
+            'Número de Evaluaciones',
+            'Completadas',
+            'Parcialmente Completadas',
+            'Acción no tomada aún',
+            'Rechazadas',
+            'Acción no planificada',
+            'Sin respuesta'
+        ],
+        'Conteo': [
+            len(unique_texts),
+            filtered_df['Country(ies)'].nunique(),
+            filtered_df['year'].nunique(),
+            filtered_df['Evaluation_number'].nunique(),
+            filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0],
+            filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0],
+            filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0],
+            filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0],
+            filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0],
+            filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0]
+        ]
+    }
+
+    summary_df = pd.DataFrame(summary_data)
+
+    # Display summary table with better formatting
+    st.markdown("#### Información General")
+
+    # KPIs for totals (responsive to filters)
+    total_recs = len(filtered_df_unique)
+    num_countries = filtered_df_unique['Country(ies)'].nunique()
+    num_years = filtered_df_unique['year'].nunique()
+    num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
+    total_cols = st.columns(4)
+    total_kpi_labels = ["Total Recomendaciones", "Países", "Años", "Evaluaciones"]
+    total_kpi_values = [total_recs, num_countries, num_years, num_evals]
+    total_kpi_html = [
+        f"""
+        <div style='text-align:center;'>
+            <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+            <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+        </div>
+        """
+        for label, value in zip(total_kpi_labels, total_kpi_values)
+    ]
+    for col, html in zip(total_cols, total_kpi_html):
+        col.markdown(html, unsafe_allow_html=True)
+    st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+
+    # KPIs for management response statuses (Respuesta de Gerencia)
+    mgmt_labels = [
+        ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
+        ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
+        ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
+        ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
+        ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
+        ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
+    ]
+    st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
+    kpi_cols = st.columns(3)
+    for i, (label, value, color) in enumerate(mgmt_labels):
+        kpi_cols[i % 3].markdown(
+            f"""
+            <div style='text-align:center;'>
+                <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+                <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # Display plots if data is available
+    if not filtered_df.empty:
+        country_counts = filtered_df_unique['Country(ies)'].value_counts()
+        # Responsive dashboard layout for all major plots
+        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+        row1_col1, row1_col2 = st.columns(2)
+        with row1_col1:
+            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Bar(
+                y=country_counts.index.tolist(),
+                x=country_counts.values.tolist(),
+                orientation='h',
+                text=country_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='%{y}: %{x} recomendaciones'
+            ))
+            # Fixed height for alignment with year plot
+            fixed_height = 500
+            fig1.update_layout(
+                xaxis_title='Número de Recomendaciones',
+                yaxis_title='País',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=fixed_height,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+            fig1.update_yaxes(showgrid=False)
+            st.plotly_chart(fig1, use_container_width=True)
+        with row1_col2:
+            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
+            year_counts = filtered_df_unique['year'].value_counts().sort_index()
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=year_counts.index.astype(str).tolist(),
+                y=year_counts.values.tolist(),
+                text=year_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='Año %{x}: %{y} recomendaciones',
+                textfont=dict(size=22)
+            ))
+            fig2.update_layout(
+                xaxis_title='Año',
+                yaxis_title='Número de Recomendaciones',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=500,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+            st.plotly_chart(fig2, use_container_width=True)
+        # Second row: Treemap by Dimension (full width)
+
+        st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
+        import numpy as np
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['dimension'].notna()]
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
+
+        dimension_counts = filtered_df.groupby('dimension').agg({
+            'index_df': 'nunique'
+        }).reset_index()
+        dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
+        dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
+        dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
+
+        # Remove 'Sin Clasificar' from dimension_counts for treemap
+        dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
+        # Capitalize dimension labels
+        dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
+        fig3 = px.treemap(
+            dimension_counts, path=['dimension'], values='index_df',
+            title='Composición de Recomendaciones por Dimensión',
+            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            custom_data=['text']
+        )
+        fig3.update_traces(
+            textinfo='label+value', hovertemplate='%{customdata[0]}',
+            textfont_size=32
+        )
+        fig3.update_layout(
+            margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
+            title_font_size=32,
+            font=dict(size=28),
+            legend_font_size=28
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+        # Treemap: Recommendations by Subdimension
+        # Harmonize 'process' and 'processes' before plotting subdimensions as well
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        # Remove 'Sin Clasificar' from both dimension and subdimension for treemap
+        filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
+        filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
+        # Capitalize dimension and subdimension labels
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
+        filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
+        subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
+            'index_df': 'nunique'
+        }).reset_index()
+        subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
+        subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
+        subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10  # Scale font size
+
+        fig4 = px.treemap(
+            subdimension_counts, path=['dimension', 'subdim'], values='index_df',
+            title='Composición de Recomendaciones por Subdimensión',
+            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            custom_data=['text']
+        )
+        fig4.update_traces(
+            textinfo='label+value', hovertemplate='%{customdata[0]}',
+            textfont_size=32
+        )
+        fig4.update_layout(
+            margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
+            title_font_size=32,
+            font=dict(size=28),
+            legend_font_size=28
+        )
+
+        # Display only the subdimension treemap (dimension treemap already shown above)
+        st.plotly_chart(fig4, use_container_width=True)
+        
+        # Add the advanced visualization section directly to the main panel
+        add_advanced_visualization_section(filtered_df)
+    else:
+        st.write("No data available for the selected filters.")
+
+    # Add a text area for the user to input the custom combine template part (now in main panel)
+    st.markdown("""
+    <h3 style='color:#3498db; margin-top:0;'>¿Cómo funciona el análisis de textos?</h3>
+    <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+    Selecciona las fuentes de texto relevantes y personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, acciones recomendadas y actores clave de las recomendaciones seleccionadas, usando IA avanzada. El resultado será un resumen claro y útil para la toma de decisiones.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+    """, unsafe_allow_html=True)
+    user_template_part = st.text_area(
+        "",
+        value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""",
+        height=180,
+        key="user_template_part_main"
+    )
+
+    combine_template_prefix = "The following is a set of summaries:\n{text}\n"
+
+    # Define the map prompt for initial summarization of chunks
+    map_template = """Summarize the following text: {text}
+    Helpful Answer:"""
+
+    # Analysis button logic
+    if st.button('Analizar Textos'):
+        selections = {
+            'recommendations': analyze_recommendations,
+            'lessons': analyze_lessons,
+            'practices': analyze_practices,
+            'plans': analyze_plans
+        }
+        
+        combined_text = build_combined_text(filtered_df, selections)
+        
+        if combined_text:
+            with st.spinner('Analizando textos...'):
+                result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
+                if result:
+                    st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("No se pudo generar el análisis.")
+        else:
+            st.warning("Por favor seleccione al menos una fuente de texto para analizar.")
+
+    # Button to download the filtered dataframe as Excel file
+    if st.button('Descargar Datos Filtrados'):
+        try:
+            # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+            def sanitize_cell(x):
+                if isinstance(x, list):
+                    return ', '.join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+
+            sanitized_df = filtered_df.copy()
+            for col in sanitized_df.columns:
+                if sanitized_df[col].dtype == 'O':
+                    sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+
+            filtered_data = to_excel(sanitized_df)
+            st.download_button(
+                label='📥 Descargar Excel',
+                data=filtered_data,
+                file_name='filtered_data.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            st.error(f"No se pudo exportar los datos filtrados: {e}")
+            import traceback
+            st.error(traceback.format_exc())
+            
+    st.header("Búsqueda de Recomendaciones")
+    # Chat section for querying similar recommendations
+    st.markdown("### Búsqueda")
+
+    # Input for user query
+    user_query = st.text_input("Busqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
+
+    # Search method selection
+    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
+
+    # Slider for similarity score threshold (only relevant for similarity search)
+    if search_method == "Por Similitud":
+        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+
+    # Function to display results
+    def display_results(results):
+        if results:
+            st.markdown("#### Recomendaciones similares")
+            for i, result in enumerate(results):
+                st.markdown(f"**Recomendación {i+1}:**")
+                st.markdown(f"**Texto:** {result['recommendation']}")
+                if "similarity" in result:
+                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+                st.markdown(f"**País:** {result['country']}")
+                st.markdown(f"**Año:** {result['year']}")
+                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+                st.markdown("---")
+        else:
+            st.write("No se encontraron recomendaciones para la búsqueda.")
+
+    # Button to search for recommendations
+    if st.button("Buscar Recomendaciones"):
+        if user_query:
+            with st.spinner('Buscando recomendaciones...'):
+                if search_method == "Por Similitud":
+                    query_embedding = get_embedding_with_retry(user_query)
+                    if query_embedding is not None:
+                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
+                        display_results(results)
+                    else:
+                        st.error("No se pudo generar el embedding para la consulta.")
+                else:
+                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
+                    display_results(results)
+
+#-----------------------#-----------------------#
+#-----------------------#-----------------------#
+# Tab 2: Search
+with tab3:
     st.header("Subir y Evaluar Documento DOCX")
 
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2300,8 +2689,9 @@ with tab2:
     else:
         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 
+#===================######################=====================
 # ================== TAB 4: DOCUMENT CHAT =====================
-with tab3:
+with tab4:
     st.header("Document Chat: Chatea con tu Documento")
     st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4o). Tus preguntas y respuestas aparecerán aquí.")
     st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
