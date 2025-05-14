@@ -1832,7 +1832,7 @@ with tab1:
 
     # Slider for similarity score threshold (only relevant for similarity search)
     if search_method == "Por Similitud":
-        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab2')
 
     # Function to display results
     def display_results(results):
