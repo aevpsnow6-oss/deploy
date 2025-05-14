@@ -1359,82 +1359,9 @@ tab1, tab2, tab3 = st.tabs(["Exploración de Evidencia", "Análisis por Rúbrica
 with tab1:
     st.header("Exploración de Evidencia")
     
-    # --- TEXT SOURCE SELECTION & DATASET LOADING ---
-    # Add a radio button for selecting the text source
-    text_source = st.sidebar.radio(
-        'Fuente de texto para análisis:',
-        ('Recomendaciones', 'Lecciones Aprendidas', 'Buenas Prácticas'),
-        index=0,
-        help='Selecciona la fuente principal de textos para análisis y visualización.'
-    )
-
-    # Load the corresponding dataset and harmonize columns
-    def load_text_source_df(source):
-        # Main recommendations already loaded as df
-        if source == 'Recomendaciones':
-            active_df = df.copy()
-        elif source == 'Lecciones Aprendidas':
-            # Load lessons learned dataset
-            lessons_path = os.getenv('LESSONS_PATH', './40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
-            lessons_df = pd.read_excel(lessons_path)
-            # lessons_df['year'] = pd.to_numeric(lessons_df['year'], errors='coerce').fillna(2023).astype(int)
-            # Harmonize columns
-            lessons_df = lessons_df.rename(columns={
-                'ID_LeccionAprendida': 'index_df',
-                'Lessons learned description': 'Recommendation_description',
-                'Country(ies)': 'Country(ies)',
-                'Administrative unit(s)': 'Recommendation_administrative_unit',
-                'year': 'year',
-                'Theme(s)': 'Theme_cl',
-                'Dimension': 'dimension',
-                'Subdimension': 'subdim',
-                'Management_response': 'Management_response',
-                'Evaluation number': 'Evaluation_number',
-                'Recommendation_theme': 'Recommendation_theme'
-            })
-            # Add missing columns with default values if needed
-            for col in df.columns:
-                if col not in lessons_df.columns:
-                    lessons_df[col] = ''
-            # Reorder columns to match df
-            lessons_df = lessons_df[df.columns]
-            # Ensure 'year' column exists and is numeric
-            if 'year' not in lessons_df.columns or lessons_df['year'].isnull().all():
-                if 'Completion date' in lessons_df.columns:
-                    lessons_df['year'] = pd.to_datetime(lessons_df['Completion date'], errors='coerce').dt.year
-                else:
-                    lessons_df['year'] = 2023  # Default year if not available
-            lessons_df['year'] = pd.to_numeric(lessons_df['year'], errors='coerce').fillna(2023).astype(int)
-            active_df = lessons_df.copy()
-        elif source == 'Buenas Prácticas':
-            # Load good practices dataset
-            practices_path = os.getenv('PRACTICES_PATH', './40486578_Producto_3_BD_Buenas_Practicas.xlsx')
-            practices_df = pd.read_excel(practices_path)
-            # Harmonize columns
-            practices_df = practices_df.rename(columns={
-                'practice_id': 'index_df',
-                'practice_text': 'Recommendation_description',
-                'country': 'Country(ies)',
-                'office': 'Recommendation_administrative_unit',
-                'year': 'year',
-                'theme': 'Theme_cl',
-                'dimension': 'dimension',
-                'subdimension': 'subdim',
-                'response': 'Management_response',
-                'evaluation_number': 'Evaluation_number',
-                'recommendation_theme': 'Recommendation_theme'
-            })
-            for col in df.columns:
-                if col not in practices_df.columns:
-                    practices_df[col] = ''
-            practices_df = practices_df[df.columns]
-            active_df = practices_df.copy()
-        else:
-            active_df = df.copy()
-        return active_df
-
-    # Use the selected dataset for all filtering and analysis
-    filtered_df = load_text_source_df(text_source)
+    # --- DATASET LOADING ---
+    # Only use the main recommendations dataset for all analysis
+    filtered_df = df.copy()
     
     # Define filter options first
     # These variables should be defined before being referenced
