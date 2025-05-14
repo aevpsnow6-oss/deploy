@@ -1592,6 +1592,8 @@ with tab1:
         dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
         dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
 
+        # Remove 'Sin Clasificar' from dimension_counts for treemap
+        dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
         # Capitalize dimension labels
         dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
         fig3 = px.treemap(
@@ -1615,6 +1617,9 @@ with tab1:
         # Treemap: Recommendations by Subdimension
         # Harmonize 'process' and 'processes' before plotting subdimensions as well
         filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        # Remove 'Sin Clasificar' from both dimension and subdimension for treemap
+        filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
+        filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
         # Capitalize dimension and subdimension labels
         filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
         filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
