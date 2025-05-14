@@ -2178,7 +2178,7 @@ with tab2:
         "",
         value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""",
         height=180,
-        key="user_template_part_main"
+        key="user_template_part_main_tab2"
     )
 
     combine_template_prefix = "The following is a set of summaries:\n{text}\n"
