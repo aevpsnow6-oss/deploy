@@ -1377,19 +1377,20 @@ with tab1:
             # Load lessons learned dataset
             lessons_path = os.getenv('LESSONS_PATH', './40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
             lessons_df = pd.read_excel(lessons_path)
+            # lessons_df['year'] = pd.to_numeric(lessons_df['year'], errors='coerce').fillna(2023).astype(int)
             # Harmonize columns
             lessons_df = lessons_df.rename(columns={
-                'lesson_id': 'index_df',
-                'lesson_text': 'Recommendation_description',
+                'ID_LeccionAprendida': 'index_df',
+                'Lessons learned description': 'Recommendation_description',
                 'country': 'Country(ies)',
                 'office': 'Recommendation_administrative_unit',
                 'year': 'year',
-                'theme': 'Theme_cl',
-                'dimension': 'dimension',
-                'subdimension': 'subdim',
-                'response': 'Management_response',
-                'evaluation_number': 'Evaluation_number',
-                'recommendation_theme': 'Recommendation_theme'
+                'Theme(s)': 'Theme_cl',
+                'Dimension': 'dimension',
+                'Subdimension': 'subdim',
+                'Management_response': 'Management_response',
+                'Evaluation number': 'Evaluation_number',
+                'Recommendation_theme': 'Recommendation_theme'
             })
             # Add missing columns with default values if needed
             for col in df.columns:
