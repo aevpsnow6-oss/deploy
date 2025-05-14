@@ -1592,6 +1592,8 @@ with tab1:
         dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
         dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
 
+        # Capitalize dimension labels
+        dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
         fig3 = px.treemap(
             dimension_counts, path=['dimension'], values='index_df',
             title='Composición de Recomendaciones por Dimensión',
@@ -1600,19 +1602,22 @@ with tab1:
         )
         fig3.update_traces(
             textinfo='label+value', hovertemplate='%{customdata[0]}',
-            textfont_size=24
+            textfont_size=32
         )
         fig3.update_layout(
-            margin=dict(t=50, l=25, r=25, b=25), width=800, height=400,
-            title_font_size=28,
-            font=dict(size=22),
-            legend_font_size=22
+            margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
+            title_font_size=32,
+            font=dict(size=28),
+            legend_font_size=28
         )
         st.plotly_chart(fig3, use_container_width=True)
 
         # Treemap: Recommendations by Subdimension
         # Harmonize 'process' and 'processes' before plotting subdimensions as well
         filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        # Capitalize dimension and subdimension labels
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
+        filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
         subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
             'index_df': 'nunique'
         }).reset_index()
@@ -1628,18 +1633,17 @@ with tab1:
         )
         fig4.update_traces(
             textinfo='label+value', hovertemplate='%{customdata[0]}',
-            textfont_size=24
+            textfont_size=32
         )
         fig4.update_layout(
-            margin=dict(t=50, l=25, r=25, b=25), width=800, height=400,
-            title_font_size=28,
-            font=dict(size=22),
-            legend_font_size=22
+            margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
+            title_font_size=32,
+            font=dict(size=28),
+            legend_font_size=28
         )
 
-        # Display treemap plots
-        st.plotly_chart(fig3)
-        st.plotly_chart(fig4)
+        # Display only the subdimension treemap (dimension treemap already shown above)
+        st.plotly_chart(fig4, use_container_width=True)
         
         # Add the advanced visualization section directly to the main panel
         add_advanced_visualization_section(filtered_df)
