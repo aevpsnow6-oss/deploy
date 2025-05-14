@@ -964,10 +964,80 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     
     return fig
 
-# Function to add advanced visualization section to the Streamlit app
-def add_advanced_visualization_section(filtered_df):
+# # Function to add advanced visualization section to the Streamlit app
+# def add_advanced_visualization_section(filtered_df):
+#     """
+#     Adds an advanced visualization section to the Streamlit app.
+#     """
+#     st.markdown("#### Visualizaciones Avanzadas")
+
+#     # --- Score Evolution ---
+#     st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
+#     score_fig = plot_score_evolution(filtered_df)
+#     if score_fig:
+#         # Remove inline title from plot
+#         st.plotly_chart(score_fig, use_container_width=True)
+
+#     # --- Variable Composition ---
+#     st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
+#     available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
+#     if available_vars:
+#         var_mapping = {
+#             'rec_innovation_score': 'Nivel de Innovación',
+#             'rec_precision_and_clarity': 'Precisión y Claridad',
+#             'rec_expected_impact': 'Impacto Esperado',
+#             'rec_intervention_approach': 'Enfoque de Intervención',
+#             'rec_operational_feasibility': 'Factibilidad Operativa',
+#             'rec_timeline': 'Plazo de Implementación'
+#         }
+#         var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
+#         if var_options:
+#             selected_var_label = st.selectbox(
+#                 "Seleccione una variable para visualizar:", 
+#                 options=list(var_options.keys())
+#             )
+#             selected_var = var_options[selected_var_label]
+#             var_titles = {
+#                 'rec_innovation_score': 'Composición de Niveles de Innovación por Año',
+#                 'rec_precision_and_clarity': 'Composición de Niveles de Precisión y Claridad por Año',
+#                 'rec_expected_impact': 'Composición de Niveles de Impacto Esperado por Año',
+#                 'rec_intervention_approach': 'Composición de Enfoques de Intervención por Año',
+#                 'rec_operational_feasibility': 'Composición de Niveles de Factibilidad Operativa por Año',
+#                 'rec_timeline': 'Composición de Plazos de Implementación por Año'
+#             }
+#             composition_fig = create_composition_plot(
+#                 filtered_df, 
+#                 selected_var, 
+#                 var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
+#             )
+#             if composition_fig:
+#                 st.plotly_chart(composition_fig, use_container_width=True)
+#         else:
+#             st.warning("No se encontraron variables de composición en los datos filtrados.")
+#     else:
+#         st.warning("No se encontraron variables de composición en los datos filtrados.")
+
+#     # --- Difficulty Classification ---
+#     st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
+#     if 'clean_tags' in filtered_df.columns:
+#         top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
+#         diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
+#         if diff_fig:
+#             st.plotly_chart(diff_fig, use_container_width=True)
+#     else:
+#         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+
+# Fixed version of the function with tab-specific keys
+def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
     """
     Adds an advanced visualization section to the Streamlit app.
+    
+    Parameters:
+    -----------
+    filtered_df : pandas DataFrame
+        The filtered dataframe to visualize
+    tab_id : str
+        The tab identifier to make widget keys unique (default: "tab1")
     """
     st.markdown("#### Visualizaciones Avanzadas")
 
@@ -992,9 +1062,11 @@ def add_advanced_visualization_section(filtered_df):
         }
         var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
         if var_options:
+            # Use tab_id parameter to create unique key for this selectbox
             selected_var_label = st.selectbox(
                 "Seleccione una variable para visualizar:", 
-                options=list(var_options.keys())
+                options=list(var_options.keys()),
+                key=f"variable_{tab_id}"  # This ensures unique keys across tabs
             )
             selected_var = var_options[selected_var_label]
             var_titles = {
@@ -1020,14 +1092,17 @@ def add_advanced_visualization_section(filtered_df):
     # --- Difficulty Classification ---
     st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
     if 'clean_tags' in filtered_df.columns:
-        top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
+        # Use tab_id parameter to create unique key for this slider
+        top_n = st.slider(
+            "Número de clasificaciones principales a mostrar:", 
+            min_value=3, max_value=15, value=8, 
+            key=f"diff_class_slider_{tab_id}"  # This ensures unique keys across tabs
+        )
         diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
         if diff_fig:
             st.plotly_chart(diff_fig, use_container_width=True)
     else:
         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
-
-
 # ============= DATA LOADING FUNCTIONS =============
 
 # Load data - use relative paths for deployment
@@ -1669,7 +1744,7 @@ with tab1:
         st.plotly_chart(fig4, use_container_width=True)
         
         # Add the advanced visualization section directly to the main panel
-        add_advanced_visualization_section(filtered_df)
+        add_advanced_visualization_section(filtered_df, tab_id="tab1")
     else:
         st.write("No data available for the selected filters.")
 
@@ -2084,7 +2159,7 @@ with tab2:
         st.plotly_chart(fig4, use_container_width=True)
         
         # Add the advanced visualization section directly to the main panel
-        add_advanced_visualization_section(filtered_df)
+        add_advanced_visualization_section(filtered_df, tab_id="tab2")
     else:
         st.write("No data available for the selected filters.")
 
