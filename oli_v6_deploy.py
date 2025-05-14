@@ -2134,7 +2134,8 @@ with tab3:
             st.stop()
         rubrics = [
             ("Participación (Engagement)", engagement_rubric),
-            ("Desempeño (Performance)", performance_rubric)
+            ("Desempeño (Performance)", performance_rubric),
+            ("Género (Gender)", gender_rubric)
         ]
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
