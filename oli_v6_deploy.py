@@ -321,7 +321,8 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
         rubric_type = st.selectbox(
             "Seleccione tipo de rúbrica para evaluación:",
             ["Participación (Engagement)", "Desempeño (Performance)"],
-            index=0
+            index=0,
+            key='rubric_type_tab2'
         )
         if rubric_type == "Participación (Engagement)":
             rubric_df = load_engagement_rubric()
@@ -994,6 +995,7 @@ def add_advanced_visualization_section(filtered_df):
             selected_var_label = st.selectbox(
                 "Seleccione una variable para visualizar:", 
                 options=list(var_options.keys()),
+                key='variable_tab2'
             )
             selected_var = var_options[selected_var_label]
             var_titles = {
