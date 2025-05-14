@@ -1024,7 +1024,6 @@ def add_advanced_visualization_section(filtered_df):
         top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
         diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
         if diff_fig:
-            diff_fig.update_layout(title=None)
             st.plotly_chart(diff_fig, use_container_width=True)
     else:
         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
