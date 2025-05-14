@@ -2135,6 +2135,7 @@ with tab3:
         rubrics = [
             ("Participación (Engagement)", engagement_rubric),
             ("Desempeño (Performance)", performance_rubric),
+            ("Participación Evaluada (Parteval)", parteval_rubric),
             ("Género (Gender)", gender_rubric)
         ]
         rubric_results = []
@@ -2195,6 +2196,11 @@ with tab3:
                             new_order.remove('Evidencia')
                             new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
                         rubric_analysis_df = rubric_analysis_df[new_order]
+                    # Normalize 'Evidencia' column to always be a string
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
                     st.dataframe(rubric_analysis_df, use_container_width=True)
                 else:
                     st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
@@ -2203,6 +2209,11 @@ with tab3:
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zipf:
                 for rubric_name, rubric_analysis_df in rubric_results:
+                    # Normalize 'Evidencia' column to always be a string before exporting
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
                     csv = rubric_analysis_df.to_csv(index=False)
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
                     zipf.writestr(arcname, csv)
