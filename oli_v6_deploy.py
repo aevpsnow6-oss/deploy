@@ -1825,10 +1825,10 @@ with tab1:
     st.markdown("### Búsqueda")
 
     # Input for user query
-    user_query = st.text_input("Busqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
+    user_query = st.text_input("Busqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab2')
 
     # Search method selection
-    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
+    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab2')
 
     # Slider for similarity score threshold (only relevant for similarity search)
     if search_method == "Por Similitud":
