@@ -1374,19 +1374,19 @@ with tab1:
     # Convert to strings before sorting to avoid type comparison errors
     office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
-        selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All')
+        selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab1')
         
     # Country filter
     # Convert to strings before sorting to avoid type comparison errors
     country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("País", expanded=False):
-        selected_countries = st.multiselect('País', options=country_options, default='All')
+        selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab1')
     
     # Year filter with slider
     min_year = int(df['year'].min())
     max_year = int(df['year'].max())
     with st.sidebar.expander("Año", expanded=False):
-        selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year))
+        selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab1')
         # Apply year filter
         filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
     
@@ -1394,7 +1394,7 @@ with tab1:
     # Convert to strings before sorting to avoid type comparison errors
     evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Tema (Evaluación)", expanded=False):
-        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All')
+        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All', key='tema_eval_tab1')
     
     # Recommendation theme filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme:
@@ -1408,7 +1408,7 @@ with tab1:
         rectheme_options = ['All'] + sorted([str(x) for x in filtered_theme_df['Recommendation_theme'].unique() if not pd.isna(x)])
 
     with st.sidebar.expander("Tema (Recomendación)", expanded=False):
-        selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All')
+        selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All', key='tema_recomendacion_tab1')
 
     # Management response filter
     if 'All' in selected_dimensions or 'All' in selected_subdimensions or 'All' in selected_evaltheme or 'All' in selected_rectheme or not selected_dimensions or not selected_subdimensions or not selected_evaltheme or not selected_rectheme:
@@ -1423,15 +1423,15 @@ with tab1:
         mgtres_options = ['All'] + sorted([str(x) for x in filtered_mgtres_df['Management_response'].unique() if not pd.isna(x)])
 
     with st.sidebar.expander("Respuesta de gerencia", expanded=False):
-        selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All')
+        selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All', key='respuesta_gerencia_tab1')
 
     # Text source selection before analysis button
     with st.sidebar.expander("Fuentes de Texto", expanded=False):
-        analyze_recommendations = st.checkbox('Recomendaciones', value=True)
-        analyze_lessons = st.checkbox('Lecciones Aprendidas', value=False) 
-        analyze_practices = st.checkbox('Buenas Prácticas', value=False)
-        analyze_plans = st.checkbox('Planes de Acción', value=False)
-        select_all = st.checkbox('Seleccionar Todas las Fuentes')
+        analyze_recommendations = st.checkbox('Recomendaciones', value=True, key='recomendaciones_tab1')
+        analyze_lessons = st.checkbox('Lecciones Aprendidas', value=False, key='lecciones_aprendidas_tab1') 
+        analyze_practices = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab1')
+        analyze_plans = st.checkbox('Planes de Acción', value=False, key='planes_accion_tab1')
+        select_all = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab1')
         if select_all:
             analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
 
