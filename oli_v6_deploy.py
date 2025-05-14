@@ -1397,6 +1397,13 @@ with tab1:
                     lessons_df[col] = ''
             # Reorder columns to match df
             lessons_df = lessons_df[df.columns]
+            # Ensure 'year' column exists and is numeric
+            if 'year' not in lessons_df.columns or lessons_df['year'].isnull().all():
+                if 'Completion date' in lessons_df.columns:
+                    lessons_df['year'] = pd.to_datetime(lessons_df['Completion date'], errors='coerce').dt.year
+                else:
+                    lessons_df['year'] = 2023  # Default year if not available
+            lessons_df['year'] = pd.to_numeric(lessons_df['year'], errors='coerce').fillna(2023).astype(int)
             active_df = lessons_df.copy()
         elif source == 'Buenas Prácticas':
             # Load good practices dataset
