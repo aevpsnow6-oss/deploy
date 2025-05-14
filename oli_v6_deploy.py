@@ -1334,22 +1334,6 @@ except Exception as e:
     st.error(f"Error loading data: {str(e)}")
     st.stop()
 
-# --- KPI Metrics Row ---
-filtered_df = df.copy()
-filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
-total_recs = len(filtered_df_unique)
-num_countries = filtered_df_unique['Country(ies)'].nunique()
-num_years = filtered_df_unique['year'].nunique()
-num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Recomendaciones", total_recs)
-col2.metric("Países", num_countries)
-col3.metric("Años", num_years)
-col4.metric("Evaluaciones", num_evals)
-
-st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
-
 
 # Check for API key before running the app
 if not openai_api_key:
@@ -1506,6 +1490,19 @@ with tab1:
 
     # Display summary table with better formatting
     st.markdown("#### Información General")
+
+    # KPIs for totals (responsive to filters)
+    total_recs = len(filtered_df_unique)
+    num_countries = filtered_df_unique['Country(ies)'].nunique()
+    num_years = filtered_df_unique['year'].nunique()
+    num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
+    total_cols = st.columns(4)
+    total_cols[0].metric("Total Recomendaciones", total_recs)
+    total_cols[1].metric("Países", num_countries)
+    total_cols[2].metric("Años", num_years)
+    total_cols[3].metric("Evaluaciones", num_evals)
+    st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+
     # KPIs for management response statuses (Respuesta de Gerencia)
     mgmt_labels = [
         ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0]),
