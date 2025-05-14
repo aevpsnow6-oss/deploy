@@ -1380,7 +1380,7 @@ with tab1:
     # Convert to strings before sorting to avoid type comparison errors
     country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("País", expanded=False):
-        selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
+        selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab1')
     
     # Year filter with slider
     min_year = int(df['year'].min())
