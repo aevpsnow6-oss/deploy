@@ -2202,8 +2202,6 @@ with tab2:
                         st.error("No se pudo generar el embedding para la consulta.")
                 else:
                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
-                    display_results(results)
-
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
 # Tab 2: Search
@@ -2293,7 +2291,7 @@ with tab3:
         return pd.DataFrame(rows)
 
     # Function to split text into chunks respecting the token limit
-    def split_text_into_chunks(text, max_tokens=6500):  # Reduced from 7000 to leave more room
+    def split_text_into_chunks(text, max_tokens=7000):
         import re
         # Split by paragraphs first
         paragraphs = text.split('\n')
@@ -2344,12 +2342,12 @@ with tab3:
         # Synthesize results from all chunks
         return synthesize_evaluations(chunk_results, criterion, descriptions)
 
-    # Function to evaluate a single text chunk - Modified with reduced token limit
+    # Function to evaluate a single text chunk
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
         """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
         import json
 
-        # Build prompt - Updated with realistic constraints
+        # Build prompt
         prompt = f"""
         Estás evaluando un documento contra un criterio específico.
         
@@ -2375,7 +2373,7 @@ with tab3:
         Devuelve solo el objeto JSON, nada más.
         """
 
-        # Call LLM using OpenAI v0.28 syntax with reduced token limit
+        # Call LLM using OpenAI v0.28 syntax
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4.1-mini",
@@ -2384,7 +2382,7 @@ with tab3:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=1000  # Reduced token limit
+                max_tokens=7000
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
@@ -2392,7 +2390,7 @@ with tab3:
         except Exception as e:
             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
 
-    # Function to synthesize evaluations - Modified with reduced token limit
+    # Function to synthesize evaluations
     def synthesize_evaluations(chunk_results, criterion, descriptions):
         """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
         import json
@@ -2414,7 +2412,7 @@ with tab3:
         # Define separator outside the f-string to avoid backslash issues
         separator = "\n\n"
 
-        # Create a synthesis prompt - Updated with realistic constraints
+        # Create a synthesis prompt
         synthesis_prompt = f"""
         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
         
@@ -2436,7 +2434,7 @@ with tab3:
         Devuelve solo el objeto JSON, nada más.
         """
 
-        # Call LLM for synthesis using OpenAI v0.28 syntax with reduced token limit
+        # Call LLM for synthesis using OpenAI v0.28 syntax
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4.1-mini",
@@ -2445,7 +2443,7 @@ with tab3:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=1000  # Reduced token limit
+                max_tokens=7000
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
