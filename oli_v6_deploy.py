@@ -993,7 +993,8 @@ def add_advanced_visualization_section(filtered_df):
         if var_options:
             selected_var_label = st.selectbox(
                 "Seleccione una variable para visualizar:", 
-                options=list(var_options.keys())
+                options=list(var_options.keys()),
+                key='variable_tab1'
             )
             selected_var = var_options[selected_var_label]
             var_titles = {
