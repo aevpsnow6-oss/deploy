@@ -1382,8 +1382,8 @@ with tab1:
             lessons_df = lessons_df.rename(columns={
                 'ID_LeccionAprendida': 'index_df',
                 'Lessons learned description': 'Recommendation_description',
-                'country': 'Country(ies)',
-                'office': 'Recommendation_administrative_unit',
+                'Country(ies)': 'Country(ies)',
+                'Administrative unit(s)': 'Recommendation_administrative_unit',
                 'year': 'year',
                 'Theme(s)': 'Theme_cl',
                 'Dimension': 'dimension',
