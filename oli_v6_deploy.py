@@ -1359,13 +1359,80 @@ tab1, tab2, tab3 = st.tabs(["Exploración de Evidencia", "Análisis por Rúbrica
 with tab1:
     st.header("Exploración de Evidencia")
     
-    # Initialize filtered dataframe
-    filtered_df = df.copy()
+    # --- TEXT SOURCE SELECTION & DATASET LOADING ---
+    # Add a radio button for selecting the text source
+    text_source = st.sidebar.radio(
+        'Fuente de texto para análisis:',
+        ('Recomendaciones', 'Lecciones Aprendidas', 'Buenas Prácticas'),
+        index=0,
+        help='Selecciona la fuente principal de textos para análisis y visualización.'
+    )
+
+    # Load the corresponding dataset and harmonize columns
+    def load_text_source_df(source):
+        # Main recommendations already loaded as df
+        if source == 'Recomendaciones':
+            active_df = df.copy()
+        elif source == 'Lecciones Aprendidas':
+            # Load lessons learned dataset
+            lessons_path = os.getenv('LESSONS_PATH', './lessons_learned.xlsx')
+            lessons_df = pd.read_excel(lessons_path)
+            # Harmonize columns
+            lessons_df = lessons_df.rename(columns={
+                'lesson_id': 'index_df',
+                'lesson_text': 'Recommendation_description',
+                'country': 'Country(ies)',
+                'office': 'Recommendation_administrative_unit',
+                'year': 'year',
+                'theme': 'Theme_cl',
+                'dimension': 'dimension',
+                'subdimension': 'subdim',
+                'response': 'Management_response',
+                'evaluation_number': 'Evaluation_number',
+                'recommendation_theme': 'Recommendation_theme'
+            })
+            # Add missing columns with default values if needed
+            for col in df.columns:
+                if col not in lessons_df.columns:
+                    lessons_df[col] = ''
+            # Reorder columns to match df
+            lessons_df = lessons_df[df.columns]
+            active_df = lessons_df.copy()
+        elif source == 'Buenas Prácticas':
+            # Load good practices dataset
+            practices_path = os.getenv('PRACTICES_PATH', './good_practices.xlsx')
+            practices_df = pd.read_excel(practices_path)
+            # Harmonize columns
+            practices_df = practices_df.rename(columns={
+                'practice_id': 'index_df',
+                'practice_text': 'Recommendation_description',
+                'country': 'Country(ies)',
+                'office': 'Recommendation_administrative_unit',
+                'year': 'year',
+                'theme': 'Theme_cl',
+                'dimension': 'dimension',
+                'subdimension': 'subdim',
+                'response': 'Management_response',
+                'evaluation_number': 'Evaluation_number',
+                'recommendation_theme': 'Recommendation_theme'
+            })
+            for col in df.columns:
+                if col not in practices_df.columns:
+                    practices_df[col] = ''
+            practices_df = practices_df[df.columns]
+            active_df = practices_df.copy()
+        else:
+            active_df = df.copy()
+        return active_df
+
+    # Use the selected dataset for all filtering and analysis
+    filtered_df = load_text_source_df(text_source)
     
     # Define filter options first
     # These variables should be defined before being referenced
     selected_dimensions = ['All']
     selected_subdimensions = ['All']
+    # (No change needed here, just keep using filtered_df for options below)
     
     # Office filter
     # Convert to strings before sorting to avoid type comparison errors
