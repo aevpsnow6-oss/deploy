@@ -1497,25 +1497,42 @@ with tab1:
     num_years = filtered_df_unique['year'].nunique()
     num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
     total_cols = st.columns(4)
-    total_cols[0].metric("Total Recomendaciones", total_recs)
-    total_cols[1].metric("Países", num_countries)
-    total_cols[2].metric("Años", num_years)
-    total_cols[3].metric("Evaluaciones", num_evals)
+    total_kpi_labels = ["Total Recomendaciones", "Países", "Años", "Evaluaciones"]
+    total_kpi_values = [total_recs, num_countries, num_years, num_evals]
+    total_kpi_html = [
+        f"""
+        <div style='text-align:center;'>
+            <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+            <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+        </div>
+        """
+        for label, value in zip(total_kpi_labels, total_kpi_values)
+    ]
+    for col, html in zip(total_cols, total_kpi_html):
+        col.markdown(html, unsafe_allow_html=True)
     st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
 
     # KPIs for management response statuses (Respuesta de Gerencia)
     mgmt_labels = [
-        ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0]),
-        ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0]),
-        ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0]),
-        ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0]),
-        ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0]),
-        ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0]),
+        ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
+        ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
+        ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
+        ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
+        ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
+        ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
     ]
-    st.markdown("#### Respuesta de Gerencia")
+    st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
     kpi_cols = st.columns(3)
-    for i, (label, value) in enumerate(mgmt_labels):
-        kpi_cols[i % 3].metric(label, value)
+    for i, (label, value, color) in enumerate(mgmt_labels):
+        kpi_cols[i % 3].markdown(
+            f"""
+            <div style='text-align:center;'>
+                <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+                <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # Display plots if data is available
     if not filtered_df.empty:
