@@ -2061,7 +2061,7 @@ with tab2:
         # filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
         # filtered_df = filtered_df[filtered_df['Approach'].notna()]
 
-        dimension_counts = filtered_df.groupby('dimension').agg({
+        dimension_counts = filtered_df.groupby('Dimension').agg({
             'ID_LeccionAprendida': 'nunique'
         }).reset_index()
         dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
