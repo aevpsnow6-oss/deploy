@@ -2477,7 +2477,7 @@ with tab3:
     
     # --- DATASET LOADING ---
     # Load the correct good practices Excel file
-    practices_df = pd.read_excel('./40486578_Producto_2_BD_Buenas_Practicas.xlsx')
+    practices_df = pd.read_excel('./40486578_Producto_3_BD_Buenas_Practicas.xlsx')
     practices_df['year'] = pd.to_datetime(practices_df['Completion date']).dt.year
     
     # Initialize the filtered dataframe with all data
