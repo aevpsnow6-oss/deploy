@@ -1428,6 +1428,98 @@ except Exception as e:
     st.error(f"Error loading data: {str(e)}")
     st.stop()
 
+# Function to get embeddings for lessons learned
+def get_lessons_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
+    if not openai_api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        return None
+    for attempt in range(max_retries):
+        try:
+            response = openai.Embedding.create(input=text, model=model)
+            return np.array(response['data'][0]['embedding'])
+        except Exception as e:
+            st.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+            time.sleep(delay)
+    return None
+
+# Function to find similar lessons learned using embeddings
+def find_similar_lessons(query_embedding, lessons_index, lessons_embeddings, structured_lessons, score_threshold=0.5, top_n=20):
+    # Normalize query embedding for cosine similarity
+    query_embedding = np.array(query_embedding).reshape(1, -1)
+    # Search the index
+    try:
+        distances, indices = lessons_index.search(query_embedding, lessons_index.ntotal)
+
+        # Filter results based on the score threshold
+        filtered_lessons = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx < len(structured_lessons) and dist >= score_threshold:
+                metadata = structured_lessons[idx]
+                lesson = {
+                    "lesson": metadata["text"],
+                    "similarity": float(dist),  # Convert to float for JSON serialization
+                    "country": metadata["country"],
+                    "year": metadata["year"],
+                    "eval_id": metadata["eval_id"]
+                }
+                filtered_lessons.append(lesson)
+            if len(filtered_lessons) >= top_n:
+                break
+        return filtered_lessons
+    except Exception as e:
+        st.error(f"Error in similarity search: {str(e)}")
+        return []
+
+# Function to find lessons by term matching
+def find_lessons_by_term_matching(query, lessons_texts, structured_lessons, top_n=10):
+    try:
+        matched_lessons = []
+        query_lower = query.lower()
+        for idx, text in enumerate(lessons_texts):
+            if isinstance(text, str) and query_lower in text.lower():
+                if idx < len(structured_lessons):
+                    metadata = structured_lessons[idx]
+                    matched_lessons.append({
+                        "lesson": text,
+                        "country": metadata["country"],
+                        "year": metadata["year"],
+                        "eval_id": metadata["eval_id"]
+                    })
+        matched_lessons = sorted(matched_lessons, key=lambda x: len(str(x["lesson"])))
+        return matched_lessons[:top_n]
+    except Exception as e:
+        st.error(f"Error in term matching: {str(e)}")
+        return []
+
+# Function to load and prepare lessons embeddings
+@st.cache_data
+def load_lessons_embeddings():
+    try:
+        if os.getenv("STREAMLIT_ENV") == "production":
+            lessons_embeddings_path = st.secrets["lessons_embeddings_path"]
+            structured_lessons_path = st.secrets["structured_lessons_path"]
+        else:
+            lessons_embeddings_path = "./lessons_embeddings.pt"
+            structured_lessons_path = "./lessons_metadata.pt"
+        
+        # Load embeddings and metadata
+        lessons_embeddings = torch.load(lessons_embeddings_path)
+        lessons_embeddings = np.array(lessons_embeddings)
+        
+        structured_lessons = torch.load(structured_lessons_path)
+        
+        # Create a FAISS index
+        dimension = lessons_embeddings.shape[1]
+        lessons_index = faiss.IndexFlatIP(dimension)
+        lessons_index.add(lessons_embeddings)
+        
+        return lessons_embeddings, structured_lessons, lessons_index
+    except Exception as e:
+        st.error(f"Error loading lessons embeddings: {str(e)}")
+        # Return placeholder data to avoid errors
+        return np.array([]), [], None
+    
+    
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
                                         "Exploración de Evidencia-Lecciones Aprendidas",
@@ -2284,6 +2376,97 @@ with tab2:
             st.error(f"No se pudo exportar los datos filtrados: {e}")
             import traceback
             st.error(traceback.format_exc())
+            
+    # Chat section for querying similar lessons learned
+    st.header("Búsqueda de Lecciones Aprendidas")
+    st.markdown("### Búsqueda")
+
+    # Load lessons learned embeddings (if available)
+    lessons_texts = filtered_df_ll['Lessons learned description'].tolist() if 'Lessons learned description' in filtered_df_ll.columns else []
+
+    # Check if we have embeddings already loaded
+    if 'lessons_embeddings' not in st.session_state:
+        try:
+            # Try to load pre-computed embeddings
+            lessons_embeddings, structured_lessons, lessons_index = load_lessons_embeddings()
+            st.session_state['lessons_embeddings'] = lessons_embeddings
+            st.session_state['structured_lessons'] = structured_lessons
+            st.session_state['lessons_index'] = lessons_index
+        except Exception as e:
+            st.warning(f"No se pudieron cargar embeddings para lecciones aprendidas: {str(e)}. La búsqueda por similitud puede no estar disponible.")
+            st.session_state['lessons_embeddings'] = None
+            st.session_state['structured_lessons'] = None
+            st.session_state['lessons_index'] = None
+
+    # Input for user query
+    user_query = st.text_input("Búsqueda en lecciones aprendidas:", value="¿Qué lecciones existen sobre coordinación con partes interesadas?", key='user_query_lessons')
+
+    # Search method selection
+    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_lessons')
+
+    # Similarity threshold (only shown for similarity search)
+    score_threshold = 0.5
+    if search_method == "Por Similitud":
+        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_lessons')
+
+    # Function to display results
+    def display_lessons_results(results):
+        if results:
+            st.markdown("#### Lecciones aprendidas similares")
+            for i, result in enumerate(results):
+                st.markdown(f"**Lección {i+1}:**")
+                st.markdown(f"**Texto:** {result['lesson']}")
+                if "similarity" in result:
+                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+                st.markdown(f"**País:** {result['country']}")
+                st.markdown(f"**Año:** {result['year']}")
+                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+                st.markdown("---")
+        else:
+            st.write("No se encontraron lecciones aprendidas para la búsqueda.")
+
+    # Button to search for lessons
+    if st.button("Buscar Lecciones", key='search_button_lessons'):
+        if user_query:
+            with st.spinner('Buscando lecciones aprendidas...'):
+                if search_method == "Por Similitud" and st.session_state['lessons_embeddings'] is not None:
+                    # Get query embedding
+                    query_embedding = get_lessons_embedding_with_retry(user_query)
+                    if query_embedding is not None:
+                        # Find similar lessons
+                        results = find_similar_lessons(
+                            query_embedding, 
+                            st.session_state['lessons_index'], 
+                            st.session_state['lessons_embeddings'], 
+                            st.session_state['structured_lessons'], 
+                            score_threshold
+                        )
+                        display_lessons_results(results)
+                    else:
+                        st.error("No se pudo generar el embedding para la consulta.")
+                else:
+                    # Fallback to term matching if embeddings not available or user chose this method
+                    if search_method == "Por Similitud" and st.session_state['lessons_embeddings'] is None:
+                        st.warning("Búsqueda por similitud no disponible. Usando coincidencia de términos.")
+                    
+                    # Try to create structured metadata for term matching if not loaded from files
+                    if st.session_state['structured_lessons'] is None:
+                        # Create basic metadata structure from filtered_df_ll
+                        structured_lessons = []
+                        for i, row in filtered_df_ll.iterrows():
+                            if 'Lessons learned description' in row and not pd.isna(row['Lessons learned description']):
+                                lesson = {
+                                    "text": row['Lessons learned description'],
+                                    "country": row['Country(ies)'] if 'Country(ies)' in row else "No especificado",
+                                    "year": row['year'] if 'year' in row else "No especificado",
+                                    "eval_id": row['Evaluation number'] if 'Evaluation number' in row else "No especificado"
+                                }
+                                structured_lessons.append(lesson)
+                    else:
+                        structured_lessons = st.session_state['structured_lessons']
+                    
+                    results = find_lessons_by_term_matching(user_query, lessons_texts, structured_lessons)
+                    display_lessons_results(results)
             
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
