@@ -2471,8 +2471,390 @@ with tab2:
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
 # Tab 3: Upload and Evaluate Document by Rubric
+
 with tab3:
-    st.header("Exploración de Evidencia-Buenas Prácticas")
+    st.header("Exploración de Evidencia - Buenas Prácticas")
+    
+    # --- DATASET LOADING ---
+    # Load the correct good practices Excel file
+    practices_df = pd.read_excel('./40486578_Producto_2_BD_Buenas_Practicas.xlsx')
+    practices_df['year'] = pd.to_datetime(practices_df['Completion date']).dt.year
+    
+    # Initialize the filtered dataframe with all data
+    filtered_df_bp = practices_df.copy()
+    
+    # --- FILTER ROW WITHIN TAB ---
+    st.markdown("### Filtros")
+    filter_container = st.container()
+    
+    with filter_container:
+        # Create 3 columns for filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Administrative unit filter
+            office_options = ['All'] + sorted([str(x) for x in practices_df['Administrative unit(s)'].unique() if not pd.isna(x)])
+            selected_offices = st.multiselect('Unidad Administrativa:', 
+                                             options=office_options, 
+                                             default='All', 
+                                             key='unidad_administrativa_tab3')
+            
+            # Country filter
+            country_options = ['All'] + sorted([str(x) for x in practices_df['Country(ies)'].unique() if not pd.isna(x)])
+            selected_countries = st.multiselect('País:', 
+                                              options=country_options, 
+                                              default='All', 
+                                              key='pais_tab3')
+        
+        with col2:
+            # Year filter with slider
+            min_year = int(practices_df['year'].min())
+            max_year = int(practices_df['year'].max())
+            selected_year_range = st.slider('Rango de Años:', 
+                                          min_value=min_year, 
+                                          max_value=max_year, 
+                                          value=(min_year, max_year), 
+                                          key='rango_anos_tab3')
+            
+            # Dimension filter if it exists
+            if 'Dimension' in practices_df.columns:
+                dimension_options = ['All'] + sorted([str(x) for x in practices_df['Dimension'].unique() if not pd.isna(x)])
+                selected_dimensions = st.multiselect('Dimensión:', 
+                                                   options=dimension_options, 
+                                                   default='All', 
+                                                   key='dimension_tab3')
+        
+        with col3:
+            # Subdimension filter if it exists
+            if 'Subdimension' in practices_df.columns:
+                subdim_options = ['All'] + sorted([str(x) for x in practices_df['Subdimension'].unique() if not pd.isna(x)])
+                selected_subdimensions = st.multiselect('Subdimensión:', 
+                                                      options=subdim_options, 
+                                                      default='All', 
+                                                      key='subdim_tab3')
+            
+            # Theme filter if it exists
+            if 'Theme' in practices_df.columns:
+                theme_options = ['All'] + sorted([str(x) for x in practices_df['Theme'].unique() if not pd.isna(x)])
+                selected_themes = st.multiselect('Tema:', 
+                                               options=theme_options, 
+                                               default='All', 
+                                               key='tema_tab3')
+    
+    # Apply filters dynamically - no button needed
+    # Apply year filter
+    filtered_df_bp = filtered_df_bp[(filtered_df_bp['year'] >= selected_year_range[0]) & 
+                                   (filtered_df_bp['year'] <= selected_year_range[1])]
+    
+    # Apply remaining filters
+    if 'All' not in selected_offices and selected_offices:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Administrative unit(s)'].astype(str).isin(selected_offices)]
+    
+    if 'All' not in selected_countries and selected_countries:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Country(ies)'].astype(str).isin(selected_countries)]
+    
+    if 'Dimension' in practices_df.columns and 'All' not in selected_dimensions and selected_dimensions:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Dimension'].astype(str).isin(selected_dimensions)]
+    
+    if 'Subdimension' in practices_df.columns and 'All' not in selected_subdimensions and selected_subdimensions:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Subdimension'].astype(str).isin(selected_subdimensions)]
+    
+    if 'Theme' in practices_df.columns and 'All' not in selected_themes and selected_themes:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Theme'].astype(str).isin(selected_themes)]
+    
+    # Add a small info text showing the number of filtered good practices
+    st.info(f"Mostrando {len(filtered_df_bp)} buenas prácticas con los filtros seleccionados.")
+    
+    # Extract unique texts for analysis
+    if 'Good practices description' in filtered_df_bp.columns:
+        unique_texts = filtered_df_bp['Good practices description'].unique()
+    else:
+        # Fallback to first column if the expected column isn't found
+        unique_texts = filtered_df_bp.iloc[:,0].unique()
+    
+    unique_texts_str = [str(text) for text in unique_texts]  # Convert elements to strings
+    
+    # Create filtered_df_unique_bp for summary statistics
+    filtered_df_unique_bp = filtered_df_bp.drop_duplicates()
+    
+    # Display summary KPIs
+    st.markdown("#### Información General")
+    
+    # KPIs for totals (responsive to filters)
+    total_practices = len(filtered_df_unique_bp)
+    num_countries = filtered_df_unique_bp['Country(ies)'].nunique()
+    num_years = filtered_df_unique_bp['year'].nunique()
+    num_evals = filtered_df_unique_bp['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique_bp.columns else 'N/A'
+    
+    # Display KPIs in columns
+    total_cols = st.columns(4)
+    total_kpi_labels = ["Total Buenas Prácticas", "Países", "Años", "Evaluaciones"]
+    total_kpi_values = [total_practices, num_countries, num_years, num_evals]
+    
+    total_kpi_html = [
+        f"""
+        <div style='text-align:center;'>
+            <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+            <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+        </div>
+        """
+        for label, value in zip(total_kpi_labels, total_kpi_values)
+    ]
+    
+    for col, html in zip(total_cols, total_kpi_html):
+        col.markdown(html, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+    
+    # Display plots if data is available
+    if not filtered_df_bp.empty:
+        country_counts = filtered_df_unique_bp['Country(ies)'].value_counts()
+        
+        # Add CSS for dashboard styling
+        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+        
+        # Create two columns for charts
+        row1_col1, row1_col2 = st.columns(2)
+        
+        with row1_col1:
+            st.markdown('<div class="dashboard-subtitle">Número de Buenas Prácticas por País</div>', unsafe_allow_html=True)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Bar(
+                y=country_counts.index.tolist(),
+                x=country_counts.values.tolist(),
+                orientation='h',
+                text=country_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='%{y}: %{x} buenas prácticas'
+            ))
+            
+            # Fixed height for alignment with year plot
+            fixed_height = 500
+            fig1.update_layout(
+                xaxis_title='Número de Buenas Prácticas',
+                yaxis_title='País',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=fixed_height,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+            fig1.update_yaxes(showgrid=False)
+            st.plotly_chart(fig1, use_container_width=True)
+        
+        with row1_col2:
+            st.markdown('<div class="dashboard-subtitle">Número de Buenas Prácticas por Año</div>', unsafe_allow_html=True)
+            year_counts = filtered_df_unique_bp['year'].value_counts().sort_index()
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=year_counts.index.astype(str).tolist(),
+                y=year_counts.values.tolist(),
+                text=year_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='Año %{x}: %{y} buenas prácticas',
+                textfont=dict(size=22)
+            ))
+            fig2.update_layout(
+                xaxis_title='Año',
+                yaxis_title='Número de Buenas Prácticas',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=500,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        # Dimension treemap (if dimension data exists)
+        if 'Dimension' in filtered_df_bp.columns:
+            st.markdown('<div class="dashboard-subtitle">Composición de Buenas Prácticas por Dimensión</div>', unsafe_allow_html=True)
+            
+            # Clean and prepare dimension data
+            filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].astype(str).str.strip().str.lower()
+            filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].replace({'process': 'Process'})
+            filtered_df_bp = filtered_df_bp[filtered_df_bp['Dimension'].notna()]
+            
+            # Count practices by dimension
+            id_col = 'ID_BuenaPractica' if 'ID_BuenaPractica' in filtered_df_bp.columns else filtered_df_bp.columns[0]
+            dimension_counts = filtered_df_bp.groupby('Dimension').agg({
+                id_col: 'nunique' if id_col == 'ID_BuenaPractica' else 'count'
+            }).reset_index()
+            
+            # Calculate percentages and format text
+            dimension_counts['percentage'] = dimension_counts[id_col] / dimension_counts[id_col].sum() * 100
+            dimension_counts['text'] = dimension_counts.apply(
+                lambda row: f"{row['Dimension']}<br>Buenas Prácticas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
+                axis=1
+            )
+            
+            # Remove 'Sin Clasificar' from dimension_counts for treemap
+            dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
+            
+            # Capitalize dimension labels
+            dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
+            
+            # Create treemap
+            fig3 = px.treemap(
+                dimension_counts, 
+                path=['Dimension'], 
+                values=id_col,
+                title='Composición de Buenas Prácticas por Dimensión',
+                hover_data={'text': True, id_col: False, 'percentage': False},
+                custom_data=['text']
+            )
+            fig3.update_traces(
+                textinfo='label+value', 
+                hovertemplate='%{customdata[0]}',
+                textfont_size=32
+            )
+            fig3.update_layout(
+                margin=dict(t=50, l=25, r=25, b=25), 
+                width=900, 
+                height=500,
+                title_font_size=32,
+                font=dict(size=28),
+                legend_font_size=28
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            # Subdimension treemap if applicable
+            if 'Subdimension' in filtered_df_bp.columns:
+                # Harmonize process/processes naming
+                filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+                
+                # Remove 'Sin Clasificar' entries
+                filtered_df_bp = filtered_df_bp[filtered_df_bp['Dimension'].str.lower() != 'sin clasificar']
+                filtered_df_bp = filtered_df_bp[filtered_df_bp['Subdimension'].str.lower() != 'sin clasificar']
+                
+                # Capitalize dimension and subdimension labels
+                filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].astype(str).str.title()
+                filtered_df_bp['Subdimension'] = filtered_df_bp['Subdimension'].astype(str).str.title()
+                
+                # Count by subdimension
+                subdimension_counts = filtered_df_bp.groupby(['Dimension', 'Subdimension']).agg({
+                    id_col: 'nunique' if id_col == 'ID_BuenaPractica' else 'count'
+                }).reset_index()
+                
+                # Calculate percentages and format text
+                subdimension_counts['percentage'] = subdimension_counts[id_col] / subdimension_counts[id_col].sum() * 100
+                subdimension_counts['text'] = subdimension_counts.apply(
+                    lambda row: f"{row['Subdimension']}<br>Buenas Prácticas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
+                    axis=1
+                )
+                
+                # Create treemap
+                fig4 = px.treemap(
+                    subdimension_counts, 
+                    path=['Dimension', 'Subdimension'], 
+                    values=id_col,
+                    title='Composición de Buenas Prácticas por Subdimensión',
+                    hover_data={'text': True, id_col: False, 'percentage': False},
+                    custom_data=['text']
+                )
+                fig4.update_traces(
+                    textinfo='label+value', 
+                    hovertemplate='%{customdata[0]}',
+                    textfont_size=32
+                )
+                fig4.update_layout(
+                    margin=dict(t=50, l=25, r=25, b=25), 
+                    width=900, 
+                    height=500,
+                    title_font_size=32,
+                    font=dict(size=28),
+                    legend_font_size=28
+                )
+                st.plotly_chart(fig4, use_container_width=True)
+    else:
+        st.warning("No hay datos disponibles para los filtros seleccionados.")
+    
+    # Text analysis section
+    st.markdown("""
+    <h3 style='color:#3498db; margin-top:0;'>Análisis de Textos de Buenas Prácticas</h3>
+    <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+    Personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, 
+    enfoques innovadores y actores clave de las buenas prácticas seleccionadas, usando IA avanzada.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+    """, unsafe_allow_html=True)
+    
+    user_template_part = st.text_area(
+        "",
+        value="""Produce un breve resumen en español del conjunto completo de buenas prácticas. Después, incluye una lista con viñetas que resuma 
+        las prácticas innovadoras y los actores específicos involucrados, así como otra lista con viñetas para los temas principales y recurrentes. 
+        Este formato debe aclarar qué prácticas fueron exitosas y cómo se implementaron. Adicionalmente, genera una lista con viñetas de recomendaciones 
+        para replicar estas buenas prácticas en otros contextos.""",
+        height=180,
+        key="user_template_part_main_tab3"
+    )
+    
+    combine_template_prefix = "The following is a set of summaries of good practices:\n{text}\n"
+    
+    # Define the map prompt for initial summarization of chunks
+    map_template = """Summarize the following text containing good practices: {text}
+    Helpful Answer:"""
+    
+    # Analysis button
+    if st.button('Analizar Buenas Prácticas', key='analyze_button_tab3'):
+        # For tab3, we're only using good practices
+        selections = {
+            'recommendations': False,
+            'lessons': False,
+            'practices': True,  # Only good practices are True
+            'plans': False
+        }
+        
+        # Build text directly from good practices column
+        if 'Good practices description' in filtered_df_bp.columns:
+            combined_text = ' '.join(filtered_df_bp['Good practices description'].astype(str).dropna().tolist())
+        else:
+            # Try to build using the standard function
+            combined_text = build_combined_text(filtered_df_bp, selections)
+        
+        if combined_text:
+            with st.spinner('Analizando buenas prácticas...'):
+                result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
+                if result:
+                    st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("No se pudo generar el análisis.")
+        else:
+            st.warning("No hay texto de buenas prácticas para analizar con los filtros actuales.")
+    
+    # Button to download the filtered dataframe as Excel file
+    if st.button('Descargar Datos Filtrados', key='download_button_tab3'):
+        try:
+            # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+            def sanitize_cell(x):
+                if isinstance(x, list):
+                    return ', '.join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+            
+            sanitized_df = filtered_df_bp.copy()
+            for col in sanitized_df.columns:
+                if sanitized_df[col].dtype == 'O':
+                    sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+            
+            filtered_data = to_excel(sanitized_df)
+            st.download_button(
+                label='📥 Descargar Excel',
+                data=filtered_data,
+                file_name='buenas_practicas_filtradas.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            st.error(f"No se pudo exportar los datos filtrados: {e}")
+            import traceback
+            st.error(traceback.format_exc())
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
