@@ -1928,7 +1928,7 @@ with tab2:
         unique_texts = filtered_df.iloc[:,0].unique()  # fallback: first column
     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
 
-    # Create summary table
+    # Create summary table - ensure we're using the filtered data
     filtered_df_unique = filtered_df.drop_duplicates()
     summary_data = {
         'Métrica': [
