@@ -2258,8 +2258,13 @@ with tab2:
     
     # --- DATASET LOADING ---
     # Load the correct lessons learned Excel file
-    lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
-    lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
+    @st.cache_data
+    def load_lessons_data():
+        lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
+        lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
+        return lessons_df
+    
+    lessons_df = load_lessons_data()
     
     # Initialize the filtered dataframe with all data
     filtered_df_ll = lessons_df.copy()
