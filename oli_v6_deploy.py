@@ -2252,6 +2252,7 @@ with tab1:
 #                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
 
 # Tab 2: Filters, Text Analysis and Similar Lessons Learned
+# Tab 2: Filters, Text Analysis and Similar Lessons Learned
 with tab2:
     st.header("Exploración de Evidencia - Lecciones Aprendidas")
     
@@ -2321,29 +2322,29 @@ with tab2:
                                                default='All', 
                                                key='tema_tab2')
     
-    # Apply filters button to explicitly trigger filtering
-    if st.button('Aplicar Filtros', key='apply_filters_tab2'):
-        # Apply year filter
-        filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range[0]) & 
-                                       (filtered_df_ll['year'] <= selected_year_range[1])]
-        
-        # Apply remaining filters
-        if 'All' not in selected_offices and selected_offices:
-            filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative unit(s)'].astype(str).isin(selected_offices)]
-        
-        if 'All' not in selected_countries and selected_countries:
-            filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries)]
-        
-        if 'Dimension' in lessons_df.columns and 'All' not in selected_dimensions and selected_dimensions:
-            filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions)]
-        
-        if 'Subdimension' in lessons_df.columns and 'All' not in selected_subdimensions and selected_subdimensions:
-            filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions)]
-        
-        if 'Theme' in lessons_df.columns and 'All' not in selected_themes and selected_themes:
-            filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme'].astype(str).isin(selected_themes)]
-        
-        st.success(f"Filtros aplicados. Mostrando {len(filtered_df_ll)} lecciones aprendidas.")
+    # Apply filters dynamically - no button needed
+    # Apply year filter
+    filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range[0]) & 
+                                   (filtered_df_ll['year'] <= selected_year_range[1])]
+    
+    # Apply remaining filters
+    if 'All' not in selected_offices and selected_offices:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative unit(s)'].astype(str).isin(selected_offices)]
+    
+    if 'All' not in selected_countries and selected_countries:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries)]
+    
+    if 'Dimension' in lessons_df.columns and 'All' not in selected_dimensions and selected_dimensions:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions)]
+    
+    if 'Subdimension' in lessons_df.columns and 'All' not in selected_subdimensions and selected_subdimensions:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions)]
+    
+    if 'Theme' in lessons_df.columns and 'All' not in selected_themes and selected_themes:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme'].astype(str).isin(selected_themes)]
+    
+    # Add a small info text showing the number of filtered lessons
+    st.info(f"Mostrando {len(filtered_df_ll)} lecciones aprendidas con los filtros seleccionados.")
     
     # Extract unique texts for analysis
     if 'Lessons learned description' in filtered_df_ll.columns:
@@ -2460,14 +2461,15 @@ with tab2:
             filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].notna()]
             
             # Count lessons by dimension
+            id_col = 'ID_LeccionAprendida' if 'ID_LeccionAprendida' in filtered_df_ll.columns else filtered_df_ll.columns[0]
             dimension_counts = filtered_df_ll.groupby('Dimension').agg({
-                'ID_LeccionAprendida': 'nunique' if 'ID_LeccionAprendida' in filtered_df_ll.columns else 'count'
+                id_col: 'nunique' if id_col == 'ID_LeccionAprendida' else 'count'
             }).reset_index()
             
             # Calculate percentages and format text
-            dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
+            dimension_counts['percentage'] = dimension_counts[id_col] / dimension_counts[id_col].sum() * 100
             dimension_counts['text'] = dimension_counts.apply(
-                lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", 
+                lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
                 axis=1
             )
             
@@ -2481,9 +2483,9 @@ with tab2:
             fig3 = px.treemap(
                 dimension_counts, 
                 path=['Dimension'], 
-                values='ID_LeccionAprendida',
+                values=id_col,
                 title='Composición de Lecciones Aprendidas por Dimensión',
-                hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
+                hover_data={'text': True, id_col: False, 'percentage': False},
                 custom_data=['text']
             )
             fig3.update_traces(
@@ -2516,13 +2518,13 @@ with tab2:
                 
                 # Count by subdimension
                 subdimension_counts = filtered_df_ll.groupby(['Dimension', 'Subdimension']).agg({
-                    'ID_LeccionAprendida': 'nunique' if 'ID_LeccionAprendida' in filtered_df_ll.columns else 'count'
+                    id_col: 'nunique' if id_col == 'ID_LeccionAprendida' else 'count'
                 }).reset_index()
                 
                 # Calculate percentages and format text
-                subdimension_counts['percentage'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].sum() * 100
+                subdimension_counts['percentage'] = subdimension_counts[id_col] / subdimension_counts[id_col].sum() * 100
                 subdimension_counts['text'] = subdimension_counts.apply(
-                    lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", 
+                    lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
                     axis=1
                 )
                 
@@ -2530,9 +2532,9 @@ with tab2:
                 fig4 = px.treemap(
                     subdimension_counts, 
                     path=['Dimension', 'Subdimension'], 
-                    values='ID_LeccionAprendida',
+                    values=id_col,
                     title='Composición de Lecciones Aprendidas por Subdimensión',
-                    hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
+                    hover_data={'text': True, id_col: False, 'percentage': False},
                     custom_data=['text']
                 )
                 fig4.update_traces(
