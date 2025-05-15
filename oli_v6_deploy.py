@@ -1499,7 +1499,7 @@ def load_lessons_embeddings():
             lessons_embeddings_path = st.secrets["lessons_embeddings_path"]
             structured_lessons_path = st.secrets["structured_lessons_path"]
         else:
-            lessons_embeddings_path = "./lessons_embeddings.pt"
+            lessons_embeddings_path = "./emb_LL_ll_cl_4.pt"
             structured_lessons_path = "./lessons_metadata.pt"
         
         # Load embeddings and metadata
