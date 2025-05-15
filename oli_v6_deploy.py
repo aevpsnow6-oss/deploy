@@ -1971,27 +1971,27 @@ with tab2:
         col.markdown(html, unsafe_allow_html=True)
     st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
 
-    # KPIs for management response statuses (Respuesta de Gerencia)
-    mgmt_labels = [
-        ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
-        ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
-        ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
-        ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
-        ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
-        ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
-    ]
-    st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
-    kpi_cols = st.columns(3)
-    for i, (label, value, color) in enumerate(mgmt_labels):
-        kpi_cols[i % 3].markdown(
-            f"""
-            <div style='text-align:center;'>
-                <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-                <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    # # KPIs for management response statuses (Respuesta de Gerencia)
+    # mgmt_labels = [
+    #     ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
+    #     ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
+    #     ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
+    #     ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
+    #     ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
+    #     ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
+    # ]
+    # st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
+    # kpi_cols = st.columns(3)
+    # for i, (label, value, color) in enumerate(mgmt_labels):
+    #     kpi_cols[i % 3].markdown(
+    #         f"""
+    #         <div style='text-align:center;'>
+    #             <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+    #             <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
+    #         </div>
+    #         """,
+    #         unsafe_allow_html=True
+    #     )
 
     # Display plots if data is available
     if not filtered_df.empty:
@@ -2014,7 +2014,7 @@ with tab2:
             # Fixed height for alignment with year plot
             fixed_height = 500
             fig1.update_layout(
-                xaxis_title='Número de Recomendaciones',
+                xaxis_title='Número de Lecciones Aprendidas',
                 yaxis_title='País',
                 margin=dict(t=10, l=10, r=10, b=40),
                 font=dict(size=22),
@@ -2026,7 +2026,7 @@ with tab2:
             fig1.update_yaxes(showgrid=False)
             st.plotly_chart(fig1, use_container_width=True)
         with row1_col2:
-            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por Año</div>', unsafe_allow_html=True)
             year_counts = filtered_df_unique['year'].value_counts().sort_index()
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(
@@ -2035,12 +2035,12 @@ with tab2:
                 text=year_counts.values.tolist(),
                 textposition='auto',
                 marker_color='#3498db',
-                hovertemplate='Año %{x}: %{y} recomendaciones',
+                hovertemplate='Año %{x}: %{y} lecciones aprendidas',
                 textfont=dict(size=22)
             ))
             fig2.update_layout(
                 xaxis_title='Año',
-                yaxis_title='Número de Recomendaciones',
+                yaxis_title='Número de Lecciones Aprendidas',
                 margin=dict(t=10, l=10, r=10, b=40),
                 font=dict(size=22),
                 height=500,
@@ -2052,29 +2052,29 @@ with tab2:
             st.plotly_chart(fig2, use_container_width=True)
         # Second row: Treemap by Dimension (full width)
 
-        st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
+        st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
         import numpy as np
-        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
-        filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
-        filtered_df = filtered_df[filtered_df['dimension'].notna()]
-        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
-        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
-        filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
+        filtered_df['Dimension'] = filtered_df['Dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+        filtered_df['Dimension'] = filtered_df['Dimension'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['Dimension'].notna()]
+        filtered_df['Approach'] = filtered_df['Approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+        filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['Approach'].notna()]
 
         dimension_counts = filtered_df.groupby('dimension').agg({
-            'index_df': 'nunique'
+            'ID_LeccionAprendida': 'nunique'
         }).reset_index()
-        dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
-        dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
-        dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
+        dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
+        dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
+        dimension_counts['font_size'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].max() * 30 + 10  # Scale font size
 
         # Remove 'Sin Clasificar' from dimension_counts for treemap
-        dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
+        dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
         # Capitalize dimension labels
-        dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
+        dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
         fig3 = px.treemap(
-            dimension_counts, path=['dimension'], values='index_df',
-            title='Composición de Recomendaciones por Dimensión',
+            dimension_counts, path=['Dimension'], values='ID_LeccionAprendida',
+            title='Composición de Lecciones Aprendidas por Dimensión',
             hover_data={'text': True, 'index_df': False, 'percentage': False},
             custom_data=['text']
         )
@@ -2092,24 +2092,24 @@ with tab2:
 
         # Treemap: Recommendations by Subdimension
         # Harmonize 'process' and 'processes' before plotting subdimensions as well
-        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        filtered_df['Dimension'] = filtered_df['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
         # Remove 'Sin Clasificar' from both dimension and subdimension for treemap
-        filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
-        filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
+        filtered_df = filtered_df[filtered_df['Dimension'].str.lower() != 'sin clasificar']
+        filtered_df = filtered_df[filtered_df['Subdimension'].str.lower() != 'sin clasificar']
         # Capitalize dimension and subdimension labels
-        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
-        filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
-        subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
-            'index_df': 'nunique'
+        filtered_df['Dimension'] = filtered_df['Dimension'].astype(str).str.title()
+        filtered_df['Subdimension'] = filtered_df['Subdimension'].astype(str).str.title()
+        subdimension_counts = filtered_df.groupby(['Dimension', 'Subdimension']).agg({
+            'ID_LeccionAprendida': 'nunique'
         }).reset_index()
-        subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
-        subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
-        subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10  # Scale font size
+        subdimension_counts['percentage'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].sum() * 100
+        subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
+        subdimension_counts['font_size'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].max() * 30 + 10  # Scale font size
 
         fig4 = px.treemap(
-            subdimension_counts, path=['dimension', 'subdim'], values='index_df',
-            title='Composición de Recomendaciones por Subdimensión',
-            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            subdimension_counts, path=['Dimension', 'Subdimension'], values='ID_LeccionAprendida',
+            title='Composición de Lecciones Aprendidas por Subdimensión',
+            hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
             custom_data=['text']
         )
         fig4.update_traces(
