@@ -1885,27 +1885,31 @@ with tab2:
     # (No change needed here, just keep using filtered_df for options below)
     
     # Office filter
-    office_options = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
+    office_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
-        selected_offices_tab2 = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab2')
+        selected_offices_tab2 = st.multiselect('Unidad Administrativa', options=office_options_tab2, default='All', key='unidad_administrativa_tab2')
         
     # Country filter
-    country_options = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
+    country_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("País", expanded=False):
-        selected_countries_tab2 = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
+        selected_countries_tab2 = st.multiselect('País', options=country_options_tab2, default='All', key='pais_tab2')
 
     # Year filter with slider
-    min_year = int(lessons_df['year'].min())
-    max_year = int(lessons_df['year'].max())
+    min_year_tab2 = int(lessons_df['year'].min())
+    max_year_tab2 = int(lessons_df['year'].max())
     with st.sidebar.expander("Año", expanded=False):
-        selected_year_range_tab2 = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
+        selected_year_range_tab2 = st.slider('Rango de Años', min_value=min_year_tab2, max_value=max_year_tab2, value=(min_year_tab2, max_year_tab2), key='rango_anos_tab2')
         # Apply year filter
         filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range_tab2[0]) & (filtered_df_ll['year'] <= selected_year_range_tab2[1])]
 
-    analyze_practices_tab2 = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
-    select_all_tab2 = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
-    if select_all_tab2:
-        analyze_lessons_tab2 = analyze_recommendations_tab2 = analyze_practices_tab2 = True
+    evaltheme_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Theme_cl'].unique() if not pd.isna(x)])
+    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
+        selected_evaltheme_tab2 = st.multiselect('Tema (Evaluación)', options=evaltheme_options_tab2, default='All', key='tema_eval_tab2')
+
+    # analyze_practices_tab2 = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
+    # select_all_tab2 = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
+    # if select_all_tab2:
+    #     analyze_lessons_tab2 = analyze_recommendations_tab2 = analyze_practices_tab2 = True
 
     # Filter dataframe based on user selection
     # The year filter is already handled above using selected_year_range and filtered_df
