@@ -1868,6 +1868,390 @@ with tab1:
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
 # Tab 2: Filters, Text Analysis and Similar Lessons Learned
+# with tab2:
+#     st.header("Exploración de Evidencia - Lecciones Aprendidas")
+    
+#     # --- DATASET LOADING ---
+#     # Load the correct lessons learned Excel file
+#     lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
+#     lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
+#     # Only use the main lessons learned dataset for all analysis
+#     filtered_df_ll = lessons_df.copy()
+    
+#     # Define filter options first
+#     # These variables should be defined before being referenced
+#     selected_dimensions_tab2 = ['All']
+#     selected_subdimensions_tab2 = ['All']
+#     # (No change needed here, just keep using filtered_df for options below)
+    
+#     # Office filter
+#     office_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
+#     with st.sidebar.expander("Unidad Administrativa", expanded=False):
+#         selected_offices_tab2 = st.multiselect('Unidad Administrativa', options=office_options_tab2, default='All', key='unidad_administrativa_tab2')
+        
+#     # Country filter
+#     country_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
+#     with st.sidebar.expander("País", expanded=False):
+#         selected_countries_tab2 = st.multiselect('País', options=country_options_tab2, default='All', key='pais_tab2')
+
+#     # Year filter with slider
+#     min_year_tab2 = int(lessons_df['year'].min())
+#     max_year_tab2 = int(lessons_df['year'].max())
+#     with st.sidebar.expander("Año", expanded=False):
+#         selected_year_range_tab2 = st.slider('Rango de Años', min_value=min_year_tab2, max_value=max_year_tab2, value=(min_year_tab2, max_year_tab2), key='rango_anos_tab2')
+#         # Apply year filter
+#         filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range_tab2[0]) & (filtered_df_ll['year'] <= selected_year_range_tab2[1])]
+
+#     evaltheme_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Theme_cl'].unique() if not pd.isna(x)])
+#     with st.sidebar.expander("Tema (Evaluación)", expanded=False):
+#         selected_evaltheme_tab2 = st.multiselect('Tema (Evaluación)', options=evaltheme_options_tab2, default='All', key='tema_eval_tab2')
+
+#     # analyze_practices_tab2 = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
+#     # select_all_tab2 = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
+#     # if select_all_tab2:
+#     #     analyze_lessons_tab2 = analyze_recommendations_tab2 = analyze_practices_tab2 = True
+
+#     # Filter dataframe based on user selection
+#     # The year filter is already handled above using selected_year_range and filtered_df
+#     # Apply remaining filters in sequence to filtered_df
+#     if 'All' not in selected_offices_tab2 and selected_offices_tab2:
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative_unit(s)'].astype(str).isin(selected_offices_tab2)]
+#     if 'All' not in selected_countries_tab2 and selected_countries_tab2:
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries_tab2)]
+#     if 'All' not in selected_dimensions_tab2 and selected_dimensions_tab2:
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions_tab2)]
+#     if 'All' not in selected_subdimensions_tab2 and selected_subdimensions_tab2:
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions_tab2)]
+#     if 'All' not in selected_evaltheme_tab2 and selected_evaltheme_tab2:
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme_cl'].astype(str).isin(selected_evaltheme_tab2)]
+
+#     # Extract unique texts
+#     if 'Lessons learned description' in filtered_df_ll.columns:
+#         unique_texts = filtered_df_ll['Lessons learned description'].unique()
+#     else:
+#         unique_texts = filtered_df_ll.iloc[:,0].unique()  # fallback: first column
+#     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
+
+#     # Create summary table - ensure we're using the filtered data
+#     filtered_df_unique_ll = filtered_df_ll.drop_duplicates(['Lessons learned description'])
+#     summary_data = {
+#         'Métrica': [
+#             'Número de Lecciones Aprendidas',
+#             'Países',
+#             'Años',
+#             'Número de Evaluaciones'
+#         ],
+#         'Conteo': [
+#             len(unique_texts),
+#             filtered_df_ll['Country(ies)'].nunique(),
+#             filtered_df_ll['year'].nunique(),
+#             filtered_df_ll['Evaluation number'].nunique()
+#         ]
+#     }
+
+#     summary_df = pd.DataFrame(summary_data)
+
+#     # Display summary table with better formatting
+#     st.markdown("#### Información General")
+
+#     # KPIs for totals (responsive to filters)
+#     total_recs = len(filtered_df_unique_ll)
+#     num_countries = filtered_df_unique_ll['Country(ies)'].nunique()
+#     num_years = filtered_df_unique_ll['year'].nunique()
+#     num_evals = filtered_df_unique_ll['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique_ll.columns else 'N/A'
+#     total_cols = st.columns(4)
+#     total_kpi_labels = ["Total Lecciones Aprendidas", "Países", "Años", "Evaluaciones"]
+#     total_kpi_values = [total_recs, num_countries, num_years, num_evals]
+#     total_kpi_html = [
+#         f"""
+#         <div style='text-align:center;'>
+#             <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+#             <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+#         </div>
+#         """
+#         for label, value in zip(total_kpi_labels, total_kpi_values)
+#     ]
+#     for col, html in zip(total_cols, total_kpi_html):
+#         col.markdown(html, unsafe_allow_html=True)
+#     st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+
+#     # # KPIs for management response statuses (Respuesta de Gerencia)
+#     # mgmt_labels = [
+#     #     ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
+#     #     ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
+#     #     ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
+#     #     ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
+#     #     ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
+#     #     ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
+#     # ]
+#     # st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
+#     # kpi_cols = st.columns(3)
+#     # for i, (label, value, color) in enumerate(mgmt_labels):
+#     #     kpi_cols[i % 3].markdown(
+#     #         f"""
+#     #         <div style='text-align:center;'>
+#     #             <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+#     #             <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
+#     #         </div>
+#     #         """,
+#     #         unsafe_allow_html=True
+#     #     )
+
+#     # Display plots if data is available
+#     if not filtered_df_ll.empty:
+#         country_counts = filtered_df_unique_ll['Country(ies)'].value_counts()
+#         # Responsive dashboard layout for all major plots
+#         st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+#         row1_col1, row1_col2 = st.columns(2)
+#         with row1_col1:
+#             st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
+#             fig1 = go.Figure()
+#             fig1.add_trace(go.Bar(
+#                 y=country_counts.index.tolist(),
+#                 x=country_counts.values.tolist(),
+#                 orientation='h',
+#                 text=country_counts.values.tolist(),
+#                 textposition='auto',
+#                 marker_color='#3498db',
+#                 hovertemplate='%{y}: %{x} recomendaciones'
+#             ))
+#             # Fixed height for alignment with year plot
+#             fixed_height = 500
+#             fig1.update_layout(
+#                 xaxis_title='Número de Lecciones Aprendidas',
+#                 yaxis_title='País',
+#                 margin=dict(t=10, l=10, r=10, b=40),
+#                 font=dict(size=22),
+#                 height=fixed_height,
+#                 plot_bgcolor='white',
+#                 showlegend=False
+#             )
+#             fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+#             fig1.update_yaxes(showgrid=False)
+#             st.plotly_chart(fig1, use_container_width=True)
+#         with row1_col2:
+#             st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por Año</div>', unsafe_allow_html=True)
+#             year_counts = filtered_df_unique_ll['year'].value_counts().sort_index()
+#             fig2 = go.Figure()
+#             fig2.add_trace(go.Bar(
+#                 x=year_counts.index.astype(str).tolist(),
+#                 y=year_counts.values.tolist(),
+#                 text=year_counts.values.tolist(),
+#                 textposition='auto',
+#                 marker_color='#3498db',
+#                 hovertemplate='Año %{x}: %{y} lecciones aprendidas',
+#                 textfont=dict(size=22)
+#             ))
+#             fig2.update_layout(
+#                 xaxis_title='Año',
+#                 yaxis_title='Número de Lecciones Aprendidas',
+#                 margin=dict(t=10, l=10, r=10, b=40),
+#                 font=dict(size=22),
+#                 height=500,
+#                 plot_bgcolor='white',
+#                 showlegend=False
+#             )
+#             fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+#             fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+#             st.plotly_chart(fig2, use_container_width=True)
+#         # Second row: Treemap by Dimension (full width)
+
+#         st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
+#         import numpy as np
+#         filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.strip().str.lower()
+#         filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'process': 'Process'})
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].notna()]
+#         # filtered_df['Approach'] = filtered_df['Approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+#         # filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
+#         # filtered_df = filtered_df[filtered_df['Approach'].notna()]
+
+#         dimension_counts = filtered_df_ll.groupby('Dimension').agg({
+#             'ID_LeccionAprendida': 'nunique'
+#         }).reset_index()
+#         dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
+#         dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
+#         dimension_counts['font_size'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].max() * 30 + 10  # Scale font size
+
+#         # Remove 'Sin Clasificar' from dimension_counts for treemap
+#         dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
+#         # Capitalize dimension labels
+#         dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
+#         fig3 = px.treemap(
+#             dimension_counts, path=['Dimension'], values='ID_LeccionAprendida',
+#             title='Composición de Lecciones Aprendidas por Dimensión',
+#             hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
+#             custom_data=['text']
+#         )
+#         fig3.update_traces(
+#             textinfo='label+value', hovertemplate='%{customdata[0]}',
+#             textfont_size=32
+#         )
+#         fig3.update_layout(
+#             margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
+#             title_font_size=32,
+#             font=dict(size=28),
+#             legend_font_size=28
+#         )
+#         st.plotly_chart(fig3, use_container_width=True)
+
+#         # Treemap: Recommendations by Subdimension
+#         # Harmonize 'process' and 'processes' before plotting subdimensions as well
+#         filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+#         # Remove 'Sin Clasificar' from both dimension and subdimension for treemap
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].str.lower() != 'sin clasificar']
+#         filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].str.lower() != 'sin clasificar']
+#         # Capitalize dimension and subdimension labels
+#         filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.title()
+#         filtered_df_ll['Subdimension'] = filtered_df_ll['Subdimension'].astype(str).str.title()
+#         subdimension_counts = filtered_df_ll.groupby(['Dimension', 'Subdimension']).agg({
+#             'ID_LeccionAprendida': 'nunique'
+#         }).reset_index()
+#         subdimension_counts['percentage'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].sum() * 100
+#         subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
+#         subdimension_counts['font_size'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].max() * 30 + 10  # Scale font size
+
+#         fig4 = px.treemap(
+#             subdimension_counts, path=['Dimension', 'Subdimension'], values='ID_LeccionAprendida',
+#             title='Composición de Lecciones Aprendidas por Subdimensión',
+#             hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
+#             custom_data=['text']
+#         )
+#         fig4.update_traces(
+#             textinfo='label+value', hovertemplate='%{customdata[0]}',
+#             textfont_size=32
+#         )
+#         fig4.update_layout(
+#             margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
+#             title_font_size=32,
+#             font=dict(size=28),
+#             legend_font_size=28
+#         )
+
+#         # Display only the subdimension treemap (dimension treemap already shown above)
+#         st.plotly_chart(fig4, use_container_width=True)
+        
+#         # # Add the advanced visualization section directly to the main panel
+#         # add_advanced_visualization_section(filtered_df, tab_id="tab2")
+#     else:
+#         st.write("No data available for the selected filters.")
+
+#     # Add a text area for the user to input the custom combine template part (now in main panel)
+#     st.markdown("""
+#     <h3 style='color:#3498db; margin-top:0;'>¿Cómo funciona el análisis de textos?</h3>
+#     <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+#     Selecciona las fuentes de texto relevantes y personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, acciones recomendadas y actores clave de las recomendaciones seleccionadas, usando IA avanzada. El resultado será un resumen claro y útil para la toma de decisiones.
+#     </div>
+#     """, unsafe_allow_html=True)
+    
+#     st.markdown("""
+#     <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+#     """, unsafe_allow_html=True)
+#     user_template_part = st.text_area(
+#         "",
+#         value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""",
+#         height=180,
+#         key="user_template_part_main_tab2"
+#     )
+
+#     combine_template_prefix = "The following is a set of summaries:\n{text}\n"
+
+#     # Define the map prompt for initial summarization of chunks
+#     map_template = """Summarize the following text: {text}
+#     Helpful Answer:"""
+
+#     # Analysis button logic
+#     if st.button('Analizar Textos', key='analyze_button_tab2'):
+#         selections = {
+#             'recommendations': analyze_recommendations,
+#             'lessons': analyze_lessons,
+#             'practices': analyze_practices,
+#             'plans': analyze_plans
+#         }
+        
+#         combined_text = build_combined_text(filtered_df, selections)
+        
+#         if combined_text:
+#             with st.spinner('Analizando textos...'):
+#                 result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
+#                 if result:
+#                     st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
+#                 else:
+#                     st.error("No se pudo generar el análisis.")
+#         else:
+#             st.warning("Por favor seleccione al menos una fuente de texto para analizar.")
+
+#     # Button to download the filtered dataframe as Excel file
+#     if st.button('Descargar Datos Filtrados', key='download_button_tab2'):
+#         try:
+#             # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+#             def sanitize_cell(x):
+#                 if isinstance(x, list):
+#                     return ', '.join(map(str, x))
+#                 if isinstance(x, dict):
+#                     return json.dumps(x, ensure_ascii=False)
+#                 return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+
+#             sanitized_df = filtered_df_ll.copy()
+#             for col in sanitized_df.columns:
+#                 if sanitized_df[col].dtype == 'O':
+#                     sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+
+#             filtered_data = to_excel(sanitized_df)
+#             st.download_button(
+#                 label='📥 Descargar Excel',
+#                 data=filtered_data,
+#                 file_name='filtered_data.xlsx',
+#                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+#         except Exception as e:
+#             st.error(f"No se pudo exportar los datos filtrados: {e}")
+#             import traceback
+#             st.error(traceback.format_exc())
+            
+#     st.header("Búsqueda de Recomendaciones")
+#     # Chat section for querying similar recommendations
+#     st.markdown("### Búsqueda")
+
+#     # Input for user query
+#     user_query = st.text_input("Busqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
+
+#     # Search method selection
+#     search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
+
+#     # Slider for similarity score threshold (only relevant for similarity search)
+#     if search_method == "Por Similitud":
+#         score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+
+#     # Function to display results
+#     def display_results(results):
+#         if results:
+#             st.markdown("#### Recomendaciones similares")
+#             for i, result in enumerate(results):
+#                 st.markdown(f"**Recomendación {i+1}:**")
+#                 st.markdown(f"**Texto:** {result['recommendation']}")
+#                 if "similarity" in result:
+#                     st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+#                 st.markdown(f"**País:** {result['country']}")
+#                 st.markdown(f"**Año:** {result['year']}")
+#                 st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+#                 st.markdown("---")
+#         else:
+#             st.write("No se encontraron recomendaciones para la búsqueda.")
+
+#     # Button to search for recommendations
+#     if st.button("Buscar Recomendaciones", key='search_button_tab2'):
+#         if user_query:
+#             with st.spinner('Buscando recomendaciones...'):
+#                 if search_method == "Por Similitud":
+#                     query_embedding = get_embedding_with_retry(user_query)
+#                     if query_embedding is not None:
+#                         results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
+#                         display_results(results)
+#                     else:
+#                         st.error("No se pudo generar el embedding para la consulta.")
+#                 else:
+#                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
+
+# Tab 2: Filters, Text Analysis and Similar Lessons Learned
 with tab2:
     st.header("Exploración de Evidencia - Lecciones Aprendidas")
     
@@ -1875,93 +2259,118 @@ with tab2:
     # Load the correct lessons learned Excel file
     lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
     lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
-    # Only use the main lessons learned dataset for all analysis
+    
+    # Initialize the filtered dataframe with all data
     filtered_df_ll = lessons_df.copy()
     
-    # Define filter options first
-    # These variables should be defined before being referenced
-    selected_dimensions_tab2 = ['All']
-    selected_subdimensions_tab2 = ['All']
-    # (No change needed here, just keep using filtered_df for options below)
+    # --- FILTER ROW WITHIN TAB ---
+    st.markdown("### Filtros")
+    filter_container = st.container()
     
-    # Office filter
-    office_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
-    with st.sidebar.expander("Unidad Administrativa", expanded=False):
-        selected_offices_tab2 = st.multiselect('Unidad Administrativa', options=office_options_tab2, default='All', key='unidad_administrativa_tab2')
+    with filter_container:
+        # Create 3 columns for filters
+        col1, col2, col3 = st.columns(3)
         
-    # Country filter
-    country_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
-    with st.sidebar.expander("País", expanded=False):
-        selected_countries_tab2 = st.multiselect('País', options=country_options_tab2, default='All', key='pais_tab2')
-
-    # Year filter with slider
-    min_year_tab2 = int(lessons_df['year'].min())
-    max_year_tab2 = int(lessons_df['year'].max())
-    with st.sidebar.expander("Año", expanded=False):
-        selected_year_range_tab2 = st.slider('Rango de Años', min_value=min_year_tab2, max_value=max_year_tab2, value=(min_year_tab2, max_year_tab2), key='rango_anos_tab2')
+        with col1:
+            # Administrative unit filter
+            office_options = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
+            selected_offices = st.multiselect('Unidad Administrativa:', 
+                                             options=office_options, 
+                                             default='All', 
+                                             key='unidad_administrativa_tab2')
+            
+            # Country filter
+            country_options = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
+            selected_countries = st.multiselect('País:', 
+                                              options=country_options, 
+                                              default='All', 
+                                              key='pais_tab2')
+        
+        with col2:
+            # Year filter with slider
+            min_year = int(lessons_df['year'].min())
+            max_year = int(lessons_df['year'].max())
+            selected_year_range = st.slider('Rango de Años:', 
+                                          min_value=min_year, 
+                                          max_value=max_year, 
+                                          value=(min_year, max_year), 
+                                          key='rango_anos_tab2')
+            
+            # Dimension filter if it exists
+            if 'Dimension' in lessons_df.columns:
+                dimension_options = ['All'] + sorted([str(x) for x in lessons_df['Dimension'].unique() if not pd.isna(x)])
+                selected_dimensions = st.multiselect('Dimensión:', 
+                                                   options=dimension_options, 
+                                                   default='All', 
+                                                   key='dimension_tab2')
+        
+        with col3:
+            # Subdimension filter if it exists
+            if 'Subdimension' in lessons_df.columns:
+                subdim_options = ['All'] + sorted([str(x) for x in lessons_df['Subdimension'].unique() if not pd.isna(x)])
+                selected_subdimensions = st.multiselect('Subdimensión:', 
+                                                      options=subdim_options, 
+                                                      default='All', 
+                                                      key='subdim_tab2')
+            
+            # Theme filter if it exists
+            if 'Theme' in lessons_df.columns:
+                theme_options = ['All'] + sorted([str(x) for x in lessons_df['Theme'].unique() if not pd.isna(x)])
+                selected_themes = st.multiselect('Tema:', 
+                                               options=theme_options, 
+                                               default='All', 
+                                               key='tema_tab2')
+    
+    # Apply filters button to explicitly trigger filtering
+    if st.button('Aplicar Filtros', key='apply_filters_tab2'):
         # Apply year filter
-        filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range_tab2[0]) & (filtered_df_ll['year'] <= selected_year_range_tab2[1])]
-
-    evaltheme_options_tab2 = ['All'] + sorted([str(x) for x in lessons_df['Theme_cl'].unique() if not pd.isna(x)])
-    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
-        selected_evaltheme_tab2 = st.multiselect('Tema (Evaluación)', options=evaltheme_options_tab2, default='All', key='tema_eval_tab2')
-
-    # analyze_practices_tab2 = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
-    # select_all_tab2 = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
-    # if select_all_tab2:
-    #     analyze_lessons_tab2 = analyze_recommendations_tab2 = analyze_practices_tab2 = True
-
-    # Filter dataframe based on user selection
-    # The year filter is already handled above using selected_year_range and filtered_df
-    # Apply remaining filters in sequence to filtered_df
-    if 'All' not in selected_offices_tab2 and selected_offices_tab2:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative_unit(s)'].astype(str).isin(selected_offices_tab2)]
-    if 'All' not in selected_countries_tab2 and selected_countries_tab2:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries_tab2)]
-    if 'All' not in selected_dimensions_tab2 and selected_dimensions_tab2:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions_tab2)]
-    if 'All' not in selected_subdimensions_tab2 and selected_subdimensions_tab2:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions_tab2)]
-    if 'All' not in selected_evaltheme_tab2 and selected_evaltheme_tab2:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme_cl'].astype(str).isin(selected_evaltheme_tab2)]
-
-    # Extract unique texts
+        filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range[0]) & 
+                                       (filtered_df_ll['year'] <= selected_year_range[1])]
+        
+        # Apply remaining filters
+        if 'All' not in selected_offices and selected_offices:
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative unit(s)'].astype(str).isin(selected_offices)]
+        
+        if 'All' not in selected_countries and selected_countries:
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries)]
+        
+        if 'Dimension' in lessons_df.columns and 'All' not in selected_dimensions and selected_dimensions:
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions)]
+        
+        if 'Subdimension' in lessons_df.columns and 'All' not in selected_subdimensions and selected_subdimensions:
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions)]
+        
+        if 'Theme' in lessons_df.columns and 'All' not in selected_themes and selected_themes:
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme'].astype(str).isin(selected_themes)]
+        
+        st.success(f"Filtros aplicados. Mostrando {len(filtered_df_ll)} lecciones aprendidas.")
+    
+    # Extract unique texts for analysis
     if 'Lessons learned description' in filtered_df_ll.columns:
         unique_texts = filtered_df_ll['Lessons learned description'].unique()
     else:
-        unique_texts = filtered_df_ll.iloc[:,0].unique()  # fallback: first column
-    unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
-
-    # Create summary table - ensure we're using the filtered data
-    filtered_df_unique_ll = filtered_df_ll.drop_duplicates(['Lessons learned description'])
-    summary_data = {
-        'Métrica': [
-            'Número de Lecciones Aprendidas',
-            'Países',
-            'Años',
-            'Número de Evaluaciones'
-        ],
-        'Conteo': [
-            len(unique_texts),
-            filtered_df_ll['Country(ies)'].nunique(),
-            filtered_df_ll['year'].nunique(),
-            filtered_df_ll['Evaluation number'].nunique()
-        ]
-    }
-
-    summary_df = pd.DataFrame(summary_data)
-
-    # Display summary table with better formatting
+        # Fallback to first column if the expected column isn't found
+        unique_texts = filtered_df_ll.iloc[:,0].unique()
+    
+    unique_texts_str = [str(text) for text in unique_texts]  # Convert elements to strings
+    
+    # Create filtered_df_unique_ll for summary statistics
+    filtered_df_unique_ll = filtered_df_ll.drop_duplicates()
+    
+    # Display summary KPIs
     st.markdown("#### Información General")
-
+    
     # KPIs for totals (responsive to filters)
-    total_recs = len(filtered_df_unique_ll)
+    total_lessons = len(filtered_df_unique_ll)
     num_countries = filtered_df_unique_ll['Country(ies)'].nunique()
     num_years = filtered_df_unique_ll['year'].nunique()
     num_evals = filtered_df_unique_ll['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique_ll.columns else 'N/A'
+    
+    # Display KPIs in columns
     total_cols = st.columns(4)
     total_kpi_labels = ["Total Lecciones Aprendidas", "Países", "Años", "Evaluaciones"]
-    total_kpi_values = [total_recs, num_countries, num_years, num_evals]
+    total_kpi_values = [total_lessons, num_countries, num_years, num_evals]
+    
     total_kpi_html = [
         f"""
         <div style='text-align:center;'>
@@ -1971,40 +2380,24 @@ with tab2:
         """
         for label, value in zip(total_kpi_labels, total_kpi_values)
     ]
+    
     for col, html in zip(total_cols, total_kpi_html):
         col.markdown(html, unsafe_allow_html=True)
+    
     st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
-
-    # # KPIs for management response statuses (Respuesta de Gerencia)
-    # mgmt_labels = [
-    #     ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
-    #     ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
-    #     ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
-    #     ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
-    #     ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
-    #     ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
-    # ]
-    # st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
-    # kpi_cols = st.columns(3)
-    # for i, (label, value, color) in enumerate(mgmt_labels):
-    #     kpi_cols[i % 3].markdown(
-    #         f"""
-    #         <div style='text-align:center;'>
-    #             <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-    #             <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
-    #         </div>
-    #         """,
-    #         unsafe_allow_html=True
-    #     )
-
+    
     # Display plots if data is available
     if not filtered_df_ll.empty:
         country_counts = filtered_df_unique_ll['Country(ies)'].value_counts()
-        # Responsive dashboard layout for all major plots
+        
+        # Add CSS for dashboard styling
         st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+        
+        # Create two columns for charts
         row1_col1, row1_col2 = st.columns(2)
+        
         with row1_col1:
-            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por País</div>', unsafe_allow_html=True)
             fig1 = go.Figure()
             fig1.add_trace(go.Bar(
                 y=country_counts.index.tolist(),
@@ -2013,8 +2406,9 @@ with tab2:
                 text=country_counts.values.tolist(),
                 textposition='auto',
                 marker_color='#3498db',
-                hovertemplate='%{y}: %{x} recomendaciones'
+                hovertemplate='%{y}: %{x} lecciones aprendidas'
             ))
+            
             # Fixed height for alignment with year plot
             fixed_height = 500
             fig1.update_layout(
@@ -2029,6 +2423,7 @@ with tab2:
             fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
             fig1.update_yaxes(showgrid=False)
             st.plotly_chart(fig1, use_container_width=True)
+        
         with row1_col2:
             st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por Año</div>', unsafe_allow_html=True)
             year_counts = filtered_df_unique_ll['year'].value_counts().sort_index()
@@ -2054,132 +2449,165 @@ with tab2:
             fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
             fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
             st.plotly_chart(fig2, use_container_width=True)
-        # Second row: Treemap by Dimension (full width)
-
-        st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
-        import numpy as np
-        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.strip().str.lower()
-        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'process': 'Process'})
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].notna()]
-        # filtered_df['Approach'] = filtered_df['Approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
-        # filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
-        # filtered_df = filtered_df[filtered_df['Approach'].notna()]
-
-        dimension_counts = filtered_df_ll.groupby('Dimension').agg({
-            'ID_LeccionAprendida': 'nunique'
-        }).reset_index()
-        dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
-        dimension_counts['text'] = dimension_counts.apply(lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
-        dimension_counts['font_size'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].max() * 30 + 10  # Scale font size
-
-        # Remove 'Sin Clasificar' from dimension_counts for treemap
-        dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
-        # Capitalize dimension labels
-        dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
-        fig3 = px.treemap(
-            dimension_counts, path=['Dimension'], values='ID_LeccionAprendida',
-            title='Composición de Lecciones Aprendidas por Dimensión',
-            hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
-            custom_data=['text']
-        )
-        fig3.update_traces(
-            textinfo='label+value', hovertemplate='%{customdata[0]}',
-            textfont_size=32
-        )
-        fig3.update_layout(
-            margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
-            title_font_size=32,
-            font=dict(size=28),
-            legend_font_size=28
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-
-        # Treemap: Recommendations by Subdimension
-        # Harmonize 'process' and 'processes' before plotting subdimensions as well
-        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-        # Remove 'Sin Clasificar' from both dimension and subdimension for treemap
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].str.lower() != 'sin clasificar']
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].str.lower() != 'sin clasificar']
-        # Capitalize dimension and subdimension labels
-        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.title()
-        filtered_df_ll['Subdimension'] = filtered_df_ll['Subdimension'].astype(str).str.title()
-        subdimension_counts = filtered_df_ll.groupby(['Dimension', 'Subdimension']).agg({
-            'ID_LeccionAprendida': 'nunique'
-        }).reset_index()
-        subdimension_counts['percentage'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].sum() * 100
-        subdimension_counts['text'] = subdimension_counts.apply(lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", axis=1)
-        subdimension_counts['font_size'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].max() * 30 + 10  # Scale font size
-
-        fig4 = px.treemap(
-            subdimension_counts, path=['Dimension', 'Subdimension'], values='ID_LeccionAprendida',
-            title='Composición de Lecciones Aprendidas por Subdimensión',
-            hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
-            custom_data=['text']
-        )
-        fig4.update_traces(
-            textinfo='label+value', hovertemplate='%{customdata[0]}',
-            textfont_size=32
-        )
-        fig4.update_layout(
-            margin=dict(t=50, l=25, r=25, b=25), width=900, height=500,
-            title_font_size=32,
-            font=dict(size=28),
-            legend_font_size=28
-        )
-
-        # Display only the subdimension treemap (dimension treemap already shown above)
-        st.plotly_chart(fig4, use_container_width=True)
         
-        # # Add the advanced visualization section directly to the main panel
-        # add_advanced_visualization_section(filtered_df, tab_id="tab2")
+        # Dimension treemap (if dimension data exists)
+        if 'Dimension' in filtered_df_ll.columns:
+            st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
+            
+            # Clean and prepare dimension data
+            filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.strip().str.lower()
+            filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'process': 'Process'})
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].notna()]
+            
+            # Count lessons by dimension
+            dimension_counts = filtered_df_ll.groupby('Dimension').agg({
+                'ID_LeccionAprendida': 'nunique' if 'ID_LeccionAprendida' in filtered_df_ll.columns else 'count'
+            }).reset_index()
+            
+            # Calculate percentages and format text
+            dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
+            dimension_counts['text'] = dimension_counts.apply(
+                lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", 
+                axis=1
+            )
+            
+            # Remove 'Sin Clasificar' from dimension_counts for treemap
+            dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
+            
+            # Capitalize dimension labels
+            dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
+            
+            # Create treemap
+            fig3 = px.treemap(
+                dimension_counts, 
+                path=['Dimension'], 
+                values='ID_LeccionAprendida',
+                title='Composición de Lecciones Aprendidas por Dimensión',
+                hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
+                custom_data=['text']
+            )
+            fig3.update_traces(
+                textinfo='label+value', 
+                hovertemplate='%{customdata[0]}',
+                textfont_size=32
+            )
+            fig3.update_layout(
+                margin=dict(t=50, l=25, r=25, b=25), 
+                width=900, 
+                height=500,
+                title_font_size=32,
+                font=dict(size=28),
+                legend_font_size=28
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            # Subdimension treemap if applicable
+            if 'Subdimension' in filtered_df_ll.columns:
+                # Harmonize process/processes naming
+                filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+                
+                # Remove 'Sin Clasificar' entries
+                filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].str.lower() != 'sin clasificar']
+                filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].str.lower() != 'sin clasificar']
+                
+                # Capitalize dimension and subdimension labels
+                filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.title()
+                filtered_df_ll['Subdimension'] = filtered_df_ll['Subdimension'].astype(str).str.title()
+                
+                # Count by subdimension
+                subdimension_counts = filtered_df_ll.groupby(['Dimension', 'Subdimension']).agg({
+                    'ID_LeccionAprendida': 'nunique' if 'ID_LeccionAprendida' in filtered_df_ll.columns else 'count'
+                }).reset_index()
+                
+                # Calculate percentages and format text
+                subdimension_counts['percentage'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].sum() * 100
+                subdimension_counts['text'] = subdimension_counts.apply(
+                    lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row['ID_LeccionAprendida']}<br>Porcentaje: {row['percentage']:.2f}%", 
+                    axis=1
+                )
+                
+                # Create treemap
+                fig4 = px.treemap(
+                    subdimension_counts, 
+                    path=['Dimension', 'Subdimension'], 
+                    values='ID_LeccionAprendida',
+                    title='Composición de Lecciones Aprendidas por Subdimensión',
+                    hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
+                    custom_data=['text']
+                )
+                fig4.update_traces(
+                    textinfo='label+value', 
+                    hovertemplate='%{customdata[0]}',
+                    textfont_size=32
+                )
+                fig4.update_layout(
+                    margin=dict(t=50, l=25, r=25, b=25), 
+                    width=900, 
+                    height=500,
+                    title_font_size=32,
+                    font=dict(size=28),
+                    legend_font_size=28
+                )
+                st.plotly_chart(fig4, use_container_width=True)
     else:
-        st.write("No data available for the selected filters.")
-
-    # Add a text area for the user to input the custom combine template part (now in main panel)
+        st.warning("No hay datos disponibles para los filtros seleccionados.")
+    
+    # Text analysis section
     st.markdown("""
-    <h3 style='color:#3498db; margin-top:0;'>¿Cómo funciona el análisis de textos?</h3>
+    <h3 style='color:#3498db; margin-top:0;'>Análisis de Textos de Lecciones Aprendidas</h3>
     <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
-    Selecciona las fuentes de texto relevantes y personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, acciones recomendadas y actores clave de las recomendaciones seleccionadas, usando IA avanzada. El resultado será un resumen claro y útil para la toma de decisiones.
+    Personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, 
+    acciones recomendadas y actores clave de las lecciones aprendidas seleccionadas, usando IA avanzada.
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("""
     <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
     """, unsafe_allow_html=True)
+    
     user_template_part = st.text_area(
         "",
-        value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""",
+        value="""Produce un breve resumen en español del conjunto completo de lecciones aprendidas. Después, incluye una lista con viñetas que resuma 
+        los principales aprendizajes y los actores específicos involucrados, así como otra lista con viñetas para los temas principales y recurrentes. 
+        Este formato debe aclarar qué se aprendió y quiénes fueron los actores clave. Adicionalmente, genera una lista con viñetas de recomendaciones 
+        para aplicar estas lecciones aprendidas en futuros proyectos.""",
         height=180,
         key="user_template_part_main_tab2"
     )
-
-    combine_template_prefix = "The following is a set of summaries:\n{text}\n"
-
+    
+    combine_template_prefix = "The following is a set of summaries of lessons learned:\n{text}\n"
+    
     # Define the map prompt for initial summarization of chunks
-    map_template = """Summarize the following text: {text}
+    map_template = """Summarize the following text containing lessons learned: {text}
     Helpful Answer:"""
-
-    # Analysis button logic
-    if st.button('Analizar Textos', key='analyze_button_tab2'):
+    
+    # Analysis button
+    if st.button('Analizar Lecciones Aprendidas', key='analyze_button_tab2'):
+        # For tab2, we're only using lessons learned
         selections = {
-            'recommendations': analyze_recommendations,
-            'lessons': analyze_lessons,
-            'practices': analyze_practices,
-            'plans': analyze_plans
+            'recommendations': False,
+            'lessons': True,  # Only lessons learned are True
+            'practices': False,
+            'plans': False
         }
         
-        combined_text = build_combined_text(filtered_df, selections)
+        # Build text directly from lessons learned column
+        if 'Lessons learned description' in filtered_df_ll.columns:
+            combined_text = ' '.join(filtered_df_ll['Lessons learned description'].astype(str).dropna().tolist())
+        else:
+            # Try to build using the standard function
+            combined_text = build_combined_text(filtered_df_ll, selections)
         
         if combined_text:
-            with st.spinner('Analizando textos...'):
+            with st.spinner('Analizando lecciones aprendidas...'):
                 result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
                 if result:
                     st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
                 else:
                     st.error("No se pudo generar el análisis.")
         else:
-            st.warning("Por favor seleccione al menos una fuente de texto para analizar.")
-
+            st.warning("No hay texto de lecciones aprendidas para analizar con los filtros actuales.")
+    
     # Button to download the filtered dataframe as Excel file
     if st.button('Descargar Datos Filtrados', key='download_button_tab2'):
         try:
@@ -2190,66 +2618,22 @@ with tab2:
                 if isinstance(x, dict):
                     return json.dumps(x, ensure_ascii=False)
                 return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
-
+            
             sanitized_df = filtered_df_ll.copy()
             for col in sanitized_df.columns:
                 if sanitized_df[col].dtype == 'O':
                     sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
-
+            
             filtered_data = to_excel(sanitized_df)
             st.download_button(
                 label='📥 Descargar Excel',
                 data=filtered_data,
-                file_name='filtered_data.xlsx',
+                file_name='lecciones_aprendidas_filtradas.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         except Exception as e:
             st.error(f"No se pudo exportar los datos filtrados: {e}")
             import traceback
             st.error(traceback.format_exc())
-            
-    st.header("Búsqueda de Recomendaciones")
-    # Chat section for querying similar recommendations
-    st.markdown("### Búsqueda")
-
-    # Input for user query
-    user_query = st.text_input("Busqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?")
-
-    # Search method selection
-    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"])
-
-    # Slider for similarity score threshold (only relevant for similarity search)
-    if search_method == "Por Similitud":
-        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-
-    # Function to display results
-    def display_results(results):
-        if results:
-            st.markdown("#### Recomendaciones similares")
-            for i, result in enumerate(results):
-                st.markdown(f"**Recomendación {i+1}:**")
-                st.markdown(f"**Texto:** {result['recommendation']}")
-                if "similarity" in result:
-                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
-                st.markdown(f"**País:** {result['country']}")
-                st.markdown(f"**Año:** {result['year']}")
-                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
-                st.markdown("---")
-        else:
-            st.write("No se encontraron recomendaciones para la búsqueda.")
-
-    # Button to search for recommendations
-    if st.button("Buscar Recomendaciones", key='search_button_tab2'):
-        if user_query:
-            with st.spinner('Buscando recomendaciones...'):
-                if search_method == "Por Similitud":
-                    query_embedding = get_embedding_with_retry(user_query)
-                    if query_embedding is not None:
-                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
-                        display_results(results)
-                    else:
-                        st.error("No se pudo generar el embedding para la consulta.")
-                else:
-                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
 # Tab 3: Upload and Evaluate Document by Rubric
