@@ -1941,7 +1941,7 @@ with tab2:
             len(unique_texts),
             filtered_df['Country(ies)'].nunique(),
             filtered_df['year'].nunique(),
-            filtered_df['Evaluation_number'].nunique()
+            filtered_df['Evaluation number'].nunique()
         ]
     }
 
