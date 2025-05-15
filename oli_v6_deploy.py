@@ -2075,7 +2075,7 @@ with tab2:
         fig3 = px.treemap(
             dimension_counts, path=['Dimension'], values='ID_LeccionAprendida',
             title='Composición de Lecciones Aprendidas por Dimensión',
-            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            hover_data={'text': True, 'ID_LeccionAprendida': False, 'percentage': False},
             custom_data=['text']
         )
         fig3.update_traces(
