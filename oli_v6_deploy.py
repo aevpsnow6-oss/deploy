@@ -2575,7 +2575,7 @@ with tab3:
     unique_texts_str = [str(text) for text in unique_texts]  # Convert elements to strings
     
     # Create filtered_df_unique_bp for summary statistics
-    filtered_df_unique_bp = filtered_df_bp.drop_duplicates()
+    filtered_df_unique_bp = filtered_df_bp.drop_duplicates(['Good practices description'])
     
     # Display summary KPIs
     st.markdown("#### Información General")
