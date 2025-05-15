@@ -1880,46 +1880,46 @@ with tab2:
     
     # Define filter options first
     # These variables should be defined before being referenced
-    selected_dimensions = ['All']
-    selected_subdimensions = ['All']
+    selected_dimensions_tab2 = ['All']
+    selected_subdimensions_tab2 = ['All']
     # (No change needed here, just keep using filtered_df for options below)
     
     # Office filter
     office_options = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
-        selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab2')
+        selected_offices_tab2 = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab2')
         
     # Country filter
     country_options = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("País", expanded=False):
-        selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
+        selected_countries_tab2 = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
 
     # Year filter with slider
     min_year = int(lessons_df['year'].min())
     max_year = int(lessons_df['year'].max())
     with st.sidebar.expander("Año", expanded=False):
-        selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
+        selected_year_range_tab2 = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
         # Apply year filter
-        filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range[0]) & (filtered_df_ll['year'] <= selected_year_range[1])]
+        filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range_tab2[0]) & (filtered_df_ll['year'] <= selected_year_range_tab2[1])]
 
-        analyze_practices = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
-        select_all = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
-        if select_all:
-            analyze_lessons = analyze_recommendations = analyze_practices = True
+    analyze_practices_tab2 = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
+    select_all_tab2 = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
+    if select_all_tab2:
+        analyze_lessons_tab2 = analyze_recommendations_tab2 = analyze_practices_tab2 = True
 
     # Filter dataframe based on user selection
     # The year filter is already handled above using selected_year_range and filtered_df
     # Apply remaining filters in sequence to filtered_df
-    if 'All' not in selected_offices and selected_offices:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative_unit(s)'].astype(str).isin(selected_offices)]
-    if 'All' not in selected_countries and selected_countries:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries)]
-    if 'All' not in selected_dimensions and selected_dimensions:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions)]
-    if 'All' not in selected_subdimensions and selected_subdimensions:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions)]
-    if 'All' not in selected_evaltheme and selected_evaltheme:
-        filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme_cl'].astype(str).isin(selected_evaltheme)]
+    if 'All' not in selected_offices_tab2 and selected_offices_tab2:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative_unit(s)'].astype(str).isin(selected_offices_tab2)]
+    if 'All' not in selected_countries_tab2 and selected_countries_tab2:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries_tab2)]
+    if 'All' not in selected_dimensions_tab2 and selected_dimensions_tab2:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions_tab2)]
+    if 'All' not in selected_subdimensions_tab2 and selected_subdimensions_tab2:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions_tab2)]
+    if 'All' not in selected_evaltheme_tab2 and selected_evaltheme_tab2:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme_cl'].astype(str).isin(selected_evaltheme_tab2)]
 
     # Extract unique texts
     if 'Lessons learned description' in filtered_df_ll.columns:
@@ -1939,9 +1939,9 @@ with tab2:
         ],
         'Conteo': [
             len(unique_texts),
-            filtered_df['Country(ies)'].nunique(),
-            filtered_df['year'].nunique(),
-            filtered_df['Evaluation number'].nunique()
+            filtered_df_ll['Country(ies)'].nunique(),
+            filtered_df_ll['year'].nunique(),
+            filtered_df_ll['Evaluation number'].nunique()
         ]
     }
 
