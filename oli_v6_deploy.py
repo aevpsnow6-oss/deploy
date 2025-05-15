@@ -2126,8 +2126,8 @@ with tab2:
         # Display only the subdimension treemap (dimension treemap already shown above)
         st.plotly_chart(fig4, use_container_width=True)
         
-        # Add the advanced visualization section directly to the main panel
-        add_advanced_visualization_section(filtered_df, tab_id="tab2")
+        # # Add the advanced visualization section directly to the main panel
+        # add_advanced_visualization_section(filtered_df, tab_id="tab2")
     else:
         st.write("No data available for the selected filters.")
 
