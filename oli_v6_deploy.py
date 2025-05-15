@@ -1933,7 +1933,7 @@ with tab2:
     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
 
     # Create summary table - ensure we're using the filtered data
-    filtered_df_unique_ll = filtered_df_ll.drop_duplicates()
+    filtered_df_unique_ll = filtered_df_ll.drop_duplicates(['Lessons learned description'])
     summary_data = {
         'Métrica': [
             'Número de Lecciones Aprendidas',
