@@ -1869,11 +1869,14 @@ with tab1:
 #--------------------------#-------------------------------#
 # Tab 2: Filters, Text Analysis and Similar Lessons Learned
 with tab2:
-    st.header("Exploración de Evidencia")
+    st.header("Exploración de Evidencia - Lecciones Aprendidas")
     
     # --- DATASET LOADING ---
-    # Only use the main recommendations dataset for all analysis
-    filtered_df = df.copy()
+    # Load the correct lessons learned Excel file
+    lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
+    lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
+    # Only use the main lessons learned dataset for all analysis
+    filtered_df = lessons_df.copy()
     
     # Define filter options first
     # These variables should be defined before being referenced
@@ -1882,49 +1885,27 @@ with tab2:
     # (No change needed here, just keep using filtered_df for options below)
     
     # Office filter
-    # Convert to strings before sorting to avoid type comparison errors
-    office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
+    office_options = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("Unidad Administrativa", expanded=False):
         selected_offices = st.multiselect('Unidad Administrativa', options=office_options, default='All', key='unidad_administrativa_tab2')
         
     # Country filter
-    country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
+    country_options = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
     with st.sidebar.expander("País", expanded=False):
         selected_countries = st.multiselect('País', options=country_options, default='All', key='pais_tab2')
 
     # Year filter with slider
-    min_year = int(df['year'].min())
-    max_year = int(df['year'].max())
+    min_year = int(lessons_df['year'].min())
+    max_year = int(lessons_df['year'].max())
     with st.sidebar.expander("Año", expanded=False):
         selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
         # Apply year filter
         filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
 
-    # Now add the theme filter
-    evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
-    with st.sidebar.expander("Tema (Evaluación)", expanded=False):
-        selected_evaltheme = st.multiselect('Tema (Evaluación)', options=evaltheme_options, default='All', key='tema_eval_tab2')
-
-    # Recommendation theme filter
-    with st.sidebar.expander("Tema (Recomendación)", expanded=False):
-        selected_rectheme = st.multiselect('Tema (Recomendación)', options=rectheme_options, default='All', key='tema_recomendacion_tab2')
-
-    # Management response filter
-    with st.sidebar.expander("Respuesta de gerencia", expanded=False):
-        selected_mgtres = st.multiselect('Respuesta de gerencia', options=mgtres_options, default='All', key='respuesta_gerencia_tab2')
-
-    # Text source selection before analysis button
-    with st.sidebar.expander("Fuentes de Texto", expanded=False):
-        analyze_recommendations = st.checkbox('Recomendaciones', value=True, key='recomendaciones_tab2')
-        analyze_lessons = st.checkbox('Lecciones Aprendidas', value=False, key='lecciones_aprendidas_tab2')
         analyze_practices = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
-        analyze_plans = st.checkbox('Planes de Acción', value=False, key='planes_accion_tab2')
         select_all = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
         if select_all:
-            analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
-            select_all = st.checkbox('Seleccionar Todas las Fuentes')
-            if select_all:
-                analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
+            analyze_lessons = analyze_recommendations = analyze_practices = True
 
     # Filter dataframe based on user selection
     # The year filter is already handled above using selected_year_range and filtered_df
@@ -1939,41 +1920,28 @@ with tab2:
         filtered_df = filtered_df[filtered_df['subdim'].astype(str).isin(selected_subdimensions)]
     if 'All' not in selected_evaltheme and selected_evaltheme:
         filtered_df = filtered_df[filtered_df['Theme_cl'].astype(str).isin(selected_evaltheme)]
-    if 'All' not in selected_rectheme and selected_rectheme:
-        filtered_df = filtered_df[filtered_df['Recommendation_theme'].astype(str).isin(selected_rectheme)]
-    if 'All' not in selected_mgtres and selected_mgtres:
-        filtered_df = filtered_df[filtered_df['Management_response'].astype(str).isin(selected_mgtres)]
 
     # Extract unique texts
-    unique_texts = filtered_df['Recommendation_description'].unique()
+    if 'Lesson_description' in filtered_df.columns:
+        unique_texts = filtered_df['Lesson_description'].unique()
+    else:
+        unique_texts = filtered_df.iloc[:,0].unique()  # fallback: first column
     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
 
     # Create summary table
-    filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
+    filtered_df_unique = filtered_df.drop_duplicates()
     summary_data = {
         'Métrica': [
-            'Número de Recomendaciones',
+            'Número de Lecciones Aprendidas',
             'Países',
             'Años',
-            'Número de Evaluaciones',
-            'Completadas',
-            'Parcialmente Completadas',
-            'Acción no tomada aún',
-            'Rechazadas',
-            'Acción no planificada',
-            'Sin respuesta'
+            'Número de Evaluaciones'
         ],
         'Conteo': [
             len(unique_texts),
             filtered_df['Country(ies)'].nunique(),
             filtered_df['year'].nunique(),
-            filtered_df['Evaluation_number'].nunique(),
-            filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0],
-            filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0],
-            filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0],
-            filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0],
-            filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0],
-            filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0]
+            filtered_df['Evaluation_number'].nunique()
         ]
     }
 
@@ -1986,9 +1954,9 @@ with tab2:
     total_recs = len(filtered_df_unique)
     num_countries = filtered_df_unique['Country(ies)'].nunique()
     num_years = filtered_df_unique['year'].nunique()
-    num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
+    num_evals = filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 'N/A'
     total_cols = st.columns(4)
-    total_kpi_labels = ["Total Recomendaciones", "Países", "Años", "Evaluaciones"]
+    total_kpi_labels = ["Total Lecciones Aprendidas", "Países", "Años", "Evaluaciones"]
     total_kpi_values = [total_recs, num_countries, num_years, num_evals]
     total_kpi_html = [
         f"""
@@ -2280,7 +2248,7 @@ with tab2:
                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
-# Tab 2: Search
+# Tab 3: Upload and Evaluate Document by Rubric
 with tab3:
     st.header("Subir y Evaluar Documento DOCX")
 
