@@ -1911,19 +1911,19 @@ with tab2:
     # The year filter is already handled above using selected_year_range and filtered_df
     # Apply remaining filters in sequence to filtered_df
     if 'All' not in selected_offices and selected_offices:
-        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].astype(str).isin(selected_offices)]
+        filtered_df = filtered_df[filtered_df['Administrative_unit(s)'].astype(str).isin(selected_offices)]
     if 'All' not in selected_countries and selected_countries:
         filtered_df = filtered_df[filtered_df['Country(ies)'].astype(str).isin(selected_countries)]
     if 'All' not in selected_dimensions and selected_dimensions:
-        filtered_df = filtered_df[filtered_df['dimension'].astype(str).isin(selected_dimensions)]
+        filtered_df = filtered_df[filtered_df['Dimension'].astype(str).isin(selected_dimensions)]
     if 'All' not in selected_subdimensions and selected_subdimensions:
-        filtered_df = filtered_df[filtered_df['subdim'].astype(str).isin(selected_subdimensions)]
+        filtered_df = filtered_df[filtered_df['Subdimension'].astype(str).isin(selected_subdimensions)]
     if 'All' not in selected_evaltheme and selected_evaltheme:
         filtered_df = filtered_df[filtered_df['Theme_cl'].astype(str).isin(selected_evaltheme)]
 
     # Extract unique texts
-    if 'Lesson_description' in filtered_df.columns:
-        unique_texts = filtered_df['Lesson_description'].unique()
+    if 'Lessons learned description' in filtered_df.columns:
+        unique_texts = filtered_df['Lessons learned description'].unique()
     else:
         unique_texts = filtered_df.iloc[:,0].unique()  # fallback: first column
     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
@@ -2054,12 +2054,12 @@ with tab2:
 
         st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
         import numpy as np
-        filtered_df['Dimension'] = filtered_df['Dimension'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+        filtered_df['Dimension'] = filtered_df['Dimension'].astype(str).str.strip().str.lower()
         filtered_df['Dimension'] = filtered_df['Dimension'].replace({'process': 'Process'})
         filtered_df = filtered_df[filtered_df['Dimension'].notna()]
-        filtered_df['Approach'] = filtered_df['Approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
-        filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
-        filtered_df = filtered_df[filtered_df['Approach'].notna()]
+        # filtered_df['Approach'] = filtered_df['Approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
+        # filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
+        # filtered_df = filtered_df[filtered_df['Approach'].notna()]
 
         dimension_counts = filtered_df.groupby('dimension').agg({
             'ID_LeccionAprendida': 'nunique'
