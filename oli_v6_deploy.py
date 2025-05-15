@@ -1876,7 +1876,7 @@ with tab2:
     lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
     lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
     # Only use the main lessons learned dataset for all analysis
-    filtered_df = lessons_df.copy()
+    filtered_df_ll = lessons_df.copy()
     
     # Define filter options first
     # These variables should be defined before being referenced
@@ -1900,7 +1900,7 @@ with tab2:
     with st.sidebar.expander("Año", expanded=False):
         selected_year_range = st.slider('Rango de Años', min_value=min_year, max_value=max_year, value=(min_year, max_year), key='rango_anos_tab2')
         # Apply year filter
-        filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & (filtered_df['year'] <= selected_year_range[1])]
+        filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range[0]) & (filtered_df_ll['year'] <= selected_year_range[1])]
 
         analyze_practices = st.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab2')
         select_all = st.checkbox('Seleccionar Todas las Fuentes', key='todas_fuentes_tab2')
@@ -1911,25 +1911,25 @@ with tab2:
     # The year filter is already handled above using selected_year_range and filtered_df
     # Apply remaining filters in sequence to filtered_df
     if 'All' not in selected_offices and selected_offices:
-        filtered_df = filtered_df[filtered_df['Administrative_unit(s)'].astype(str).isin(selected_offices)]
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative_unit(s)'].astype(str).isin(selected_offices)]
     if 'All' not in selected_countries and selected_countries:
-        filtered_df = filtered_df[filtered_df['Country(ies)'].astype(str).isin(selected_countries)]
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries)]
     if 'All' not in selected_dimensions and selected_dimensions:
-        filtered_df = filtered_df[filtered_df['Dimension'].astype(str).isin(selected_dimensions)]
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions)]
     if 'All' not in selected_subdimensions and selected_subdimensions:
-        filtered_df = filtered_df[filtered_df['Subdimension'].astype(str).isin(selected_subdimensions)]
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions)]
     if 'All' not in selected_evaltheme and selected_evaltheme:
-        filtered_df = filtered_df[filtered_df['Theme_cl'].astype(str).isin(selected_evaltheme)]
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme_cl'].astype(str).isin(selected_evaltheme)]
 
     # Extract unique texts
-    if 'Lessons learned description' in filtered_df.columns:
-        unique_texts = filtered_df['Lessons learned description'].unique()
+    if 'Lessons learned description' in filtered_df_ll.columns:
+        unique_texts = filtered_df_ll['Lessons learned description'].unique()
     else:
-        unique_texts = filtered_df.iloc[:,0].unique()  # fallback: first column
+        unique_texts = filtered_df_ll.iloc[:,0].unique()  # fallback: first column
     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
 
     # Create summary table - ensure we're using the filtered data
-    filtered_df_unique = filtered_df.drop_duplicates()
+    filtered_df_unique_ll = filtered_df_ll.drop_duplicates()
     summary_data = {
         'Métrica': [
             'Número de Lecciones Aprendidas',
@@ -1951,10 +1951,10 @@ with tab2:
     st.markdown("#### Información General")
 
     # KPIs for totals (responsive to filters)
-    total_recs = len(filtered_df_unique)
-    num_countries = filtered_df_unique['Country(ies)'].nunique()
-    num_years = filtered_df_unique['year'].nunique()
-    num_evals = filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 'N/A'
+    total_recs = len(filtered_df_unique_ll)
+    num_countries = filtered_df_unique_ll['Country(ies)'].nunique()
+    num_years = filtered_df_unique_ll['year'].nunique()
+    num_evals = filtered_df_unique_ll['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique_ll.columns else 'N/A'
     total_cols = st.columns(4)
     total_kpi_labels = ["Total Lecciones Aprendidas", "Países", "Años", "Evaluaciones"]
     total_kpi_values = [total_recs, num_countries, num_years, num_evals]
@@ -1994,8 +1994,8 @@ with tab2:
     #     )
 
     # Display plots if data is available
-    if not filtered_df.empty:
-        country_counts = filtered_df_unique['Country(ies)'].value_counts()
+    if not filtered_df_ll.empty:
+        country_counts = filtered_df_unique_ll['Country(ies)'].value_counts()
         # Responsive dashboard layout for all major plots
         st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
         row1_col1, row1_col2 = st.columns(2)
@@ -2027,7 +2027,7 @@ with tab2:
             st.plotly_chart(fig1, use_container_width=True)
         with row1_col2:
             st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por Año</div>', unsafe_allow_html=True)
-            year_counts = filtered_df_unique['year'].value_counts().sort_index()
+            year_counts = filtered_df_unique_ll['year'].value_counts().sort_index()
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(
                 x=year_counts.index.astype(str).tolist(),
@@ -2054,14 +2054,14 @@ with tab2:
 
         st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
         import numpy as np
-        filtered_df['Dimension'] = filtered_df['Dimension'].astype(str).str.strip().str.lower()
-        filtered_df['Dimension'] = filtered_df['Dimension'].replace({'process': 'Process'})
-        filtered_df = filtered_df[filtered_df['Dimension'].notna()]
+        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.strip().str.lower()
+        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'process': 'Process'})
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].notna()]
         # filtered_df['Approach'] = filtered_df['Approach'].astype(str).str.strip().str.lower().replace({'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan})
         # filtered_df['Approach'] = filtered_df['Approach'].replace({'process': 'Process'})
         # filtered_df = filtered_df[filtered_df['Approach'].notna()]
 
-        dimension_counts = filtered_df.groupby('Dimension').agg({
+        dimension_counts = filtered_df_ll.groupby('Dimension').agg({
             'ID_LeccionAprendida': 'nunique'
         }).reset_index()
         dimension_counts['percentage'] = dimension_counts['ID_LeccionAprendida'] / dimension_counts['ID_LeccionAprendida'].sum() * 100
@@ -2092,14 +2092,14 @@ with tab2:
 
         # Treemap: Recommendations by Subdimension
         # Harmonize 'process' and 'processes' before plotting subdimensions as well
-        filtered_df['Dimension'] = filtered_df['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
         # Remove 'Sin Clasificar' from both dimension and subdimension for treemap
-        filtered_df = filtered_df[filtered_df['Dimension'].str.lower() != 'sin clasificar']
-        filtered_df = filtered_df[filtered_df['Subdimension'].str.lower() != 'sin clasificar']
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].str.lower() != 'sin clasificar']
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].str.lower() != 'sin clasificar']
         # Capitalize dimension and subdimension labels
-        filtered_df['Dimension'] = filtered_df['Dimension'].astype(str).str.title()
-        filtered_df['Subdimension'] = filtered_df['Subdimension'].astype(str).str.title()
-        subdimension_counts = filtered_df.groupby(['Dimension', 'Subdimension']).agg({
+        filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.title()
+        filtered_df_ll['Subdimension'] = filtered_df_ll['Subdimension'].astype(str).str.title()
+        subdimension_counts = filtered_df_ll.groupby(['Dimension', 'Subdimension']).agg({
             'ID_LeccionAprendida': 'nunique'
         }).reset_index()
         subdimension_counts['percentage'] = subdimension_counts['ID_LeccionAprendida'] / subdimension_counts['ID_LeccionAprendida'].sum() * 100
@@ -2187,7 +2187,7 @@ with tab2:
                     return json.dumps(x, ensure_ascii=False)
                 return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
 
-            sanitized_df = filtered_df.copy()
+            sanitized_df = filtered_df_ll.copy()
             for col in sanitized_df.columns:
                 if sanitized_df[col].dtype == 'O':
                     sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
