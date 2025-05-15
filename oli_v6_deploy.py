@@ -2356,7 +2356,7 @@ with tab2:
     unique_texts_str = [str(text) for text in unique_texts]  # Convert elements to strings
     
     # Create filtered_df_unique_ll for summary statistics
-    filtered_df_unique_ll = filtered_df_ll.drop_duplicates()
+    filtered_df_unique_ll = filtered_df_ll.drop_duplicates(['Lessons learned description'])
     
     # Display summary KPIs
     st.markdown("#### Información General")
