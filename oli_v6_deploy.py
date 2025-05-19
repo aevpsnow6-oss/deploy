@@ -1050,6 +1050,16 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
             # Remove inline title from plot
             st.plotly_chart(score_fig, use_container_width=True)
     with col2:
+        # Make the legend box visually match the plot height
+        st.markdown("""
+            <style>
+            textarea[data-baseweb="textarea"] {
+                min-height: 500px !important;
+                height: 500px !important;
+                max-height: 700px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
         legend_definitions = st.text_area(
             "Definiciones de leyenda (puede editar este texto para cada entrada de la gráfica):",
             value="""
@@ -1058,12 +1068,13 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
             • Nivel de atención: Nivel de consideración hacia las prioridades de la recomendación, en el plan de acción.
             • Puntuación agregada: Promedio de las puntuaciones de coherencia, calidad del plan y nivel de atención.
             """,
-            key=f"legend_definitions_{tab_id}"
+            key=f"legend_definitions_{tab_id}",
+            height=500
         )
 
 
     # --- Variable Composition ---
-    st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin-top: 2em;'>Composición de Recomendaciones por Atributo</h4>", unsafe_allow_html=True)
     available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
     if available_vars:
         var_mapping = {
