@@ -1041,23 +1041,26 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
     """
     st.markdown("#### Calidad de  Respuesta Institucional a Recomendaciones")
 
-    # --- Legend Definitions Text Box ---
-    legend_definitions = st.text_area(
-        "Definiciones de leyenda (puede editar este texto para cada entrada de la gráfica):",
-        value="""
-        • Leyenda 1: Definición de ejemplo para la leyenda 1.
-        • Leyenda 2: Definición de ejemplo para la leyenda 2.
-        • Leyenda 3: Definición de ejemplo para la leyenda 3.
-        """,
-        key=f"legend_definitions_{tab_id}"
-    )
-
     # --- Score Evolution ---
     st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
-    score_fig = plot_score_evolution(filtered_df)
-    if score_fig:
-        # Remove inline title from plot
-        st.plotly_chart(score_fig, use_container_width=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        score_fig = plot_score_evolution(filtered_df)
+        if score_fig:
+            # Remove inline title from plot
+            st.plotly_chart(score_fig, use_container_width=True)
+    with col2:
+        legend_definitions = st.text_area(
+            "Definiciones de leyenda (puede editar este texto para cada entrada de la gráfica):",
+            value="""
+            • Coherencia: Nivel de alineación entre la recomendación y el plan de acción.
+            • Calidad del plan: Nivel de especificidad y claridad del plan de acción.
+            • Nivel de atención: Nivel de consideración hacia las prioridades de la recomendación, en el plan de acción.
+            • Puntuación agregada: Promedio de las puntuaciones de coherencia, calidad del plan y nivel de atención.
+            """,
+            key=f"legend_definitions_{tab_id}"
+        )
+
 
     # --- Variable Composition ---
     st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
