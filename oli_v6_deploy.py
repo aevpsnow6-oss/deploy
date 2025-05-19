@@ -1039,7 +1039,18 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
     tab_id : str
         The tab identifier to make widget keys unique (default: "tab1")
     """
-    st.markdown("#### Visualizaciones Avanzadas")
+    st.markdown("#### Calidad de  Respuesta Institucional a Recomendaciones")
+
+    # --- Legend Definitions Text Box ---
+    legend_definitions = st.text_area(
+        "Definiciones de leyenda (puede editar este texto para cada entrada de la gráfica):",
+        value="""
+        • Leyenda 1: Definición de ejemplo para la leyenda 1.
+        • Leyenda 2: Definición de ejemplo para la leyenda 2.
+        • Leyenda 3: Definición de ejemplo para la leyenda 3.
+        """,
+        key=f"legend_definitions_{tab_id}"
+    )
 
     # --- Score Evolution ---
     st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
@@ -1090,7 +1101,7 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
         st.warning("No se encontraron variables de composición en los datos filtrados.")
 
     # --- Difficulty Classification ---
-    st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin-top: 2em;'>Principales Barreras de Implementación</h4>", unsafe_allow_html=True)
     if 'clean_tags' in filtered_df.columns:
         # Use tab_id parameter to create unique key for this slider
         top_n = st.slider(
@@ -1102,7 +1113,7 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
         if diff_fig:
             st.plotly_chart(diff_fig, use_container_width=True)
     else:
-        st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+        st.warning("No se encontraron datos de barreras en los datos filtrados.")
 # ============= DATA LOADING FUNCTIONS =============
 
 # Load data - use relative paths for deployment
