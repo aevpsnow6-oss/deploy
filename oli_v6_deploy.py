@@ -1628,12 +1628,12 @@ with tab1:
     if 'All' not in selected_mgtres and selected_mgtres:
         filtered_df = filtered_df[filtered_df['Management_response'].astype(str).isin(selected_mgtres)]
     
-    # Add a small info text showing the number of filtered recommendations
-    st.info(f"Mostrando {len(filtered_df)} recomendaciones con los filtros seleccionados.")
-    
     # Extract unique texts
     unique_texts = filtered_df['Recommendation_description'].unique()
     unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
+    
+    # Add a small info text showing the number of filtered recommendations
+    st.info(f"Mostrando {len(unique_texts)} recomendaciones con los filtros seleccionados.")
     
     # Create filtered_df_unique for summary statistics (drop duplicates)
     filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
