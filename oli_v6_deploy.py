@@ -1061,7 +1061,7 @@ def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
             </style>
         """, unsafe_allow_html=True)
         legend_definitions = st.text_area(
-            "Definiciones de leyenda (puede editar este texto para cada entrada de la gráfica):",
+            "Leyenda:",
             value="""
             • Coherencia: Nivel de alineación entre la recomendación y el plan de acción.
             • Calidad del plan: Nivel de especificidad y claridad del plan de acción.
