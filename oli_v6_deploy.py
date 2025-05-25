@@ -1546,11 +1546,12 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
-                                        "Exploración de Evidencia-Lecciones Aprendidas",
-                                        "Exploración de Evidencia-Buenas Prácticas",
-                                        "Análisis por Rúbricas",
-                                        "Document Chat"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
+                                         "Exploración de Evidencia-Lecciones Aprendidas",
+                                         "Exploración de Evidencia-Buenas Prácticas",
+                                         "Análisis por Rúbricas",
+                                         "Document Chat",
+                                         "Evaluación de PRODOCs"])
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
 # Tab 1: Filters, Text Analysis and Similar Recommendations
@@ -3530,3 +3531,50 @@ with tab5:
         )
     else:
         st.info("Sube uno o más documentos válidos para comenzar el chat.")
+
+# ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
+with tab6:
+    st.header("Evaluación de PRODOCs")
+    st.markdown("""### Bienvenido a la herramienta de Evaluación de PRODOCs
+    
+    Esta sección permitirá analizar y evaluar Documentos de Programa (PRODOCs) utilizando 
+    criterios específicos y técnicas de procesamiento de lenguaje natural.
+    """)
+    
+    st.info("Esta funcionalidad está en desarrollo. Próximamente podrá cargar y analizar PRODOCs.")
+    
+    # Placeholder for future implementation
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Carga de Documentos")
+        st.file_uploader("Cargar PRODOC (formato DOCX)", type=["docx"], disabled=True)
+        st.button("Analizar Documento", disabled=True)
+    
+    with col2:
+        st.markdown("#### Criterios de Evaluación")
+        st.multiselect(
+            "Seleccione criterios de evaluación:",
+            ["Alineación Estratégica", "Coherencia Interna", "Factibilidad", "Sostenibilidad", "Enfoque de Género"],
+            disabled=True
+        )
+        st.slider("Profundidad de análisis", 1, 5, 3, disabled=True)
+    
+    # Placeholder for results section
+    st.markdown("### Resultados del Análisis")
+    st.markdown("Los resultados del análisis aparecerán aquí una vez que la funcionalidad esté implementada.")
+    
+    # Placeholder visualization
+    st.markdown("### Visualización")
+    placeholder_chart = """
+    digraph {
+        node [shape=box, style=filled, color=lightblue];
+        PRODOC -> Alineación;
+        PRODOC -> Coherencia;
+        PRODOC -> Factibilidad;
+        PRODOC -> Sostenibilidad;
+        PRODOC -> Género;
+    }
+    """
+    
+    st.graphviz_chart(placeholder_chart)
