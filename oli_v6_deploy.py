@@ -3542,50 +3542,67 @@ with tab6:
     
     try:
         # Load rubric from PRODOC_rubric.xlsx with the same structure as tab4's rubrics
-        # Should have 'Indicador' column and value columns
         df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
         
-        # Debug: Show the dataframe structure and columns
-        st.write("Estructura del Excel cargado:")
-        st.write(f"Columnas: {df_rubric_prodoc.columns.tolist()}")
-        st.write(f"Filas: {len(df_rubric_prodoc)}")
+        # Remove debug output for cleaner UI
+        # st.write("Estructura del Excel cargado:")
+        # st.write(f"Columnas: {df_rubric_prodoc.columns.tolist()}")
+        # st.write(f"Filas: {len(df_rubric_prodoc)}")
         
-        # Make sure we're only dropping 'Criterio' if it exists
-        df_rubric_prodoc.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        # Based on the actual Excel structure, we need to handle the 'dimension' column
+        # and ensure we're using 'Indicador' as our criteria column
         
-        # Debug: Show columns after dropping 'Criterio'
-        st.write(f"Columnas después de eliminar 'Criterio': {df_rubric_prodoc.columns.tolist()}")
+        # First, drop any non-essential columns
+        if 'Criterio' in df_rubric_prodoc.columns:
+            df_rubric_prodoc.drop(columns=['Criterio'], inplace=True)
         
         # Check if 'Indicador' column exists
         if 'Indicador' not in df_rubric_prodoc.columns:
-            st.error("La columna 'Indicador' no existe en el archivo Excel. Columnas disponibles: " + ", ".join(df_rubric_prodoc.columns.tolist()))
-            # Try to use the first column as 'Indicador' if it exists
-            if len(df_rubric_prodoc.columns) > 0:
-                indicador_col = df_rubric_prodoc.columns[0]
-                st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
-                df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
+            st.error("La columna 'Indicador' no existe en el archivo Excel.")
+            if 'dimension' in df_rubric_prodoc.columns:
+                # Try using dimension column if it exists
+                df_rubric_prodoc.rename(columns={'dimension': 'Indicador'}, inplace=True)
+                st.warning("Usando la columna 'dimension' como columna de indicadores.")
             else:
-                # Can't continue without an Indicador column
-                prodoc_rubric = {}
+                # Try to use the first column as 'Indicador' if it exists
+                if len(df_rubric_prodoc.columns) > 0:
+                    indicador_col = df_rubric_prodoc.columns[0]
+                    st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
+                    df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
+                else:
+                    prodoc_rubric = {}
+                    st.error("No se pudo encontrar una columna para los criterios.")
         
         # Process each row to extract criteria and values
         for idx, row in df_rubric_prodoc.iterrows():
+            # Get the indicator value
             indicador = row['Indicador']
+            
             # Skip empty indicators
-            if pd.isna(indicador) or indicador == '':
+            if pd.isna(indicador) or str(indicador).strip() == '':
                 continue
-                
-            # Get all columns except 'Indicador' for values
-            valores = row.drop('Indicador').values.tolist()
-            # Filter out NaN values
-            valores = [v for v in valores if not pd.isna(v)]
+            
+            # Convert to string if it's not already
+            indicador = str(indicador).strip()
+            
+            # Get level columns (Nivel 0, Nivel 1, etc.)
+            level_cols = [col for col in df_rubric_prodoc.columns if col.startswith('Nivel') or col == 'Indicador']
+            
+            # If we have level columns, use those for values
+            if len(level_cols) > 1:  # More than just 'Indicador'
+                level_cols.remove('Indicador')  # Remove Indicador from the list
+                valores = [row[col] for col in level_cols if not pd.isna(row[col])]
+            else:
+                # Fallback: get all columns except 'Indicador' for values
+                valores = row.drop('Indicador').values.tolist()
+                # Filter out NaN values
+                valores = [v for v in valores if not pd.isna(v)]
+            
+            # Store in our rubric dictionary
             prodoc_rubric[indicador] = valores
-            
-        # Debug: Show the loaded criteria
-        st.write(f"Criterios cargados: {len(prodoc_rubric)}")
-        st.write(f"Nombres de los criterios: {list(prodoc_rubric.keys())}")
-            
-        st.success("Rúbrica cargada correctamente desde PRODOC_rubric.xlsx")
+        
+        # Success message with count of loaded criteria
+        st.success(f"Rúbrica cargada correctamente desde PRODOC_rubric.xlsx: {len(prodoc_rubric)} criterios cargados.")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
