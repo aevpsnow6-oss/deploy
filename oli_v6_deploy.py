@@ -3797,45 +3797,47 @@ with tab6:
                 # Sort the dataframe by score in descending order
                 scores_df = scores_df.sort_values(by='Puntuación', ascending=False)
                 
-                # Create a single, sorted bar chart with average line
+                # Create a horizontal bar chart instead of vertical for better label readability
                 fig = go.Figure()
                 
-                # Add the bars
+                # Add the bars - horizontal orientation
                 fig.add_trace(go.Bar(
-                    x=scores_df['Criterio'],
-                    y=scores_df['Puntuación'],
+                    y=scores_df['Criterio'],  # Note: x and y are swapped for horizontal
+                    x=scores_df['Puntuación'],
                     text=scores_df['Puntuación'].round(2),
                     textposition='auto',
                     marker_color='#3498db',
+                    orientation='h',  # Horizontal bars
                     name='Puntuación'
                 ))
                 
-                # Add the average line
+                # Add the average line - vertical for horizontal chart
                 fig.add_trace(go.Scatter(
-                    x=scores_df['Criterio'],
-                    y=[overall_avg] * len(scores_df),
+                    y=scores_df['Criterio'],
+                    x=[overall_avg] * len(scores_df),
                     mode='lines',
                     line=dict(color='red', width=2, dash='dash'),
                     name=f'Promedio General: {overall_avg:.2f}'
                 ))
                 
-                # Update layout for a more square aspect ratio
+                # Update layout for better readability
                 fig.update_layout(
-                    title='Puntuación por Criterio (Ordenado)',
-                    xaxis_title='Criterio',
-                    yaxis_title='Puntuación',
-                    yaxis=dict(range=[0, 5.5]),
-                    height=600,  # Increased height
-                    width=800,   # Set specific width for more square aspect
+                    title='Puntuación por Criterio (Ordenado de Mayor a Menor)',
+                    xaxis_title='Puntuación',
+                    yaxis_title='',  # No need for y-axis title with criteria names
+                    xaxis=dict(range=[0, 5.5]),  # Now x-axis has the scores
+                    height=max(400, len(scores_df) * 40),  # Dynamic height based on number of criteria
+                    width=800,
                     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-                    margin=dict(l=50, r=50, t=80, b=100)  # Adjust margins
+                    margin=dict(l=20, r=20, t=80, b=50)
                 )
                 
-                # Rotate x-axis labels for better readability
-                fig.update_xaxes(tickangle=45)
+                # No need to rotate labels in horizontal chart
+                # Add grid lines for better score reference
+                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
                 
-                # Display the chart with custom width (not full container width)
-                st.plotly_chart(fig)
+                # Display the chart
+                st.plotly_chart(fig, use_container_width=True)
                 
                 # Provide a zip download for all results
                 import io, zipfile
