@@ -3544,12 +3544,45 @@ with tab6:
         # Load rubric from PRODOC_rubric.xlsx with the same structure as tab4's rubrics
         # Should have 'Indicador' column and value columns
         df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        
+        # Debug: Show the dataframe structure and columns
+        st.write("Estructura del Excel cargado:")
+        st.write(f"Columnas: {df_rubric_prodoc.columns.tolist()}")
+        st.write(f"Filas: {len(df_rubric_prodoc)}")
+        
+        # Make sure we're only dropping 'Criterio' if it exists
         df_rubric_prodoc.drop(columns=['Criterio'], inplace=True, errors='ignore')
         
+        # Debug: Show columns after dropping 'Criterio'
+        st.write(f"Columnas después de eliminar 'Criterio': {df_rubric_prodoc.columns.tolist()}")
+        
+        # Check if 'Indicador' column exists
+        if 'Indicador' not in df_rubric_prodoc.columns:
+            st.error("La columna 'Indicador' no existe en el archivo Excel. Columnas disponibles: " + ", ".join(df_rubric_prodoc.columns.tolist()))
+            # Try to use the first column as 'Indicador' if it exists
+            if len(df_rubric_prodoc.columns) > 0:
+                indicador_col = df_rubric_prodoc.columns[0]
+                st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
+                df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
+            else:
+                return {}
+        
+        # Process each row to extract criteria and values
         for idx, row in df_rubric_prodoc.iterrows():
             indicador = row['Indicador']
+            # Skip empty indicators
+            if pd.isna(indicador) or indicador == '':
+                continue
+                
+            # Get all columns except 'Indicador' for values
             valores = row.drop('Indicador').values.tolist()
+            # Filter out NaN values
+            valores = [v for v in valores if not pd.isna(v)]
             prodoc_rubric[indicador] = valores
+            
+        # Debug: Show the loaded criteria
+        st.write(f"Criterios cargados: {len(prodoc_rubric)}")
+        st.write(f"Nombres de los criterios: {list(prodoc_rubric.keys())}")
             
         st.success("Rúbrica cargada correctamente desde PRODOC_rubric.xlsx")
     except FileNotFoundError:
