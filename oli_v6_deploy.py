@@ -3785,58 +3785,57 @@ with tab6:
                 for rubric_name, df in rubric_results:
                     for _, row in df.iterrows():
                         all_scores.append({
-                            'Rúbrica': rubric_name,
                             'Criterio': row['Criterio'],
                             'Puntuación': row['Score']
                         })
                 
                 scores_df = pd.DataFrame(all_scores)
                 
-                # Create bar chart of average scores by rubric
-                avg_by_rubric = scores_df.groupby('Rúbrica')['Puntuación'].mean().reset_index()
+                # Calculate the overall average score
+                overall_avg = scores_df['Puntuación'].mean()
                 
-                fig1 = go.Figure()
-                fig1.add_trace(go.Bar(
-                    x=avg_by_rubric['Rúbrica'],
-                    y=avg_by_rubric['Puntuación'],
-                    text=avg_by_rubric['Puntuación'].round(2),
+                # Sort the dataframe by score in descending order
+                scores_df = scores_df.sort_values(by='Puntuación', ascending=False)
+                
+                # Create a single, sorted bar chart with average line
+                fig = go.Figure()
+                
+                # Add the bars
+                fig.add_trace(go.Bar(
+                    x=scores_df['Criterio'],
+                    y=scores_df['Puntuación'],
+                    text=scores_df['Puntuación'].round(2),
                     textposition='auto',
-                    marker_color='#3498db'
+                    marker_color='#3498db',
+                    name='Puntuación'
                 ))
                 
-                fig1.update_layout(
-                    title='Puntuación Promedio por Rúbrica',
-                    xaxis_title='Rúbrica',
-                    yaxis_title='Puntuación Promedio',
-                    yaxis=dict(range=[0, 5.5]),
-                    height=400
-                )
+                # Add the average line
+                fig.add_trace(go.Scatter(
+                    x=scores_df['Criterio'],
+                    y=[overall_avg] * len(scores_df),
+                    mode='lines',
+                    line=dict(color='red', width=2, dash='dash'),
+                    name=f'Promedio General: {overall_avg:.2f}'
+                ))
                 
-                st.plotly_chart(fig1, use_container_width=True)
-                
-                # Create detailed bar chart by criterion
-                fig2 = go.Figure()
-                
-                for rubric in scores_df['Rúbrica'].unique():
-                    subset = scores_df[scores_df['Rúbrica'] == rubric]
-                    fig2.add_trace(go.Bar(
-                        name=rubric,
-                        x=subset['Criterio'],
-                        y=subset['Puntuación'],
-                        text=subset['Puntuación'].round(2),
-                        textposition='auto'
-                    ))
-                
-                fig2.update_layout(
-                    title='Puntuación por Criterio',
+                # Update layout for a more square aspect ratio
+                fig.update_layout(
+                    title='Puntuación por Criterio (Ordenado)',
                     xaxis_title='Criterio',
                     yaxis_title='Puntuación',
                     yaxis=dict(range=[0, 5.5]),
-                    height=500,
-                    barmode='group'
+                    height=600,  # Increased height
+                    width=800,   # Set specific width for more square aspect
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=50, r=50, t=80, b=100)  # Adjust margins
                 )
                 
-                st.plotly_chart(fig2, use_container_width=True)
+                # Rotate x-axis labels for better readability
+                fig.update_xaxes(tickangle=45)
+                
+                # Display the chart with custom width (not full container width)
+                st.plotly_chart(fig)
                 
                 # Provide a zip download for all results
                 import io, zipfile
