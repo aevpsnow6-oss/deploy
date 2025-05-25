@@ -3565,7 +3565,8 @@ with tab6:
                 st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
                 df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
             else:
-                return {}
+                # Can't continue without an Indicador column
+                prodoc_rubric = {}
         
         # Process each row to extract criteria and values
         for idx, row in df_rubric_prodoc.iterrows():
