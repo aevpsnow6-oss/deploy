@@ -3536,40 +3536,32 @@ with tab5:
 with tab6:
     st.header("Evaluación de PRODOCs")
     
-    # Load rubrics from Excel file
-    def load_prodoc_rubrics():
-        try:
-            # Try to load the rubrics from the Excel file
-            rubrics_df = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
-            
-            # Check if the dataframe has the expected columns
-            required_columns = ['Rubric', 'Criterion', 'Description']
-            if not all(col in rubrics_df.columns for col in required_columns):
-                st.error(f"El archivo PRODOC.xlsx debe contener las columnas: {', '.join(required_columns)}")
-                return {}
-            
-            # Convert the dataframe to the required dictionary format
-            rubrics = {}
-            for _, row in rubrics_df.iterrows():
-                rubric_name = row['Rubric']
-                criterion = row['Criterion']
-                description = row['Description']
-                
-                if rubric_name not in rubrics:
-                    rubrics[rubric_name] = {}
-                
-                rubrics[rubric_name][criterion] = description
-            
-            return rubrics
-        except FileNotFoundError:
-            st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
-            return {}
-        except Exception as e:
-            st.error(f"Error al cargar las rúbricas desde PRODOC_rubric.xlsx: {str(e)}")
-            return {}
+    # Read rubric from Excel file
+    import pandas as pd
+    prodoc_rubric = {}
     
-    # Load the rubrics from the Excel file
-    prodoc_rubrics = load_prodoc_rubrics()
+    try:
+        # Load rubric from PRODOC_rubric.xlsx with the same structure as tab4's rubrics
+        # Should have 'Indicador' column and value columns
+        df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        df_rubric_prodoc.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        
+        for idx, row in df_rubric_prodoc.iterrows():
+            indicador = row['Indicador']
+            valores = row.drop('Indicador').values.tolist()
+            prodoc_rubric[indicador] = valores
+            
+        st.success("Rúbrica cargada correctamente desde PRODOC_rubric.xlsx")
+    except FileNotFoundError:
+        st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
+    except Exception as e:
+        st.error(f"Error al cargar la rúbrica desde PRODOC_rubric.xlsx: {str(e)}")
+    
+    # Display the loaded rubric
+    with st.expander("Ver rúbrica cargada"):
+        st.subheader("Criterios de Evaluación PRODOC")
+        for criterion, values in prodoc_rubric.items():
+            st.markdown(f"**{criterion}**: {values}")
     
     # Document upload interface
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader")
@@ -3587,16 +3579,14 @@ with tab6:
     st.markdown("#### Procesamiento y Evaluación de Documento")
     st.markdown('---')
     
-    # Display the loaded rubrics
-    if prodoc_rubrics:
-        st.success(f"Se cargaron {len(prodoc_rubrics)} rúbricas desde PRODOC_rubric.xlsx")
-        with st.expander("Ver rúbricas cargadas"):
-            for rubric_name, criteria in prodoc_rubrics.items():
-                st.subheader(rubric_name)
-                for criterion, description in criteria.items():
-                    st.markdown(f"**{criterion}**: {description}")
-    else:
-        st.warning("No se pudieron cargar rúbricas desde PRODOC_rubric.xlsx. Se utilizarán rúbricas predeterminadas.")
+    # Instructions for the user
+    st.markdown("""
+    ## Instrucciones
+    1. Suba un archivo DOCX para evaluación.
+    2. Haga clic en 'Procesar y Evaluar' para analizar el documento.
+    3. Revise los resultados de la evaluación por cada rúbrica.
+    4. Descargue todos los resultados y evidencias en un archivo ZIP.
+    """)
     
     if st.button('Procesar y Evaluar', key="prodoc_process_button"):
         # Only process if file is uploaded and not already processed for this file
@@ -3681,13 +3671,10 @@ with tab6:
                 st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
                 st.stop()
                 
-            # Check if we have any rubrics to evaluate
-            if not prodoc_rubrics:
-                st.error("No hay rúbricas disponibles para la evaluación. Por favor, asegúrese de que el archivo PRODOC.xlsx existe y tiene el formato correcto.")
-                st.stop()
-            
-            # Define the rubrics to evaluate
-            rubrics = [(rubric_name, criteria) for rubric_name, criteria in prodoc_rubrics.items()]
+            # Define the rubric to evaluate, using the same structure as tab4
+            rubrics = [
+                ("Evaluación PRODOC", prodoc_rubric)
+            ]
             
             rubric_results = []
             from concurrent.futures import ThreadPoolExecutor, as_completed
