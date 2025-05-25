@@ -3536,29 +3536,40 @@ with tab5:
 with tab6:
     st.header("Evaluación de PRODOCs")
     
-    # Define the rubrics for PRODOCs evaluation
-    prodoc_rubrics = {
-        "alineacion": {
-            "Alineación con ODS": ["No menciona los ODS", "Menciona los ODS pero sin conexión clara", "Alineación básica con ODS", "Buena alineación con ODS", "Excelente alineación con ODS"],
-            "Alineación con prioridades nacionales": ["No menciona prioridades nacionales", "Menciona prioridades sin conexión clara", "Alineación básica con prioridades", "Buena alineación con prioridades", "Excelente alineación con prioridades"],
-            "Coherencia con marco estratégico": ["Sin coherencia", "Coherencia limitada", "Coherencia moderada", "Buena coherencia", "Excelente coherencia"]
-        },
-        "diseno": {
-            "Claridad de objetivos": ["Objetivos confusos", "Objetivos poco claros", "Objetivos medianamente claros", "Objetivos claros", "Objetivos muy claros y precisos"],
-            "Lógica de intervención": ["Sin lógica clara", "Lógica débil", "Lógica aceptable", "Buena lógica", "Excelente lógica de intervención"],
-            "Indicadores SMART": ["Indicadores no SMART", "Pocos indicadores SMART", "Algunos indicadores SMART", "Mayoría de indicadores SMART", "Todos los indicadores son SMART"]
-        },
-        "implementacion": {
-            "Viabilidad técnica": ["No viable", "Baja viabilidad", "Viabilidad media", "Buena viabilidad", "Excelente viabilidad"],
-            "Sostenibilidad": ["Sin estrategia de sostenibilidad", "Estrategia débil", "Estrategia aceptable", "Buena estrategia", "Excelente estrategia de sostenibilidad"],
-            "Gestión de riesgos": ["Sin análisis de riesgos", "Análisis básico", "Análisis aceptable", "Buen análisis", "Excelente análisis de riesgos"]
-        },
-        "transversales": {
-            "Enfoque de género": ["No incorpora enfoque", "Incorporación mínima", "Incorporación moderada", "Buena incorporación", "Excelente incorporación"],
-            "Enfoque de derechos": ["No incorpora enfoque", "Incorporación mínima", "Incorporación moderada", "Buena incorporación", "Excelente incorporación"],
-            "Participación de actores": ["Sin participación", "Participación limitada", "Participación moderada", "Buena participación", "Excelente participación"]
-        }
-    }
+    # Load rubrics from Excel file
+    def load_prodoc_rubrics():
+        try:
+            # Try to load the rubrics from the Excel file
+            rubrics_df = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+            
+            # Check if the dataframe has the expected columns
+            required_columns = ['Rubric', 'Criterion', 'Description']
+            if not all(col in rubrics_df.columns for col in required_columns):
+                st.error(f"El archivo PRODOC.xlsx debe contener las columnas: {', '.join(required_columns)}")
+                return {}
+            
+            # Convert the dataframe to the required dictionary format
+            rubrics = {}
+            for _, row in rubrics_df.iterrows():
+                rubric_name = row['Rubric']
+                criterion = row['Criterion']
+                description = row['Description']
+                
+                if rubric_name not in rubrics:
+                    rubrics[rubric_name] = {}
+                
+                rubrics[rubric_name][criterion] = description
+            
+            return rubrics
+        except FileNotFoundError:
+            st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
+            return {}
+        except Exception as e:
+            st.error(f"Error al cargar las rúbricas desde PRODOC_rubric.xlsx: {str(e)}")
+            return {}
+    
+    # Load the rubrics from the Excel file
+    prodoc_rubrics = load_prodoc_rubrics()
     
     # Document upload interface
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader")
@@ -3575,6 +3586,17 @@ with tab6:
     # Unified process, evaluate, and download button
     st.markdown("#### Procesamiento y Evaluación de Documento")
     st.markdown('---')
+    
+    # Display the loaded rubrics
+    if prodoc_rubrics:
+        st.success(f"Se cargaron {len(prodoc_rubrics)} rúbricas desde PRODOC_rubric.xlsx")
+        with st.expander("Ver rúbricas cargadas"):
+            for rubric_name, criteria in prodoc_rubrics.items():
+                st.subheader(rubric_name)
+                for criterion, description in criteria.items():
+                    st.markdown(f"**{criterion}**: {description}")
+    else:
+        st.warning("No se pudieron cargar rúbricas desde PRODOC_rubric.xlsx. Se utilizarán rúbricas predeterminadas.")
     
     if st.button('Procesar y Evaluar', key="prodoc_process_button"):
         # Only process if file is uploaded and not already processed for this file
@@ -3658,14 +3680,14 @@ with tab6:
             if not document_text:
                 st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
                 st.stop()
+                
+            # Check if we have any rubrics to evaluate
+            if not prodoc_rubrics:
+                st.error("No hay rúbricas disponibles para la evaluación. Por favor, asegúrese de que el archivo PRODOC.xlsx existe y tiene el formato correcto.")
+                st.stop()
             
             # Define the rubrics to evaluate
-            rubrics = [
-                ("Alineación Estratégica", prodoc_rubrics["alineacion"]),
-                ("Diseño del Programa", prodoc_rubrics["diseno"]),
-                ("Implementación", prodoc_rubrics["implementacion"]),
-                ("Temas Transversales", prodoc_rubrics["transversales"])
-            ]
+            rubrics = [(rubric_name, criteria) for rubric_name, criteria in prodoc_rubrics.items()]
             
             rubric_results = []
             from concurrent.futures import ThreadPoolExecutor, as_completed
