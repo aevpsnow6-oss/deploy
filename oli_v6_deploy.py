@@ -3800,48 +3800,31 @@ with tab6:
                 # Create a horizontal bar chart instead of vertical for better label readability
                 fig = go.Figure()
                 
-                # Truncate and wrap long criterion names for better display
-                def wrap_text(text, width=30):
-                    """Wrap text to specified width"""
-                    if len(text) <= width:
-                        return text
-                    
-                    # Split into chunks of approximately width characters
-                    wrapped = []
-                    current_line = []
-                    current_length = 0
-                    
-                    for word in text.split():
-                        if current_length + len(word) + 1 <= width:  # +1 for the space
-                            current_line.append(word)
-                            current_length += len(word) + 1
-                        else:
-                            wrapped.append(' '.join(current_line))
-                            current_line = [word]
-                            current_length = len(word)
-                    
-                    if current_line:
-                        wrapped.append(' '.join(current_line))
-                    
-                    return '<br>'.join(wrapped)
+                # Create short identifiers for criteria (e.g., "Criterio 1", "Criterio 2", etc.)
+                scores_df['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df))]
                 
-                # Apply text wrapping to criteria
-                scores_df['Criterio_Wrapped'] = scores_df['Criterio'].apply(wrap_text)
+                # Create custom hover text with full criteria description
+                scores_df['Hover_Text'] = scores_df.apply(
+                    lambda row: f"<b>{row['Criterio_ID']}</b><br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
+                    axis=1
+                )
                 
-                # Add the bars - horizontal orientation
+                # Add the bars - horizontal orientation with hover text
                 fig.add_trace(go.Bar(
-                    y=scores_df['Criterio_Wrapped'],  # Using wrapped text
+                    y=scores_df['Criterio_ID'],  # Using short identifiers
                     x=scores_df['Puntuación'],
                     text=scores_df['Puntuación'].round(2),
                     textposition='auto',
                     marker_color='#3498db',
                     orientation='h',  # Horizontal bars
-                    name='Puntuación'
+                    name='Puntuación',
+                    hovertext=scores_df['Hover_Text'],
+                    hoverinfo='text'
                 ))
                 
                 # Add the average line - vertical for horizontal chart
                 fig.add_trace(go.Scatter(
-                    y=scores_df['Criterio_Wrapped'],  # Using wrapped text
+                    y=scores_df['Criterio_ID'],
                     x=[overall_avg] * len(scores_df),
                     mode='lines',
                     line=dict(color='red', width=2, dash='dash'),
@@ -3852,19 +3835,21 @@ with tab6:
                 fig.update_layout(
                     title='Puntuación por Criterio (Ordenado de Mayor a Menor)',
                     xaxis_title='Puntuación',
-                    yaxis_title='',  # No need for y-axis title with criteria names
+                    yaxis_title='',  # No need for y-axis title
                     xaxis=dict(range=[0, 5.5]),  # Now x-axis has the scores
-                    height=max(400, len(scores_df) * 50),  # Increased height to accommodate wrapped text
+                    height=max(400, len(scores_df) * 35),  # Reduced height since we're using shorter labels
                     width=800,
                     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-                    margin=dict(l=20, r=20, t=80, b=50)
+                    margin=dict(l=20, r=20, t=80, b=50),
+                    hoverlabel=dict(
+                        bgcolor="white",
+                        font_size=12,
+                        font_family="Arial"
+                    )
                 )
                 
-                # Configure y-axis for wrapped text
+                # Configure y-axis for cleaner look
                 fig.update_yaxes(
-                    tickmode='array',
-                    tickvals=list(range(len(scores_df))),
-                    ticktext=scores_df['Criterio_Wrapped'].tolist(),
                     automargin=True  # Automatically adjust margins to fit labels
                 )
                 
