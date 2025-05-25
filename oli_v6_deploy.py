@@ -3800,9 +3800,37 @@ with tab6:
                 # Create a horizontal bar chart instead of vertical for better label readability
                 fig = go.Figure()
                 
+                # Truncate and wrap long criterion names for better display
+                def wrap_text(text, width=30):
+                    """Wrap text to specified width"""
+                    if len(text) <= width:
+                        return text
+                    
+                    # Split into chunks of approximately width characters
+                    wrapped = []
+                    current_line = []
+                    current_length = 0
+                    
+                    for word in text.split():
+                        if current_length + len(word) + 1 <= width:  # +1 for the space
+                            current_line.append(word)
+                            current_length += len(word) + 1
+                        else:
+                            wrapped.append(' '.join(current_line))
+                            current_line = [word]
+                            current_length = len(word)
+                    
+                    if current_line:
+                        wrapped.append(' '.join(current_line))
+                    
+                    return '<br>'.join(wrapped)
+                
+                # Apply text wrapping to criteria
+                scores_df['Criterio_Wrapped'] = scores_df['Criterio'].apply(wrap_text)
+                
                 # Add the bars - horizontal orientation
                 fig.add_trace(go.Bar(
-                    y=scores_df['Criterio'],  # Note: x and y are swapped for horizontal
+                    y=scores_df['Criterio_Wrapped'],  # Using wrapped text
                     x=scores_df['Puntuación'],
                     text=scores_df['Puntuación'].round(2),
                     textposition='auto',
@@ -3813,7 +3841,7 @@ with tab6:
                 
                 # Add the average line - vertical for horizontal chart
                 fig.add_trace(go.Scatter(
-                    y=scores_df['Criterio'],
+                    y=scores_df['Criterio_Wrapped'],  # Using wrapped text
                     x=[overall_avg] * len(scores_df),
                     mode='lines',
                     line=dict(color='red', width=2, dash='dash'),
@@ -3826,13 +3854,20 @@ with tab6:
                     xaxis_title='Puntuación',
                     yaxis_title='',  # No need for y-axis title with criteria names
                     xaxis=dict(range=[0, 5.5]),  # Now x-axis has the scores
-                    height=max(400, len(scores_df) * 40),  # Dynamic height based on number of criteria
+                    height=max(400, len(scores_df) * 50),  # Increased height to accommodate wrapped text
                     width=800,
                     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                     margin=dict(l=20, r=20, t=80, b=50)
                 )
                 
-                # No need to rotate labels in horizontal chart
+                # Configure y-axis for wrapped text
+                fig.update_yaxes(
+                    tickmode='array',
+                    tickvals=list(range(len(scores_df))),
+                    ticktext=scores_df['Criterio_Wrapped'].tolist(),
+                    automargin=True  # Automatically adjust margins to fit labels
+                )
+                
                 # Add grid lines for better score reference
                 fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
                 
