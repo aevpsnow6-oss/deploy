@@ -4087,67 +4087,65 @@ with tab7:
                 scores_df['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df))]
                 scores_df['Hover_Text'] = scores_df.apply(
                     lambda row: f"<b>{row['Criterio_ID']}</b><br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
-                    axis=1
-                )
-                fig.add_trace(go.Bar(
-                    y=scores_df['Criterio_ID'],
-                    x=scores_df['Puntuación'],
-                    text=scores_df['Puntuación'].round(2),
-                    textposition='auto',
-                    marker_color='#3498db',
-                    orientation='h',
-                    name='Puntuación',
-                    hovertext=scores_df['Hover_Text'],
-                    hoverinfo='text'
-                ))
-                fig.add_trace(go.Scatter(
-                    y=scores_df['Criterio_ID'],
-                    x=[overall_avg] * len(scores_df),
-                    mode='lines',
-                    line=dict(color='red', width=2, dash='dash'),
-                    name=f'Promedio General: {overall_avg:.2f}'
-                ))
-                fig.update_layout(
-                    title='Puntuación por Criterio (Ordenado de Mayor a Menor)',
-                    xaxis_title='Puntuación',
-                    yaxis_title='',
-                    xaxis=dict(range=[0, 5.5]),
-                    height=max(400, len(scores_df) * 35),
-                    width=800,
-                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-                    margin=dict(l=20, r=20, t=80, b=50),
-                    hoverlabel=dict(
-                        bgcolor="white",
-                        font_size=12,
-                        font_family="Arial"
                     )
-                )
-                fig.update_yaxes(
-                    automargin=True
-                )
-                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
-                st.plotly_chart(fig, use_container_width=True)
+                def analyze_question(args):
+                    question, document_text = args
+                    try:
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4.1-mini",
+                            messages=[
+                                {"role": "system", "content": "You are a helpful assistant that answers questions based on the provided document text."},
+                                {"role": "user", "content": f"Question: {question}\nDocument Text: {document_text}"}
+                            ],
+                            max_tokens=1024,
+                            temperature=0.01,
+                        )
+                        import json
+                        content = response["choices"][0]["message"]["content"].strip()
+                        result = json.loads(content)
+                        return {
+                            'Pregunta': question,
+                            'Respuesta': result.get('Respuesta', ''),
+                            'Razonamiento': result.get('Razonamiento', ''),
+                            'Evidencia': result.get('Evidencia', '')
+                        }
+                    except Exception as e:
+                        return {
+                            'Pregunta': question,
+                            'Respuesta': 'Error',
+                            'Razonamiento': str(e),
+                            'Evidencia': ''
+                        }
+            questions = df_appraisal['Pregunta_Realizada'].dropna().unique().tolist()
+            checklist_analysis = []
+            with st.spinner('Analizando checklist con LLM...'):
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = {
+                        executor.submit(analyze_question, (q, document_text)): q
+                        for q in questions
+                    }
+                    for future in as_completed(futures):
+                        result = future.result()
+                        checklist_analysis.append(result)
+            if checklist_analysis:
+                checklist_df = pd.DataFrame(checklist_analysis)
+                st.dataframe(checklist_df, use_container_width=True)
+                # Download as CSV/ZIP
                 import io, zipfile
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w") as zipf:
-                    for rubric_name, rubric_analysis_df in rubric_results:
-                        if 'Evidencia' in rubric_analysis_df.columns:
-                            rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
-                                lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
-                            )
-                        csv = rubric_analysis_df.to_csv(index=False)
-                        arcname = f"evaluacion_appraisal_{rubric_name.replace(' ', '_').lower()}.csv"
-                        zipf.writestr(arcname, csv)
+                    csv = checklist_df.to_csv(index=False)
+                    zipf.writestr("appraisal_checklist_results.csv", csv)
                 zip_buffer.seek(0)
                 st.download_button(
                     label="Descargar resultados como ZIP",
                     data=zip_buffer,
-                    file_name="resultados_evaluacion_appraisal.zip",
+                    file_name="resultados_appraisal_checklist.zip",
                     mime="application/zip",
                     key="appraisal_download_button"
                 )
             else:
-                st.warning("No se generaron resultados para ninguna rúbrica.")
+                st.warning("No se generaron resultados para la checklist.")
         else:
             st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
     else:
