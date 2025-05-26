@@ -3890,6 +3890,7 @@ with tab6:
 # ================== TAB 7: APPRAISAL CHECKLIST (IMPROVED) =====================
 # Configuration
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
 MAX_WORKERS = 48  # Reduced from 48 to avoid rate limits
 OPENAI_MODEL = "gpt-4.1-mini"  # Correct model name
 
