@@ -3893,8 +3893,8 @@ with tab7:
     import pandas as pd
     try:
         df_appraisal = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
-        if 'Pregunta_realizada' not in df_appraisal.columns:
-            st.error("No se encontró la columna 'Pregunta_realizada' en el archivo Excel.")
+        if 'Pregunta_Realizada' not in df_appraisal.columns:
+            st.error("No se encontró la columna 'Pregunta_Realizada' en el archivo Excel.")
             df_appraisal = None
     except FileNotFoundError:
         st.error("No se encontró el archivo APPRAISAL_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
@@ -3907,7 +3907,7 @@ with tab7:
         with st.expander("Ver preguntas cargadas"):
             st.subheader("Preguntas de la Checklist de Appraisal")
             for idx, row in df_appraisal.iterrows():
-                st.markdown(f"**{row['Pregunta_realizada']}**")
+                st.markdown(f"**{row['Pregunta_Realizada']}**")
 
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="appraisal_file_uploader")
     st.info("""
