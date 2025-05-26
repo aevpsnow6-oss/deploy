@@ -4061,8 +4061,17 @@ with tab7:
         st.subheader("📊 Document Stats")
         if 'appraisal_document_stats' in st.session_state:
             stats = st.session_state['appraisal_document_stats']
-            st.metric("File Size", f"{stats['file_size']/1024:.1f} KB")
-            st.metric("Words", f"{stats['word_count']:,}")
+            
+            # Safe access to stats with fallbacks
+            file_size = stats.get('file_size', 0)
+            word_count = stats.get('word_count', stats.get('n_words', 0))  # Try both keys
+            
+            if file_size > 0:
+                st.metric("File Size", f"{file_size/1024:.1f} KB")
+            if word_count > 0:
+                st.metric("Words", f"{word_count:,}")
+        else:
+            st.info("Upload a document to see stats")
     
     # Processing button
     if st.button('🔍 Analyze Document', key="appraisal_process_button", type="primary"):
@@ -4078,10 +4087,11 @@ with tab7:
             st.error(f"❌ Error processing document: {doc_result['error']}")
             st.stop()
         
-        # Store document stats
+        # Store document stats (using consistent key names)
         st.session_state['appraisal_document_stats'] = {
             'file_size': doc_result['file_size'],
-            'word_count': doc_result['word_count']
+            'word_count': doc_result['word_count'],
+            'n_words': doc_result['word_count']  # Keep both for compatibility
         }
         
         # Display document info
