@@ -1418,7 +1418,8 @@ def summarize_text(text, prompt_template):
 # Set page config
 st.set_page_config(layout="wide")
 st.markdown("""
-    <h2 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h4>
+    <h2 style='text-align:center; color:#3498db; margin-top:0;'>EVAL-Insights LAC</h2>
+    <h3 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h3>
     <hr style='border-top: 2px solid #3498db;'>
 """, unsafe_allow_html=True)
 
