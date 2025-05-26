@@ -1546,15 +1546,15 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
                                          "Análisis por Rúbricas",
                                          "Document Chat",
-                                         "Evaluación de PRODOCs"])
+                                         "Evaluación de PRODOCs",
+                                         "Appraisal Checklist"])
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
-# Tab 1: Filters, Text Analysis and Similar Recommendations
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
     st.header("Exploración de Evidencia - Recomendaciones")
@@ -3533,6 +3533,293 @@ with tab5:
         st.info("Sube uno o más documentos válidos para comenzar el chat.")
 
 # ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
+
+# ================== TAB 7: APPRAISAL CHECKLIST =====================
+with tab7:
+    st.header("Appraisal Checklist")
+    
+    # Read rubric from Excel file
+    import pandas as pd
+    appraisal_rubric = {}
+    
+    try:
+        # Load rubric from APPRAISAL_rubric.xlsx
+        df_rubric_appraisal = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
+        
+        # Check if 'Indicador' column exists
+        if 'Indicador' not in df_rubric_appraisal.columns:
+            st.error("La columna 'Indicador' no existe en el archivo Excel.")
+            if len(df_rubric_appraisal.columns) > 0:
+                indicador_col = df_rubric_appraisal.columns[0]
+                st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
+                df_rubric_appraisal.rename(columns={indicador_col: 'Indicador'}, inplace=True)
+            else:
+                appraisal_rubric = {}
+                st.error("No se pudo encontrar una columna para los criterios.")
+        for idx, row in df_rubric_appraisal.iterrows():
+            indicador = row['Indicador']
+            if pd.isna(indicador) or str(indicador).strip() == '':
+                continue
+            indicador = str(indicador).strip()
+            level_cols = [col for col in df_rubric_appraisal.columns if col.startswith('Nivel')]
+            valores = []
+            for col in level_cols:
+                val = row[col]
+                if not pd.isna(val) and str(val).strip() != '':
+                    valores.append(str(val).strip())
+            appraisal_rubric[indicador] = valores
+        st.success(f"Rúbrica cargada correctamente desde APPRAISAL_rubric.xlsx: {len(appraisal_rubric)} criterios cargados.")
+    except FileNotFoundError:
+        st.error("No se encontró el archivo APPRAISAL_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
+    except Exception as e:
+        st.error(f"Error al cargar la rúbrica desde APPRAISAL_rubric.xlsx: {str(e)}")
+    
+    with st.expander("Ver rúbrica cargada"):
+        st.subheader("Criterios de Evaluación Appraisal")
+        for criterion, values in appraisal_rubric.items():
+            st.markdown(f"**{criterion}**: {values}")
+    
+    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="appraisal_file_uploader")
+    st.info("""
+    **Instrucciones:**
+    1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
+    2. Revise los resultados de cada rúbrica en la tabla interactiva.
+    3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
+    4. Descargue todos los resultados y evidencias en un archivo ZIP.
+    """)
+    st.markdown("#### Procesamiento y Evaluación de Documento")
+    st.markdown('---')
+    st.markdown("""
+    ## Instrucciones
+    1. Suba un archivo DOCX para evaluación.
+    2. Haga clic en 'Procesar y Evaluar' para analizar el documento.
+    3. Revise los resultados de la evaluación por cada rúbrica.
+    4. Descargue todos los resultados y evidencias en un archivo ZIP.
+    """)
+    if st.button('Procesar y Evaluar', key="appraisal_process_button"):
+        if uploaded_file is not None:
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('appraisal_last_file_hash') != file_hash:
+                with st.spinner("Procesando documento..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                        doc_result = docx2python(tmp_file.name)
+                        df = extract_docx_structure(tmp_file.name)
+                        progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                        header_1_values = df['header_1'].dropna().unique()
+                        llm_summary_rows = []
+                        llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+                        total_sections = len(header_1_values)
+                        for idx, header in enumerate(header_1_values):
+                            section_df = df[df['header_1'] == header].copy()
+                            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                            if not full_text:
+                                llm_output = ""
+                            else:
+                                llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+                                try:
+                                    response = openai.ChatCompletion.create(
+                                        model="gpt-4.1-mini",
+                                        messages=[
+                                            {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                                            {"role": "user", "content": full_text}
+                                        ],
+                                        max_tokens=1024,
+                                        temperature=0.01,
+                                    )
+                                    llm_output = response["choices"][0]["message"]["content"].strip()
+                                except Exception as e:
+                                    llm_output = f"[LLM ERROR: {e}]"
+                            llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+                        llm_progress.progress(1.0, text="LLM parsing completado.")
+                        llm_summary_df = pd.DataFrame(llm_summary_rows)
+                        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                        exploded_df = llm_summary_df.assign(
+                            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                        ).explode('llm_paragraph')
+                        exploded_df = exploded_df.reset_index(drop=True)
+                        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                        full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                        file_size = os.path.getsize(tmp_file.name)
+                        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                        n_paragraphs = len(exploded_df)
+                        st.session_state['appraisal_full_document_text'] = full_document_text
+                        st.session_state['appraisal_document_stats'] = {
+                            'file_size': file_size,
+                            'n_words': n_words,
+                            'n_paragraphs': n_paragraphs
+                        }
+                        st.session_state['appraisal_exploded_df'] = exploded_df
+                        st.session_state['appraisal_last_file_hash'] = file_hash
+                        try:
+                            os.unlink(tmp_file.name)
+                        except:
+                            pass
+                        progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+                        st.info(f"**Resumen del documento:**\n\n" + 
+                                f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+                                f"- Número de palabras: {n_words}\n" + 
+                                f"- Número de párrafos: {n_paragraphs}")
+                        st.markdown("#### Estructura extraída del documento:")
+                        st.dataframe(exploded_df, use_container_width=True)
+                        progress_bar.progress(1.0, text="Procesamiento completo.")
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
+            document_text = st.session_state.get('appraisal_full_document_text', '')
+            if not document_text:
+                st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+                st.stop()
+            rubrics = [
+                ("Evaluación Appraisal", appraisal_rubric)
+            ]
+            rubric_results = []
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            MAX_WORKERS = 48
+            def eval_one_criterion(args):
+                crit, descriptions, rubric_name = args
+                try:
+                    result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                    return {
+                        'Criterio': crit,
+                        'Score': result.get('score', 0),
+                        'Análisis': result.get('analysis', ''),
+                        'Evidencia': result.get('evidence', ''),
+                        'Error': result.get('error', '') if 'error' in result else '',
+                        'Rúbrica': rubric_name
+                    }
+                except Exception as e:
+                    return {
+                        'Criterio': crit,
+                        'Score': 0,
+                        'Análisis': '',
+                        'Evidencia': '',
+                        'Error': str(e),
+                        'Rúbrica': rubric_name
+                    }
+            for rubric_name, rubric_dict in rubrics:
+                rubric_analysis_data = []
+                n_criteria = len(rubric_dict)
+                progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+                with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+                    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                        futures = {
+                            executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
+                            for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+                        }
+                        completed = 0
+                        for future in as_completed(futures):
+                            result = future.result()
+                            rubric_analysis_data.append(result)
+                            completed += 1
+                            crit, idx = futures[future]
+                            progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+                rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+            if rubric_results:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                    if not rubric_analysis_df.empty:
+                        if 'Evidencia' not in rubric_analysis_df.columns:
+                            rubric_analysis_df['Evidencia'] = ''
+                        cols = rubric_analysis_df.columns.tolist()
+                        if 'Análisis' in cols and 'Evidencia' in cols:
+                            new_order = cols.copy()
+                            if new_order.index('Evidencia') < new_order.index('Análisis'):
+                                new_order.remove('Evidencia')
+                                new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                            rubric_analysis_df = rubric_analysis_df[new_order]
+                        if 'Evidencia' in rubric_analysis_df.columns:
+                            rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                                lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                            )
+                        st.dataframe(rubric_analysis_df, use_container_width=True)
+                    else:
+                        st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+                st.markdown("### Visualización de Resultados")
+                all_scores = []
+                for rubric_name, df in rubric_results:
+                    for _, row in df.iterrows():
+                        all_scores.append({
+                            'Criterio': row['Criterio'],
+                            'Puntuación': row['Score']
+                        })
+                scores_df = pd.DataFrame(all_scores)
+                overall_avg = scores_df['Puntuación'].mean()
+                scores_df = scores_df.sort_values(by='Puntuación', ascending=False)
+                fig = go.Figure()
+                scores_df['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df))]
+                scores_df['Hover_Text'] = scores_df.apply(
+                    lambda row: f"<b>{row['Criterio_ID']}</b><br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
+                    axis=1
+                )
+                fig.add_trace(go.Bar(
+                    y=scores_df['Criterio_ID'],
+                    x=scores_df['Puntuación'],
+                    text=scores_df['Puntuación'].round(2),
+                    textposition='auto',
+                    marker_color='#3498db',
+                    orientation='h',
+                    name='Puntuación',
+                    hovertext=scores_df['Hover_Text'],
+                    hoverinfo='text'
+                ))
+                fig.add_trace(go.Scatter(
+                    y=scores_df['Criterio_ID'],
+                    x=[overall_avg] * len(scores_df),
+                    mode='lines',
+                    line=dict(color='red', width=2, dash='dash'),
+                    name=f'Promedio General: {overall_avg:.2f}'
+                ))
+                fig.update_layout(
+                    title='Puntuación por Criterio (Ordenado de Mayor a Menor)',
+                    xaxis_title='Puntuación',
+                    yaxis_title='',
+                    xaxis=dict(range=[0, 5.5]),
+                    height=max(400, len(scores_df) * 35),
+                    width=800,
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=20, r=20, t=80, b=50),
+                    hoverlabel=dict(
+                        bgcolor="white",
+                        font_size=12,
+                        font_family="Arial"
+                    )
+                )
+                fig.update_yaxes(
+                    automargin=True
+                )
+                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+                st.plotly_chart(fig, use_container_width=True)
+                import io, zipfile
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                    for rubric_name, rubric_analysis_df in rubric_results:
+                        if 'Evidencia' in rubric_analysis_df.columns:
+                            rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                                lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                            )
+                        csv = rubric_analysis_df.to_csv(index=False)
+                        arcname = f"evaluacion_appraisal_{rubric_name.replace(' ', '_').lower()}.csv"
+                        zipf.writestr(arcname, csv)
+                zip_buffer.seek(0)
+                st.download_button(
+                    label="Descargar resultados como ZIP",
+                    data=zip_buffer,
+                    file_name="resultados_evaluacion_appraisal.zip",
+                    mime="application/zip",
+                    key="appraisal_download_button"
+                )
+            else:
+                st.warning("No se generaron resultados para ninguna rúbrica.")
+        else:
+            st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+    else:
+        st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
 with tab6:
     st.header("Evaluación de PRODOCs")
     
