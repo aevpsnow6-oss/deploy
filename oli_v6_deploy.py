@@ -3302,7 +3302,6 @@ with tab5:
 
     # Presentation box
     st.info("""
-    **📄 BOX DE PRESENTACIÓN:**
 
     Arrastra uno o más DOCX/TXT (max 200MB) y conversa directamente con su contenido. Este chat responde solo con la información de los archivos cargados—no recurre a fuentes externas—para ayudarte a revisar propuestas antes de enviarlas, aclarar pasajes de informes, preparar notas técnicas y comprobar coherencias entre objetivos, actividades y resultados.
 
