@@ -1552,7 +1552,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Exploración de evide
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
                                          "Document Chat",
-                                         "Evaluación de PRODOCs",
+                                         "Evaluación de sostenibilidad del proyecto",
                                          "Appraisal Checklist",
                                          "Tablero de seguimiento de recomendaciones y planes de acción"])
 #--------------------------#-------------------------------#
