@@ -3499,7 +3499,7 @@ with tab5:
 
 # ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
 with tab6:
-    st.header("Evaluación de PRODOCs")
+    st.header("Evaluación de sostenibilidad del proyecto")
     
     # Read rubric from Excel file
     import pandas as pd
