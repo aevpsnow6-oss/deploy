@@ -4135,7 +4135,6 @@ with tab8:
 
     # Comprehensive presentation box
     st.info("""
-    **📈 PARA EL BOX:**
 
     En esta ventana se presentan gráficos y estadísticas derivados de las respuestas institucionales a las recomendaciones (incluidos sus planes de acción) ya procesadas por la herramienta. El panel permite seguir el estado de respuesta (completadas, parcialmente completadas, acción no planificada, acción no tomada, rechazadas, sin respuesta), analizar la calidad de la respuesta (coherencia con el plan, calidad del plan, nivel de atención), observar la evolución en el tiempo y la composición por país, año y dimensión (gobernanza, participación, género, transición justa, capacidades, sostenibilidad financiera, incidencia).
 
