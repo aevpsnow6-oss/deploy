@@ -3298,8 +3298,26 @@ with tab2:
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
 with tab5:
-    st.header("Document Chat: Chatea con tu Documento")
-    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
+    st.header("Chatea con tu documento")
+
+    # Presentation box
+    st.info("""
+    **📄 BOX DE PRESENTACIÓN:**
+
+    Arrastra uno o más DOCX/TXT (max 200MB) y conversa directamente con su contenido. Este chat responde solo con la información de los archivos cargados—no recurre a fuentes externas—para ayudarte a revisar propuestas antes de enviarlas, aclarar pasajes de informes, preparar notas técnicas y comprobar coherencias entre objetivos, actividades y resultados.
+
+    Al formular tus preguntas, indica el nivel de detalle que necesitas y pide que las respuestas incluyan citas breves entre comillas y metadatos (título, sección/página, año) para mantener la trazabilidad. Si un dato no existe en los archivos, se marcará "ND" sin inventar información.
+
+    **Úsalo para:**
+    - Aprender de experiencias de evaluación
+    - Profundizar en el conocimiento de secciones de los informes
+    - Preparar notas técnicas a partir de esta evidencia
+    - Verificar la coherencia entre objetivos, actividades y resultados
+    - Generar tablas copiables a Excel
+    - Comparar varios documentos (hasta de 200MB) en una misma conversación
+
+    *Nota: El chat mantiene memoria de la conversación durante la sesión activa.*
+    """)
 
     # Session state for chat and document
     if 'doc_chat_history' not in st.session_state:
