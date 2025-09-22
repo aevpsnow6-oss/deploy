@@ -435,7 +435,7 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                     for cid in selected_criteria_ids:
                         rubric_dict_single = {cid: rubric_dict[cid]}
                         # Use top_n_paragraphs=10 or as appropriate
-                        result = store.score_rubric_directly(rubric_dict_single, df=section_df, top_n_paragraphs=10)
+                        result = store.score_rubric_directly(rubric_dict_single, top_n_paragraphs=10)
                         # result is a dict keyed by cid
                         if cid not in results:
                             results[cid] = {'score': 0, 'context': '', 'analysis': {}}
@@ -3201,7 +3201,12 @@ with tab2:
             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
-                        executor.submit(eval_one_criterion, (crit, rubric_data['valores'], rubric_data['dimension'], rubric_name)): (crit, idx)
+                        executor.submit(eval_one_criterion, (
+                            crit,
+                            rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+                            rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                            rubric_name
+                        )): (crit, idx)
                         for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
                     }
                     completed = 0
@@ -3673,7 +3678,12 @@ with tab6:
                 with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                         futures = {
-                            executor.submit(eval_one_criterion, (crit, rubric_data['valores'], rubric_data['dimension'], rubric_name)): (crit, idx)
+                            executor.submit(eval_one_criterion, (
+                                crit,
+                                rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+                                rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                                rubric_name
+                            )): (crit, idx)
                             for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
                         }
                         completed = 0
