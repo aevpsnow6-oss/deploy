@@ -1852,51 +1852,6 @@ with tab1:
             st.error(f"No se pudo exportar los datos filtrados: {e}")
             import traceback
             st.error(traceback.format_exc())
-    
-    # Chat section for querying similar recommendations
-    st.header("Búsqueda de Recomendaciones")
-    st.markdown("### Búsqueda")
-    
-    # Input for user query
-    user_query = st.text_input("Búsqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab1')
-    
-    # Search method selection
-    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab1')
-    
-    # Slider for similarity score threshold (only relevant for similarity search)
-    if search_method == "Por Similitud":
-        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab1')
-    
-    # Function to display results
-    def display_results(results):
-        if results:
-            st.markdown("#### Recomendaciones similares")
-            for i, result in enumerate(results):
-                st.markdown(f"**Recomendación {i+1}:**")
-                st.markdown(f"**Texto:** {result['recommendation']}")
-                if "similarity" in result:
-                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
-                st.markdown(f"**País:** {result['country']}")
-                st.markdown(f"**Año:** {result['year']}")
-                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
-                st.markdown("---")
-        else:
-            st.write("No se encontraron recomendaciones para la búsqueda.")
-    
-    # Button to search for recommendations
-    if st.button("Buscar Recomendaciones", key='search_button_tab1'):
-        if user_query:
-            with st.spinner('Buscando recomendaciones...'):
-                if search_method == "Por Similitud":
-                    query_embedding = get_embedding_with_retry(user_query)
-                    if query_embedding is not None:
-                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
-                        display_results(results)
-                    else:
-                        st.error("No se pudo generar el embedding para la consulta.")
-                else:
-                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
-                    display_results(results)
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
@@ -4200,6 +4155,51 @@ with tab8:
 
     *Sugerencia: comience con un umbral de 0.70 y ajústelo según el contexto.*
     """)
+
+    # Chat section for querying similar recommendations
+    st.header("Búsqueda de Recomendaciones")
+    st.markdown("### Búsqueda")
+
+    # Input for user query
+    user_query = st.text_input("Búsqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab8')
+
+    # Search method selection
+    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab8')
+
+    # Slider for similarity score threshold (only relevant for similarity search)
+    if search_method == "Por Similitud":
+        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab8')
+
+    # Function to display results
+    def display_results(results):
+        if results:
+            st.markdown("#### Recomendaciones similares")
+            for i, result in enumerate(results):
+                st.markdown(f"**Recomendación {i+1}:**")
+                st.markdown(f"**Texto:** {result['recommendation']}")
+                if "similarity" in result:
+                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+                st.markdown(f"**País:** {result['country']}")
+                st.markdown(f"**Año:** {result['year']}")
+                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+                st.markdown("---")
+        else:
+            st.write("No se encontraron recomendaciones para la búsqueda.")
+
+    # Button to search for recommendations
+    if st.button("Buscar Recomendaciones", key='search_button_tab8'):
+        if user_query:
+            with st.spinner('Buscando recomendaciones...'):
+                if search_method == "Por Similitud":
+                    query_embedding = get_embedding_with_retry(user_query)
+                    if query_embedding is not None:
+                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
+                        display_results(results)
+                    else:
+                        st.error("No se pudo generar el embedding para la consulta.")
+                else:
+                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
+                    display_results(results)
 
     # Use the main recommendations dataset
     filtered_df = df.copy()
