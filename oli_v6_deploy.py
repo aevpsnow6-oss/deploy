@@ -1554,7 +1554,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Exploración de evide
                                          "Document Chat",
                                          "Evaluación de PRODOCs",
                                          "Appraisal Checklist",
-                                         "Visualizaciones"])
+                                         "Tablero de seguimiento de recomendaciones y planes de acción"])
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
 # Tab 1: Filters, Text Analysis and Similar Recommendations
@@ -4174,9 +4174,32 @@ with tab7:
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
-# Tab 8: Visualizations
+# Tab 8: Tablero de seguimiento de recomendaciones y planes de acción
 with tab8:
-    st.header("📊 Visualizaciones")
+    st.header("📊 Tablero de seguimiento de recomendaciones y planes de acción")
+
+    # Comprehensive presentation box
+    st.info("""
+    **📈 PARA EL BOX:**
+
+    En esta ventana se presentan gráficos y estadísticas derivados de las respuestas institucionales a las recomendaciones (incluidos sus planes de acción) ya procesadas por la herramienta. El panel permite seguir el estado de respuesta (completadas, parcialmente completadas, acción no planificada, acción no tomada, rechazadas, sin respuesta), analizar la calidad de la respuesta (coherencia con el plan, calidad del plan, nivel de atención), observar la evolución en el tiempo y la composición por país, año y dimensión (gobernanza, participación, género, transición justa, capacidades, sostenibilidad financiera, incidencia).
+
+    También muestra atributos de las recomendaciones (innovación, precisión/claridad, viabilidad, horizonte temporal, impacto esperado) e identifica barreras de implementación.
+
+    **🎯 Orientado al nivel directivo y unidades de programación para:**
+    - Conducir conversaciones de seguimiento: qué ocurrió después de decidir implementar (o no) cada recomendación
+    - Identificar por qué quedaron pendientes y qué ajustes corresponden
+    - Facilitar acuerdos operativos (responsables y plazos)
+    - Realizar reprogramaciones cuando haya cuellos de botella
+    - Escalar barreras críticas
+    - Preparar notas técnicas/minutas con evidencia gráfica para rendición de cuentas ante mandantes
+
+    **💡 En síntesis:** El tablero transforma la evidencia en prioridades de acción verificables y ciclos de aprendizaje para cerrar brechas y sostener avances.
+
+    **🔍 Análisis por similitud:** Use la opción "Por similitud" para estimar la correspondencia entre el núcleo de la recomendación y la respuesta/plan. Una similitud baja puede señalar un desajuste de alcance, actores o resultados esperados; tómelo como insumo para discutir ajustes y seguimiento con los equipos.
+
+    *Sugerencia: comience con un umbral de 0.70 y ajústelo según el contexto.*
+    """)
 
     # Use the main recommendations dataset
     filtered_df = df.copy()
