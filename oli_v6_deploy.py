@@ -285,18 +285,25 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
 
     st.markdown("### Evaluación por Rúbrica (Hierarchical RAG)")
 
+    # Initialize session state keys with unique prefixes to avoid conflicts
+    session_keys = {
+        'selected_sections': 'rubric_eval_selected_sections',
+        'sections_confirmed': 'rubric_eval_sections_confirmed',
+        'selected_criteria': 'rubric_eval_selected_criteria'
+    }
+
     # --- Section Selection ---
-    if 'selected_sections_for_eval' not in st.session_state:
-        st.session_state.selected_sections_for_eval = []
-    if 'evaluation_sections_confirmed' not in st.session_state:
-        st.session_state.evaluation_sections_confirmed = False
+    if session_keys['selected_sections'] not in st.session_state:
+        st.session_state[session_keys['selected_sections']] = []
+    if session_keys['sections_confirmed'] not in st.session_state:
+        st.session_state[session_keys['sections_confirmed']] = False
 
     st.markdown("#### 1. Selección de Secciones para Evaluación")
     main_sections = []
     for level, headings in sorted(toc_hierarchy.items()):
         if headings and not main_sections:
             main_sections = headings
-    valid_selected_sections = [s for s in st.session_state.selected_sections_for_eval if s in main_sections]
+    valid_selected_sections = [s for s in st.session_state[session_keys['selected_sections']] if s in main_sections]
     if not valid_selected_sections and main_sections:
         valid_selected_sections = [main_sections[0]]
     selected_sections = st.multiselect(
@@ -309,14 +316,14 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
         if not selected_sections:
             st.warning("Por favor seleccione al menos una sección para evaluar.")
         else:
-            st.session_state.selected_sections_for_eval = selected_sections
-            st.session_state.evaluation_sections_confirmed = True
+            st.session_state[session_keys['selected_sections']] = selected_sections
+            st.session_state[session_keys['sections_confirmed']] = True
             st.success(f"Secciones confirmadas para evaluación: {', '.join(selected_sections)}")
-    if st.session_state.selected_sections_for_eval:
-        st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state.selected_sections_for_eval)}")
+    if st.session_state[session_keys['selected_sections']]:
+        st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state[session_keys['selected_sections']])}")
 
     # --- Rubric Selection & Evaluation ---
-    if st.session_state.evaluation_sections_confirmed:
+    if st.session_state[session_keys['sections_confirmed']]:
         st.markdown("#### 2. Selección de Rúbrica y Criterios")
         rubric_type = st.selectbox(
             "Seleccione tipo de rúbrica para evaluación:",
@@ -349,23 +356,23 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
             st.markdown("**Criterios**")
             if selected_category:
                 category_criteria = rubric_df[rubric_df[group_col] == selected_category]
-                if 'selected_criteria' not in st.session_state:
-                    st.session_state.selected_criteria = {}
+                if session_keys['selected_criteria'] not in st.session_state:
+                    st.session_state[session_keys['selected_criteria']] = {}
                 all_criteria_in_category = st.checkbox(f"Seleccionar todos los criterios en '{selected_category}'")
                 selected_criteria_ids = []
                 for _, criterion_row in category_criteria.iterrows():
                     criterion_id = criterion_row[criteria_col]
                     criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
-                    if criterion_id not in st.session_state.selected_criteria:
-                        st.session_state.selected_criteria[criterion_id] = False
+                    if criterion_id not in st.session_state[session_keys['selected_criteria']]:
+                        st.session_state[session_keys['selected_criteria']][criterion_id] = False
                     if all_criteria_in_category:
-                        st.session_state.selected_criteria[criterion_id] = True
+                        st.session_state[session_keys['selected_criteria']][criterion_id] = True
                     is_selected = st.checkbox(
                         criterion_name,
-                        value=st.session_state.selected_criteria[criterion_id],
+                        value=st.session_state[session_keys['selected_criteria']][criterion_id],
                         key=f"criterion_{criterion_id}"
                     )
-                    st.session_state.selected_criteria[criterion_id] = is_selected
+                    st.session_state[session_keys['selected_criteria']][criterion_id] = is_selected
                     if is_selected:
                         selected_criteria_ids.append(criterion_id)
         with st.expander("Opciones avanzadas de selección de criterios"):
@@ -373,20 +380,20 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
             if select_all_criteria:
                 for _, row in rubric_df.iterrows():
                     criterion_id = row[criteria_col]
-                    st.session_state.selected_criteria[criterion_id] = True
+                    st.session_state[session_keys['selected_criteria']][criterion_id] = True
                 st.success("Todos los criterios han sido seleccionados.")
             if st.button("Limpiar todas las selecciones"):
-                for criterion_id in st.session_state.selected_criteria:
-                    st.session_state.selected_criteria[criterion_id] = False
+                for criterion_id in st.session_state[session_keys['selected_criteria']]:
+                    st.session_state[session_keys['selected_criteria']][criterion_id] = False
                 st.success("Todas las selecciones han sido limpiadas.")
         if st.button("Ver Detalles de Criterios Seleccionados"):
-            selected_any = any(st.session_state.selected_criteria.values())
+            selected_any = any(st.session_state[session_keys['selected_criteria']].values())
             if not selected_any:
                 st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
             else:
                 st.markdown("##### Detalles de Criterios Seleccionados")
                 selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
-                    [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+                    [cid for cid, selected in st.session_state[session_keys['selected_criteria']].items() if selected]
                 )]
                 for _, criterion_row in selected_criteria_df.iterrows():
                     criterion_id = criterion_row[criteria_col]
@@ -395,13 +402,13 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                         levels_df = rubric_to_levels_df(criterion_row, criteria_col)
                         st.table(levels_df)
         if st.button("Iniciar Evaluación de Criterios Seleccionados (RAG)"):
-            selected_any = any(st.session_state.selected_criteria.values())
+            selected_any = any(st.session_state[session_keys['selected_criteria']].values())
             if not selected_any:
                 st.warning("Por favor seleccione al menos un criterio para evaluar.")
             else:
                 st.markdown("#### 3. Evaluación de Criterios (RAG)")
-                selected_criteria_ids = [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
-                filtered_df = exploded_df[exploded_df['header_1'].isin(st.session_state.selected_sections_for_eval)].copy()
+                selected_criteria_ids = [cid for cid, selected in st.session_state[session_keys['selected_criteria']].items() if selected]
+                filtered_df = exploded_df[exploded_df['header_1'].isin(st.session_state[session_keys['selected_sections']])].copy()
                 if filtered_df.empty:
                     st.warning("No se encontraron párrafos en las secciones seleccionadas.")
                     return
@@ -1439,10 +1446,6 @@ if not openai_api_key:
     st.warning("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable in Streamlit Cloud.")
     st.info("For local development, you can use a .env file or set the environment variable.")
     # Continue with limited functionality or show instructions on setup
-
-# Initialize session state if not already set
-if 'similar_df' not in st.session_state:
-    st.session_state['similar_df'] = pd.DataFrame()
 
 # Initialize data and embeddings - wrap in try/except for better error handling
 try:
