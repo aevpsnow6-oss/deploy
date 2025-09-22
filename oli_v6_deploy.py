@@ -4246,7 +4246,7 @@ with tab8:
         total_kpi_values = [
             filtered_df_unique.shape[0],
             filtered_df_unique['Country(ies)'].nunique(),
-            filtered_df_unique['eval_id'].nunique(),
+            filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 0,
             filtered_df_unique['year'].nunique()
         ]
 
