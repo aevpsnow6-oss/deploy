@@ -3163,13 +3163,13 @@ with tab4:
         # Call LLM using OpenAI v0.28 syntax
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-5-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=7000
+                max_tokens=7000
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
@@ -3553,9 +3553,9 @@ with tab5:
                             messages.append(msg)
                         try:
                             response = openai.ChatCompletion.create(
-                                model="gpt-5-mini",
+                                model="gpt-4.1-mini",
                                 messages=messages,
-                                max_completion_tokens=2048,
+                                max_tokens=2048,
                                 temperature=0.3
                             )
                             answer = response['choices'][0]['message']['content'].strip()
