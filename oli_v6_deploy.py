@@ -3553,9 +3553,9 @@ with tab5:
                             messages.append(msg)
                         try:
                             response = openai.ChatCompletion.create(
-                                model="gpt-4.1-mini",
+                                model="gpt-5-mini",
                                 messages=messages,
-                                max_tokens=2048,
+                                max_completion_tokens=2048,
                                 temperature=0.3
                             )
                             answer = response['choices'][0]['message']['content'].strip()
