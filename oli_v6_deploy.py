@@ -1548,9 +1548,9 @@ def load_lessons_embeddings():
     
 # Tabs
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Exploración de evidencia-Insights evaluativos",
+                                         "Revisión por criterios con trazabilidad",
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
-                                         "Revisión por criterios con trazabilidad",
                                          "Document Chat",
                                          "Evaluación de PRODOCs",
                                          "Appraisal Checklist",
@@ -1900,8 +1900,8 @@ with tab1:
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
-# Tab 2: Filters, Text Analysis and Similar Lessons Learned
-with tab2:
+# Tab 3: Filters, Text Analysis and Similar Lessons Learned
+with tab3:
     st.header("Exploración de Evidencia - Lecciones Aprendidas")
     
     # --- DATASET LOADING ---
@@ -2383,9 +2383,9 @@ with tab2:
             
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
-# Tab 3: Upload and Evaluate Document by Rubric
+# Tab 4: Exploración de Evidencia - Buenas Prácticas
 
-with tab3:
+with tab4:
     st.header("Exploración de Evidencia - Buenas Prácticas")
     
     # --- DATASET LOADING ---
@@ -2771,8 +2771,8 @@ with tab3:
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
-# Tab 4: Upload and Evaluate Document by Rubric
-with tab4:
+# Tab 2: Revisión por criterios con trazabilidad
+with tab2:
     st.header("Revisión por criterios con trazabilidad")
 
     # Descriptive text box
