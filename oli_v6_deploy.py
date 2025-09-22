@@ -3163,7 +3163,7 @@ with tab4:
         # Call LLM using OpenAI v0.28 syntax
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4.1-mini",
+                model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
