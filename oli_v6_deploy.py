@@ -2734,7 +2734,7 @@ with tab2:
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Puedes exportar a Excel (Criterio, Score, Análisis, Evidencia, Error, Rúbrica).
+    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Puedes exportar a Excel (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica).
 
     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
@@ -2753,29 +2753,33 @@ with tab2:
         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_engagement.iterrows():
             indicador = row['Indicador']
-            valores = row.drop('Indicador').values.tolist()
-            engagement_rubric[indicador] = valores
+            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+            engagement_rubric[indicador] = {'valores': valores, 'dimension': dimension}
 
         df_rubric_performance = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_performance')
         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
         for idx, row in df_rubric_performance.iterrows():
             criterio = row['subdim']
-            valores = row.drop('subdim').values.tolist()
-            performance_rubric[criterio] = valores
+            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            valores = row.drop(['subdim', 'Dimensión'], errors='ignore').values.tolist()
+            performance_rubric[criterio] = {'valores': valores, 'dimension': dimension}
 
         df_rubric_parteval = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_parteval')
         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_parteval.iterrows():
             indicador = row['Indicador']
-            valores = row.drop('Indicador').values.tolist()
-            parteval_rubric[indicador] = valores
+            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+            parteval_rubric[indicador] = {'valores': valores, 'dimension': dimension}
 
         df_rubric_gender = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_gender_')
         df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_gender.iterrows():
             indicador = row['Indicador']
-            valores = row.drop('Indicador').values.tolist()
-            gender_rubric[indicador] = valores
+            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+            gender_rubric[indicador] = {'valores': valores, 'dimension': dimension}
 
         # Load TJ Traditional rubric from Rubricas_6ago2025.xlsx
         try:
@@ -2784,8 +2788,9 @@ with tab2:
             for idx, row in df_rubric_tj_traditional.iterrows():
                 indicador = row['Indicador']
                 if pd.notna(indicador) and str(indicador).strip():
-                    valores = row.drop('Indicador').values.tolist()
-                    tj_traditional_rubric[indicador] = valores
+                    dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+                    valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+                    tj_traditional_rubric[indicador] = {'valores': valores, 'dimension': dimension}
         except Exception as e:
             st.error(f"❌ Error cargando TJ Tradicional: {e}")
             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
@@ -2797,8 +2802,9 @@ with tab2:
             for idx, row in df_rubric_tj_just_transition.iterrows():
                 indicador = row['Indicador']
                 if pd.notna(indicador) and str(indicador).strip():
-                    valores = row.drop('Indicador').values.tolist()
-                    tj_just_transition_rubric[indicador] = valores
+                    dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+                    valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+                    tj_just_transition_rubric[indicador] = {'valores': valores, 'dimension': dimension}
         except Exception as e:
             st.error(f"❌ Error cargando TJ Transición Justa: {e}")
             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
@@ -3158,11 +3164,12 @@ with tab2:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 48
         def eval_one_criterion(args):
-            crit, descriptions, rubric_name = args
+            crit, descriptions, dimension, rubric_name = args
             try:
                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                 return {
                     'Criterio': crit,
+                    'Dimensión': dimension,
                     'Score': result.get('score', 0),
                     'Análisis': result.get('analysis', ''),
                     'Evidencia': result.get('evidence', ''),
@@ -3172,6 +3179,7 @@ with tab2:
             except Exception as e:
                 return {
                     'Criterio': crit,
+                    'Dimensión': dimension,
                     'Score': 0,
                     'Análisis': '',
                     'Evidencia': '',
@@ -3190,8 +3198,8 @@ with tab2:
             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
-                        executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
-                        for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+                        executor.submit(eval_one_criterion, (crit, rubric_data['valores'], rubric_data['dimension'], rubric_name)): (crit, idx)
+                        for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
                     }
                     completed = 0
                     for future in as_completed(futures):
@@ -3206,17 +3214,17 @@ with tab2:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                 if not rubric_analysis_df.empty:
-                    # Ensure 'Evidencia' column is present and first for visibility
+                    # Ensure 'Evidencia' column is present
                     if 'Evidencia' not in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = ''
-                    # Reorder columns to show 'Evidencia' after 'Análisis' if present
+
+                    # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
                     cols = rubric_analysis_df.columns.tolist()
-                    if 'Análisis' in cols and 'Evidencia' in cols:
-                        new_order = cols.copy()
-                        if new_order.index('Evidencia') < new_order.index('Análisis'):
-                            new_order.remove('Evidencia')
-                            new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
-                        rubric_analysis_df = rubric_analysis_df[new_order]
+                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
                     # Normalize 'Evidencia' column to always be a string
                     if 'Evidencia' in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
@@ -3632,11 +3640,12 @@ with tab6:
             MAX_WORKERS = 48
             
             def eval_one_criterion(args):
-                crit, descriptions, rubric_name = args
+                crit, descriptions, dimension, rubric_name = args
                 try:
                     result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                     return {
                         'Criterio': crit,
+                        'Dimensión': dimension,
                         'Score': result.get('score', 0),
                         'Análisis': result.get('analysis', ''),
                         'Evidencia': result.get('evidence', ''),
@@ -3646,6 +3655,7 @@ with tab6:
                 except Exception as e:
                     return {
                         'Criterio': crit,
+                        'Dimensión': dimension,
                         'Score': 0,
                         'Análisis': '',
                         'Evidencia': '',
@@ -3660,8 +3670,8 @@ with tab6:
                 with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                         futures = {
-                            executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
-                            for idx, (crit, descriptions) in enumerate(rubric_dict.items())
+                            executor.submit(eval_one_criterion, (crit, rubric_data['valores'], rubric_data['dimension'], rubric_name)): (crit, idx)
+                            for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
                         }
                         completed = 0
                         for future in as_completed(futures):
@@ -3677,17 +3687,17 @@ with tab6:
                 for rubric_name, rubric_analysis_df in rubric_results:
                     st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                     if not rubric_analysis_df.empty:
-                        # Ensure 'Evidencia' column is present and first for visibility
+                        # Ensure 'Evidencia' column is present
                         if 'Evidencia' not in rubric_analysis_df.columns:
                             rubric_analysis_df['Evidencia'] = ''
-                        # Reorder columns to show 'Evidencia' after 'Análisis' if present
+
+                        # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
                         cols = rubric_analysis_df.columns.tolist()
-                        if 'Análisis' in cols and 'Evidencia' in cols:
-                            new_order = cols.copy()
-                            if new_order.index('Evidencia') < new_order.index('Análisis'):
-                                new_order.remove('Evidencia')
-                                new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
-                            rubric_analysis_df = rubric_analysis_df[new_order]
+                        desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                        new_order = [col for col in desired_order if col in cols]
+                        remaining_cols = [col for col in cols if col not in desired_order]
+                        final_order = new_order + remaining_cols
+                        rubric_analysis_df = rubric_analysis_df[final_order]
                         # Normalize 'Evidencia' column to always be a string
                         if 'Evidencia' in rubric_analysis_df.columns:
                             rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
