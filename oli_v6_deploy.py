@@ -1625,14 +1625,75 @@ with tab1:
         st.markdown("#### Fuentes de Texto")
         text_col1, text_col2, text_col3, text_col4, text_col5 = st.columns(5)
         
-        analyze_recommendations = text_col1.checkbox('Recomendaciones', value=True, key='recomendaciones_tab1')
-        analyze_lessons = text_col2.checkbox('Lecciones Aprendidas', value=False, key='lecciones_aprendidas_tab1')
-        analyze_practices = text_col3.checkbox('Buenas Prácticas', value=False, key='buenas_practicas_tab1')
-        analyze_plans = text_col4.checkbox('Planes de Acción', value=False, key='planes_accion_tab1')
-        select_all = text_col5.checkbox('Seleccionar Todas', key='todas_fuentes_tab1')
+        # Initialize session state for checkboxes if not exists
+        if 'select_all_tab1' not in st.session_state:
+            st.session_state.select_all_tab1 = False
+        if 'recomendaciones_tab1' not in st.session_state:
+            st.session_state.recomendaciones_tab1 = True
+        if 'lecciones_aprendidas_tab1' not in st.session_state:
+            st.session_state.lecciones_aprendidas_tab1 = False
+        if 'buenas_practicas_tab1' not in st.session_state:
+            st.session_state.buenas_practicas_tab1 = False
+        if 'planes_accion_tab1' not in st.session_state:
+            st.session_state.planes_accion_tab1 = False
         
-        if select_all:
-            analyze_recommendations = analyze_lessons = analyze_practices = analyze_plans = True
+        # Handle select all logic
+        select_all = text_col5.checkbox('Seleccionar Todas', value=st.session_state.select_all_tab1, key='todas_fuentes_tab1')
+        
+        # If select all was just clicked, update all individual checkboxes
+        if select_all != st.session_state.select_all_tab1:
+            st.session_state.select_all_tab1 = select_all
+            st.session_state.recomendaciones_tab1 = select_all
+            st.session_state.lecciones_aprendidas_tab1 = select_all
+            st.session_state.buenas_practicas_tab1 = select_all
+            st.session_state.planes_accion_tab1 = select_all
+            st.rerun()
+        
+        # Individual checkboxes using session state
+        analyze_recommendations = text_col1.checkbox('Recomendaciones', 
+                                                    value=st.session_state.recomendaciones_tab1, 
+                                                    key='recomendaciones_tab1')
+        analyze_lessons = text_col2.checkbox('Lecciones Aprendidas', 
+                                           value=st.session_state.lecciones_aprendidas_tab1, 
+                                           key='lecciones_aprendidas_tab1')
+        analyze_practices = text_col3.checkbox('Buenas Prácticas', 
+                                             value=st.session_state.buenas_practicas_tab1, 
+                                             key='buenas_practicas_tab1')
+        analyze_plans = text_col4.checkbox('Planes de Acción', 
+                                         value=st.session_state.planes_accion_tab1, 
+                                         key='planes_accion_tab1')
+        
+        # Update session state when individual checkboxes change
+        if analyze_recommendations != st.session_state.recomendaciones_tab1:
+            st.session_state.recomendaciones_tab1 = analyze_recommendations
+        if analyze_lessons != st.session_state.lecciones_aprendidas_tab1:
+            st.session_state.lecciones_aprendidas_tab1 = analyze_lessons
+        if analyze_practices != st.session_state.buenas_practicas_tab1:
+            st.session_state.buenas_practicas_tab1 = analyze_practices
+        if analyze_plans != st.session_state.planes_accion_tab1:
+            st.session_state.planes_accion_tab1 = analyze_plans
+        
+        # Check if select all should be automatically unchecked
+        all_selected = (analyze_recommendations and analyze_lessons and 
+                       analyze_practices and analyze_plans)
+        if not all_selected and st.session_state.select_all_tab1:
+            st.session_state.select_all_tab1 = False
+        
+        # Show current selection status
+        selected_sources = []
+        if analyze_recommendations:
+            selected_sources.append("Recomendaciones")
+        if analyze_lessons:
+            selected_sources.append("Lecciones Aprendidas")
+        if analyze_practices:
+            selected_sources.append("Buenas Prácticas")
+        if analyze_plans:
+            selected_sources.append("Planes de Acción")
+        
+        if selected_sources:
+            st.info(f"📋 Fuentes seleccionadas: {', '.join(selected_sources)}")
+        else:
+            st.warning("⚠️ No se ha seleccionado ninguna fuente de texto")
     
     # Apply filters dynamically
     # Apply year filter first
@@ -1908,7 +1969,7 @@ with tab1:
     
     user_template_part = st.text_area(
         "",
-        value="""Produce un breve resumen en español del conjunto completo. Después, incluye una lista con viñetas que resuma las acciones recomendadas y los actores específicos a quienes están dirigidas, así como otra lista con viñetas para los temas principales y recurrentes. Este formato debe aclarar qué se propone y a quién está dirigida cada recomendación. Adicionalmente, genera una lista con viñetas de los puntos más importantes a considerar cuando se planee abordar estas recomendaciones en el futuro. Por favor, refiérete al texto como un conjunto de recomendaciones, no como un documento o texto.""",
+        value="""Analiza el conjunto completo de contenido y proporciona un resumen comprehensivo en español. Identifica las acciones principales propuestas, los actores clave involucrados, y los temas más importantes y recurrentes. Organiza la información de manera clara y estructurada según consideres más apropiado para facilitar la comprensión. Incluye también consideraciones importantes para la implementación futura de las propuestas identificadas.""",
         height=180,
         key="user_template_part_main"
     )
@@ -2895,37 +2956,82 @@ with tab4:
     performance_rubric = {}
     parteval_rubric = {}
     gender_rubric = {}
+    tj_traditional_rubric = {}
+    tj_just_transition_rubric = {}
 
     try:
-        df_rubric_engagement = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_engagement')
+        df_rubric_engagement = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_engagement')
         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_engagement.iterrows():
             indicador = row['Indicador']
             valores = row.drop('Indicador').values.tolist()
             engagement_rubric[indicador] = valores
 
-        df_rubric_performance = pd.read_excel('./Matriz_scores_meta analisis_ESP_v2.xlsx')
+        df_rubric_performance = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_performance')
         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
         for idx, row in df_rubric_performance.iterrows():
             criterio = row['subdim']
             valores = row.drop('subdim').values.tolist()
             performance_rubric[criterio] = valores
 
-        df_rubric_parteval = pd.read_excel('./Actores_rúbricas de participación.xlsx', sheet_name='rubric_parteval')
+        df_rubric_parteval = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_parteval')
         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_parteval.iterrows():
             indicador = row['Indicador']
             valores = row.drop('Indicador').values.tolist()
             parteval_rubric[indicador] = valores
 
-        df_rubric_gender = pd.read_excel('./Actores_rúbricas de participación_8mayo.xlsx', sheet_name='rubric_gender_')
+        df_rubric_gender = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_gender_')
         df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_gender.iterrows():
             indicador = row['Indicador']
             valores = row.drop('Indicador').values.tolist()
             gender_rubric[indicador] = valores
+
+        # Load TJ Traditional rubric from Rubricas_6ago2025.xlsx
+        try:
+            df_rubric_tj_traditional = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_Traditional')
+            df_rubric_tj_traditional.drop(columns=['Criterio'], inplace=True, errors='ignore')
+            for idx, row in df_rubric_tj_traditional.iterrows():
+                indicador = row['Indicador']
+                if pd.notna(indicador) and str(indicador).strip():
+                    valores = row.drop('Indicador').values.tolist()
+                    tj_traditional_rubric[indicador] = valores
+        except Exception as e:
+            st.error(f"❌ Error cargando TJ Tradicional: {e}")
+            st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+
+        # Load TJ Just Transition rubric from Rubricas_6ago2025.xlsx
+        try:
+            df_rubric_tj_just_transition = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_TJ')
+            df_rubric_tj_just_transition.drop(columns=['Criterio'], inplace=True, errors='ignore')
+            for idx, row in df_rubric_tj_just_transition.iterrows():
+                indicador = row['Indicador']
+                if pd.notna(indicador) and str(indicador).strip():
+                    valores = row.drop('Indicador').values.tolist()
+                    tj_just_transition_rubric[indicador] = valores
+        except Exception as e:
+            st.error(f"❌ Error cargando TJ Transición Justa: {e}")
+            st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
     except Exception as e:
         st.error(f"Error leyendo las rúbricas: {e}")
+
+    # Debug: Show Excel sheet names and rubric status
+    try:
+        available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
+        st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
+    except Exception as e:
+        st.error(f"Error leyendo Excel: {e}")
+
+    st.error(f"""
+    **ESTADO DE RÚBRICAS:**
+    - Engagement: {len(engagement_rubric)} criterios
+    - Performance: {len(performance_rubric)} criterios
+    - Parteval: {len(parteval_rubric)} criterios
+    - Gender: {len(gender_rubric)} criterios
+    - TJ Traditional: {len(tj_traditional_rubric)} criterios  ⚠️
+    - TJ Just Transition: {len(tj_just_transition_rubric)} criterios  ⚠️
+    """)
 
     # Function to extract document structure
     def extract_docx_structure(docx_path):
@@ -3255,7 +3361,9 @@ with tab4:
             ("Participación (Engagement)", engagement_rubric),
             ("Desempeño (Performance)", performance_rubric),
             ("Participación Evaluada (Parteval)", parteval_rubric),
-            ("Género (Gender)", gender_rubric)
+            ("Género (Gender)", gender_rubric),
+            ("TJ (Tradicional)", tj_traditional_rubric),
+            ("TJ (Transición Justa)", tj_just_transition_rubric)
         ]
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -3282,6 +3390,11 @@ with tab4:
                     'Rúbrica': rubric_name
                 }
         for rubric_name, rubric_dict in rubrics:
+            # Skip empty rubrics
+            if not rubric_dict:
+                st.warning(f"Saltando rúbrica {rubric_name}: sin criterios cargados")
+                continue
+
             rubric_analysis_data = []
             n_criteria = len(rubric_dict)
             progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
