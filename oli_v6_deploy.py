@@ -1550,7 +1550,7 @@ def load_lessons_embeddings():
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Exploración de evidencia-Insights evaluativos",
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
-                                         "Análisis por Rúbricas",
+                                         "Revisión por criterios con trazabilidad",
                                          "Document Chat",
                                          "Evaluación de PRODOCs",
                                          "Appraisal Checklist",
@@ -2773,7 +2773,16 @@ with tab3:
 #-----------------------#-----------------------#
 # Tab 4: Upload and Evaluate Document by Rubric
 with tab4:
-    st.header("Subir y Evaluar Documento DOCX")
+    st.header("Revisión por criterios con trazabilidad")
+
+    # Descriptive text box
+    st.info("""
+    **📋 Descripción de la herramienta:**
+
+    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Puedes exportar a Excel (Criterio, Score, Análisis, Evidencia, Error, Rúbrica).
+
+    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
+    """)
 
     # Read rubrics from Excel files as in megaparse_example.py
     import pandas as pd
