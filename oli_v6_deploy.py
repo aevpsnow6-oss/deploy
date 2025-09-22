@@ -3169,7 +3169,7 @@ with tab4:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=7000
+                max_completion_tokens=7000
             )
             raw = response["choices"][0]["message"]["content"].strip()
             parsed = json.loads(raw)
