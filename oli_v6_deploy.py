@@ -1547,7 +1547,7 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Exploración de evidencia-Insights evaluativos",
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
                                          "Análisis por Rúbricas",
@@ -1558,7 +1558,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Exploración de Evidencia-R
 #--------------------------#-------------------------------#
 # Tab 1: Filters, Text Analysis and Similar Recommendations
 with tab1:
-    st.header("Exploración de Evidencia - Recomendaciones")
+    st.header("Exploración de evidencia-Insights evaluativos")
     
     # --- DATASET LOADING ---
     # Use the main recommendations dataset
@@ -1590,11 +1590,11 @@ with tab1:
         with col2:
             # Year filter with slider
             min_year = int(df['year'].min())
-            max_year = int(df['year'].max())
-            selected_year_range = st.slider('Rango de Años:', 
-                                          min_value=min_year, 
-                                          max_value=max_year, 
-                                          value=(min_year, max_year), 
+            max_year = max(int(df['year'].max()), 2025)
+            selected_year_range = st.slider('Rango de Años:',
+                                          min_value=min_year,
+                                          max_value=max_year,
+                                          value=(min_year, max_year),
                                           key='rango_anos_tab1')
             
             # Evaluation theme filter
@@ -1638,7 +1638,7 @@ with tab1:
             st.session_state.planes_accion_tab1 = False
         
         # Handle select all logic
-        select_all = text_col5.checkbox('Seleccionar Todas', value=st.session_state.select_all_tab1, key='todas_fuentes_tab1')
+        select_all = text_col5.checkbox('Todas', value=st.session_state.select_all_tab1, key='todas_fuentes_tab1')
         
         # If select all was just clicked, update all individual checkboxes
         if select_all != st.session_state.select_all_tab1:
@@ -1653,11 +1653,11 @@ with tab1:
         analyze_recommendations = text_col1.checkbox('Recomendaciones', 
                                                     value=st.session_state.recomendaciones_tab1, 
                                                     key='recomendaciones_tab1')
-        analyze_lessons = text_col2.checkbox('Lecciones Aprendidas', 
-                                           value=st.session_state.lecciones_aprendidas_tab1, 
+        analyze_lessons = text_col2.checkbox('LLAA',
+                                           value=st.session_state.lecciones_aprendidas_tab1,
                                            key='lecciones_aprendidas_tab1')
-        analyze_practices = text_col3.checkbox('Buenas Prácticas', 
-                                             value=st.session_state.buenas_practicas_tab1, 
+        analyze_practices = text_col3.checkbox('BBPP',
+                                             value=st.session_state.buenas_practicas_tab1,
                                              key='buenas_practicas_tab1')
         analyze_plans = text_col4.checkbox('Planes de Acción', 
                                          value=st.session_state.planes_accion_tab1, 
@@ -1778,182 +1778,6 @@ with tab1:
             unsafe_allow_html=True
         )
     
-    # Display plots if data is available
-    if not filtered_df.empty:
-        country_counts = filtered_df_unique['Country(ies)'].value_counts()
-        
-        # Add CSS for dashboard styling
-        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
-        
-        # Create two columns for charts
-        row1_col1, row1_col2 = st.columns(2)
-        
-        with row1_col1:
-            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
-            fig1 = go.Figure()
-            fig1.add_trace(go.Bar(
-                y=country_counts.index.tolist(),
-                x=country_counts.values.tolist(),
-                orientation='h',
-                text=country_counts.values.tolist(),
-                textposition='auto',
-                marker_color='#3498db',
-                hovertemplate='%{y}: %{x} recomendaciones'
-            ))
-            
-            # Fixed height for alignment with year plot
-            fixed_height = 500
-            fig1.update_layout(
-                xaxis_title='Número de Recomendaciones',
-                yaxis_title='País',
-                margin=dict(t=10, l=10, r=10, b=40),
-                font=dict(size=22),
-                height=fixed_height,
-                plot_bgcolor='white',
-                showlegend=False
-            )
-            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
-            fig1.update_yaxes(showgrid=False)
-            st.plotly_chart(fig1, use_container_width=True)
-        
-        with row1_col2:
-            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
-            year_counts = filtered_df_unique['year'].value_counts().sort_index()
-            fig2 = go.Figure()
-            fig2.add_trace(go.Bar(
-                x=year_counts.index.astype(str).tolist(),
-                y=year_counts.values.tolist(),
-                text=year_counts.values.tolist(),
-                textposition='auto',
-                marker_color='#3498db',
-                hovertemplate='Año %{x}: %{y} recomendaciones',
-                textfont=dict(size=22)
-            ))
-            fig2.update_layout(
-                xaxis_title='Año',
-                yaxis_title='Número de Recomendaciones',
-                margin=dict(t=10, l=10, r=10, b=40),
-                font=dict(size=22),
-                height=500,
-                plot_bgcolor='white',
-                showlegend=False
-            )
-            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
-            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        # Dimension treemap
-        st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
-        
-        # Clean and prepare dimension data
-        import numpy as np
-        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({
-            'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-        })
-        filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
-        filtered_df = filtered_df[filtered_df['dimension'].notna()]
-        
-        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
-            'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-        })
-        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
-        filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
-        
-        # Count recommendations by dimension
-        dimension_counts = filtered_df.groupby('dimension').agg({
-            'index_df': 'nunique'
-        }).reset_index()
-        
-        # Calculate percentages and format text
-        dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
-        dimension_counts['text'] = dimension_counts.apply(
-            lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", 
-            axis=1
-        )
-        dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
-        
-        # Remove 'Sin Clasificar' and capitalize dimension labels
-        dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
-        dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
-        
-        # Create treemap
-        fig3 = px.treemap(
-            dimension_counts, 
-            path=['dimension'], 
-            values='index_df',
-            title='Composición de Recomendaciones por Dimensión',
-            hover_data={'text': True, 'index_df': False, 'percentage': False},
-            custom_data=['text']
-        )
-        fig3.update_traces(
-            textinfo='label+value', 
-            hovertemplate='%{customdata[0]}',
-            textfont_size=32
-        )
-        fig3.update_layout(
-            margin=dict(t=50, l=25, r=25, b=25), 
-            width=900, 
-            height=500,
-            title_font_size=32,
-            font=dict(size=28),
-            legend_font_size=28
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-        
-        # Subdimension treemap
-        # Harmonize process/processes before plotting subdimensions
-        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-        
-        # Remove 'Sin Clasificar' from both dimension and subdimension
-        filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
-        filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
-        
-        # Capitalize dimension and subdimension labels
-        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
-        filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
-        
-        # Count by subdimension
-        subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
-            'index_df': 'nunique'
-        }).reset_index()
-        
-        # Calculate percentages and format text
-        subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
-        subdimension_counts['text'] = subdimension_counts.apply(
-            lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", 
-            axis=1
-        )
-        subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10
-        
-        # Create treemap
-        fig4 = px.treemap(
-            subdimension_counts, 
-            path=['dimension', 'subdim'], 
-            values='index_df',
-            title='Composición de Recomendaciones por Subdimensión',
-            hover_data={'text': True, 'index_df': False, 'percentage': False},
-            custom_data=['text']
-        )
-        fig4.update_traces(
-            textinfo='label+value', 
-            hovertemplate='%{customdata[0]}',
-            textfont_size=32
-        )
-        fig4.update_layout(
-            margin=dict(t=50, l=25, r=25, b=25), 
-            width=900, 
-            height=500,
-            title_font_size=32,
-            font=dict(size=28),
-            legend_font_size=28
-        )
-        st.plotly_chart(fig4, use_container_width=True)
-        
-        # Add the advanced visualization section
-        add_advanced_visualization_section(filtered_df, tab_id="tab1")
-    else:
-        st.warning("No hay datos disponibles para los filtros seleccionados.")
-    
     # Text analysis section
     st.markdown("""
     <h3 style='color:#3498db; margin-top:0;'>Análisis de Textos</h3>
@@ -1969,8 +1793,8 @@ with tab1:
     
     user_template_part = st.text_area(
         "",
-        value="""Analiza el conjunto completo de contenido y proporciona un resumen comprehensivo en español. Identifica las acciones principales propuestas, los actores clave involucrados, y los temas más importantes y recurrentes. Organiza la información de manera clara y estructurada según consideres más apropiado para facilitar la comprensión. Incluye también consideraciones importantes para la implementación futura de las propuestas identificadas.""",
-        height=180,
+        value="""Redacta un síntesis claro y profesional usando exclusivamente el conjunto de fuentes filtradas. Abre con un párrafo breve que indique el propósito del análisis, el tamaño del conjunto y los hallazgos e implicancias más relevantes. Luego desarrolla un relato continuo que integre causa, acción y resultado: explica qué se propone, por qué y para qué, y a quién va dirigido. Formula las acciones dentro de la narrativa con el patrón verbo + objeto + para + fin, señalando de forma natural quién lidera, quién aprueba, quién es consultado y quién debe ser informado, el horizonte temporal (corto/medio/largo), dependencias y estado de gestión cuando exista. Usa fechas absolutas; no inventes datos ni actores: si algo no está disponible, escribe "ND". Cuando varias recomendaciones digan lo mismo, consolídalas evitando repeticiones y deja claro que provienen de varias fuentes. Si hay contradicciones entre recomendaciones, menciónalas y explica su contexto cuando sea posible. Garantiza trazabilidad: tras cada afirmación sustantiva, añade una cita breve entre comillas (10–25 palabras) y, entre paréntesis, los metadatos mínimos: ID interno de la evaluación. Mantén un tono sobrio y evita redundancias.""",
+        height=220,
         key="user_template_part_main"
     )
     
