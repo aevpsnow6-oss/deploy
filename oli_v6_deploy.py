@@ -1554,7 +1554,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
                                          "Acercamiento a Valoración de Calidad de Proyectos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
-                                         "Tablero de Seguimiento de Recomendaciones y Planes de Acción"])
+                                         "Estadísticas Sobre Recomendaciones y Planes de Acción"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -3041,7 +3041,7 @@ with tab1:
 #--------------------------#-------------------------------#
 # Tab 8: Tablero de seguimiento de recomendaciones y planes de acción
 with tab5:
-    st.header("📊 Tablero de seguimiento de recomendaciones y planes de acción")
+    st.header("📊 Estadísticas Sobre Recomendaciones y Planes de Acción")
 
     # Comprehensive presentation box
     st.info("""
