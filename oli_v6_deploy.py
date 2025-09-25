@@ -1554,7 +1554,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Exploración de evide
                                          "Evaluación de Documentos con Rúbricas por Criterios",
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
-                                         "Document Chat",
+                                         "Chatea con tus Documentos",
                                          "Evaluación de sostenibilidad del proyecto",
                                          "Appraisal Checklist",
                                          "Tablero de seguimiento de recomendaciones y planes de acción"])
@@ -3269,7 +3269,7 @@ with tab2:
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
 with tab5:
-    st.header("Chatea con tu documento")
+    st.header("Chatea con tus Documentos")
 
     # Presentation box
     st.info("""
