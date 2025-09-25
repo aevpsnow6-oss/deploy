@@ -1656,7 +1656,7 @@ with tab2:
     **ESTADO DE RÚBRICAS:**
     - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
     - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
-    - Evaluación con Enfoque Participativo (metodología): {len(parteval_rubric)} criterios
+    - Metodologías con Enfoque Participativo: {len(parteval_rubric)} criterios
     - Enfoque de Género: {len(gender_rubric)} criterios
     - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
