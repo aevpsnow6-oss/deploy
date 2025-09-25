@@ -1550,17 +1550,17 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Evaluación de Documentos con Rúbricas por Criterios",
-                                         "Chatea con tus Documentos",
-                                         "Evaluación de sostenibilidad del proyecto",
+tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Acercamiento a Valoración de Calidad de Proyectos",
+                                         "Pregúntale a tus Documentos",
+                                         "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Valoración Preliminar de Calidad de Proyectos",
-                                         "Tablero de seguimiento de recomendaciones y planes de acción"])
+                                         "Tablero de Seguimiento de Recomendaciones y Planes de Acción"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
 # Tab 2: Revisión por criterios con trazabilidad
-with tab1:
-    st.header("Evaluación de Documentos con Rúbricas por Criterios")
+with tab2:
+    st.header("Acercamiento a Valoración de Calidad de Proyectos")
 
     # Descriptive text box
     st.info("""
@@ -2097,8 +2097,8 @@ with tab1:
 
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
-with tab2:
-    st.header("Chatea con tus Documentos")
+with tab4:
+    st.header("Pregúntale a tus Documentos")
 
     # Presentation box
     st.info("""
@@ -2299,7 +2299,7 @@ with tab2:
 
 # ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
 with tab3:
-    st.header("Evaluación de sostenibilidad del proyecto")
+    st.header("Diagnóstico de Sostenibilidad del Proyecto")
     
     # Read rubric from Excel file
     import pandas as pd
@@ -2846,7 +2846,7 @@ Response Distribution:
     return zip_buffer
 
 # Main tab interface
-with tab4:
+with tab1:
     st.header("📋 Valoración Preliminar de Calidad de Proyectos")
     
     # Load questions
