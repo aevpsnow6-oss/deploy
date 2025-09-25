@@ -1642,18 +1642,18 @@ with tab2:
         st.error(f"Error leyendo las rúbricas: {e}")
 
     # Debug: Show Excel sheet names and rubric status
-    try:
-        available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
-        st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
-    except Exception as e:
-        st.error(f"Error leyendo Excel: {e}")
+    # try:
+    #     available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
+    #     st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
+    # except Exception as e:
+    #     st.error(f"Error leyendo Excel: {e}")
 
     st.error(f"""
     **ESTADO DE RÚBRICAS:**
-    - Participación: {len(engagement_rubric)} criterios
-    - Desempeño: {len(performance_rubric)} criterios
-    - Enfoque Participativo de Evaluación: {len(parteval_rubric)} criterios
-    - Género: {len(gender_rubric)} criterios
+    - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
+    - Desempeño del Proyecto (según evaluación): {len(performance_rubric)} criterios
+    - Evaluación con Enfoque Participativo (metodología): {len(parteval_rubric)} criterios
+    - Enfoque de Género: {len(gender_rubric)} criterios
     - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
