@@ -2773,41 +2773,144 @@ def extract_document_content(uploaded_file):
             'error': str(e)
         }
 
+# def analyze_question_with_llm(question, document_text):
+#     """Analyze a single question against the document using LLM"""
+#     try:
+#         response = openai.ChatCompletion.create(
+#             model=OPENAI_MODEL,
+#             messages=[
+#                 {
+#                     "role": "system", 
+#                     "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format:
+#                     {
+#                         "Respuesta": "Yes/No/Partial/Not Found",
+#                         "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+#                         "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+#                     }"""
+#                 },
+#                 {
+#                     "role": "user", 
+#                     "content": f"Question: {question}\n\nDocument Text: {document_text[:4000]}..."  # Limit context
+#                 }
+#             ],
+#             max_tokens=800,
+#             temperature=0.1,
+#         )
+        
+#         content = response["choices"][0]["message"]["content"].strip()
+#         result = json.loads(content)
+        
+#         return {
+#             'Pregunta': question,
+#             'Respuesta': result.get('Respuesta', 'Error'),
+#             'Razonamiento': result.get('Razonamiento', ''),
+#             'Evidencia': result.get('Evidencia', ''),
+#             'Status': 'Success'
+#         }
+    
+#     except Exception as e:
+#         return {
+#             'Pregunta': question,
+#             'Respuesta': 'Error',
+#             'Razonamiento': f'Analysis failed: {str(e)}',
+#             'Evidencia': '',
+#             'Status': 'Error'
+#         }
+
 def analyze_question_with_llm(question, document_text):
-    """Analyze a single question against the document using LLM"""
+    """Analyze a single question against the document using LLM by chunking the full text and aggregating."""
     try:
-        response = openai.ChatCompletion.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system", 
-                    "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format:
+        # Split entire document into manageable chunks and analyze each chunk
+        def chunk_text(text, max_chars=3500, overlap=200):
+            chunks = []
+            current = ""
+            for line in (text or "").split("\n"):
+                if len(current) + len(line) + 1 > max_chars:
+                    if current:
+                        chunks.append(current)
+                        carry = current[-overlap:] if overlap > 0 and len(current) > overlap else ""
+                        current = (carry + "\n" + line).strip()
+                    else:
+                        chunks.append(line[:max_chars])
+                        current = line[max_chars:]
+                else:
+                    current = (current + "\n" + line) if current else line
+            if current:
+                chunks.append(current)
+            return [c for c in chunks if c.strip()]
+
+        chunks = chunk_text(document_text or "")
+        if not chunks:
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Not Found',
+                'Razonamiento': 'No se encontró contenido en el documento para analizar.',
+                'Evidencia': '',
+                'Status': 'Success'
+            }
+
+        per_chunk_results = []
+        for i, chunk in enumerate(chunks, start=1):
+            resp = openai.ChatCompletion.create(
+                model=OPENAI_MODEL,
+                messages=[
                     {
-                        "Respuesta": "Yes/No/Partial/Not Found",
-                        "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                        "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-                    }"""
-                },
-                {
-                    "role": "user", 
-                    "content": f"Question: {question}\n\nDocument Text: {document_text[:4000]}..."  # Limit context
-                }
-            ],
-            max_tokens=800,
-            temperature=0.1,
-        )
-        
-        content = response["choices"][0]["message"]["content"].strip()
-        result = json.loads(content)
-        
+                        "role": "system", 
+                        "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
+                        {
+                            "Respuesta": "Yes/No/Partial/Not Found",
+                            "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+                            "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+                        }"""
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
+                    }
+                ],
+                max_tokens=800,
+                temperature=0.1,
+            )
+            content = resp["choices"][0]["message"]["content"].strip()
+            try:
+                per_chunk_results.append(json.loads(content))
+            except Exception:
+                # Skip invalid JSONs silently
+                continue
+
+        if not per_chunk_results:
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'No fue posible obtener un análisis válido de los fragmentos.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
+
+        # Aggregate results: vote-based with priority fallback
+        priority = {"Yes": 3, "Partial": 2, "No": 1, "Not Found": 0}
+        votes = {}
+        razonamientos = []
+        evidencias = []
+        for r in per_chunk_results:
+            ans = r.get("Respuesta", "Not Found")
+            votes[ans] = votes.get(ans, 0) + 1
+            if r.get("Razonamiento"):
+                razonamientos.append(str(r["Razonamiento"]))
+            if r.get("Evidencia"):
+                evidencias.append(str(r["Evidencia"]))
+
+        best_answer = max(votes.items(), key=lambda kv: (kv[1], priority.get(kv[0], -1)))[0]
+        razonamiento_final = " \n\n".join(razonamientos)[:1500]
+        evidencia_final = "\n\n---\n\n".join(evidencias)[:2000]
+
         return {
             'Pregunta': question,
-            'Respuesta': result.get('Respuesta', 'Error'),
-            'Razonamiento': result.get('Razonamiento', ''),
-            'Evidencia': result.get('Evidencia', ''),
+            'Respuesta': best_answer,
+            'Razonamiento': razonamiento_final,
+            'Evidencia': evidencia_final,
             'Status': 'Success'
         }
-    
     except Exception as e:
         return {
             'Pregunta': question,
