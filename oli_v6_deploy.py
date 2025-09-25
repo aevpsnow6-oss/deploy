@@ -285,25 +285,18 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
 
     st.markdown("### Evaluación por Rúbrica (Hierarchical RAG)")
 
-    # Initialize session state keys with unique prefixes to avoid conflicts
-    session_keys = {
-        'selected_sections': 'rubric_eval_selected_sections',
-        'sections_confirmed': 'rubric_eval_sections_confirmed',
-        'selected_criteria': 'rubric_eval_selected_criteria'
-    }
-
     # --- Section Selection ---
-    if session_keys['selected_sections'] not in st.session_state:
-        st.session_state[session_keys['selected_sections']] = []
-    if session_keys['sections_confirmed'] not in st.session_state:
-        st.session_state[session_keys['sections_confirmed']] = False
+    if 'selected_sections_for_eval' not in st.session_state:
+        st.session_state.selected_sections_for_eval = []
+    if 'evaluation_sections_confirmed' not in st.session_state:
+        st.session_state.evaluation_sections_confirmed = False
 
     st.markdown("#### 1. Selección de Secciones para Evaluación")
     main_sections = []
     for level, headings in sorted(toc_hierarchy.items()):
         if headings and not main_sections:
             main_sections = headings
-    valid_selected_sections = [s for s in st.session_state[session_keys['selected_sections']] if s in main_sections]
+    valid_selected_sections = [s for s in st.session_state.selected_sections_for_eval if s in main_sections]
     if not valid_selected_sections and main_sections:
         valid_selected_sections = [main_sections[0]]
     selected_sections = st.multiselect(
@@ -316,14 +309,14 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
         if not selected_sections:
             st.warning("Por favor seleccione al menos una sección para evaluar.")
         else:
-            st.session_state[session_keys['selected_sections']] = selected_sections
-            st.session_state[session_keys['sections_confirmed']] = True
+            st.session_state.selected_sections_for_eval = selected_sections
+            st.session_state.evaluation_sections_confirmed = True
             st.success(f"Secciones confirmadas para evaluación: {', '.join(selected_sections)}")
-    if st.session_state[session_keys['selected_sections']]:
-        st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state[session_keys['selected_sections']])}")
+    if st.session_state.selected_sections_for_eval:
+        st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state.selected_sections_for_eval)}")
 
     # --- Rubric Selection & Evaluation ---
-    if st.session_state[session_keys['sections_confirmed']]:
+    if st.session_state.evaluation_sections_confirmed:
         st.markdown("#### 2. Selección de Rúbrica y Criterios")
         rubric_type = st.selectbox(
             "Seleccione tipo de rúbrica para evaluación:",
@@ -356,23 +349,23 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
             st.markdown("**Criterios**")
             if selected_category:
                 category_criteria = rubric_df[rubric_df[group_col] == selected_category]
-                if session_keys['selected_criteria'] not in st.session_state:
-                    st.session_state[session_keys['selected_criteria']] = {}
+                if 'selected_criteria' not in st.session_state:
+                    st.session_state.selected_criteria = {}
                 all_criteria_in_category = st.checkbox(f"Seleccionar todos los criterios en '{selected_category}'")
                 selected_criteria_ids = []
                 for _, criterion_row in category_criteria.iterrows():
                     criterion_id = criterion_row[criteria_col]
                     criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
-                    if criterion_id not in st.session_state[session_keys['selected_criteria']]:
-                        st.session_state[session_keys['selected_criteria']][criterion_id] = False
+                    if criterion_id not in st.session_state.selected_criteria:
+                        st.session_state.selected_criteria[criterion_id] = False
                     if all_criteria_in_category:
-                        st.session_state[session_keys['selected_criteria']][criterion_id] = True
+                        st.session_state.selected_criteria[criterion_id] = True
                     is_selected = st.checkbox(
                         criterion_name,
-                        value=st.session_state[session_keys['selected_criteria']][criterion_id],
+                        value=st.session_state.selected_criteria[criterion_id],
                         key=f"criterion_{criterion_id}"
                     )
-                    st.session_state[session_keys['selected_criteria']][criterion_id] = is_selected
+                    st.session_state.selected_criteria[criterion_id] = is_selected
                     if is_selected:
                         selected_criteria_ids.append(criterion_id)
         with st.expander("Opciones avanzadas de selección de criterios"):
@@ -380,20 +373,20 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
             if select_all_criteria:
                 for _, row in rubric_df.iterrows():
                     criterion_id = row[criteria_col]
-                    st.session_state[session_keys['selected_criteria']][criterion_id] = True
+                    st.session_state.selected_criteria[criterion_id] = True
                 st.success("Todos los criterios han sido seleccionados.")
             if st.button("Limpiar todas las selecciones"):
-                for criterion_id in st.session_state[session_keys['selected_criteria']]:
-                    st.session_state[session_keys['selected_criteria']][criterion_id] = False
+                for criterion_id in st.session_state.selected_criteria:
+                    st.session_state.selected_criteria[criterion_id] = False
                 st.success("Todas las selecciones han sido limpiadas.")
         if st.button("Ver Detalles de Criterios Seleccionados"):
-            selected_any = any(st.session_state[session_keys['selected_criteria']].values())
+            selected_any = any(st.session_state.selected_criteria.values())
             if not selected_any:
                 st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
             else:
                 st.markdown("##### Detalles de Criterios Seleccionados")
                 selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
-                    [cid for cid, selected in st.session_state[session_keys['selected_criteria']].items() if selected]
+                    [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
                 )]
                 for _, criterion_row in selected_criteria_df.iterrows():
                     criterion_id = criterion_row[criteria_col]
@@ -402,13 +395,13 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                         levels_df = rubric_to_levels_df(criterion_row, criteria_col)
                         st.table(levels_df)
         if st.button("Iniciar Evaluación de Criterios Seleccionados (RAG)"):
-            selected_any = any(st.session_state[session_keys['selected_criteria']].values())
+            selected_any = any(st.session_state.selected_criteria.values())
             if not selected_any:
                 st.warning("Por favor seleccione al menos un criterio para evaluar.")
             else:
                 st.markdown("#### 3. Evaluación de Criterios (RAG)")
-                selected_criteria_ids = [cid for cid, selected in st.session_state[session_keys['selected_criteria']].items() if selected]
-                filtered_df = exploded_df[exploded_df['header_1'].isin(st.session_state[session_keys['selected_sections']])].copy()
+                selected_criteria_ids = [cid for cid, selected in st.session_state.selected_criteria.items() if selected]
+                filtered_df = exploded_df[exploded_df['header_1'].isin(st.session_state.selected_sections_for_eval)].copy()
                 if filtered_df.empty:
                     st.warning("No se encontraron párrafos en las secciones seleccionadas.")
                     return
@@ -435,7 +428,7 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                     for cid in selected_criteria_ids:
                         rubric_dict_single = {cid: rubric_dict[cid]}
                         # Use top_n_paragraphs=10 or as appropriate
-                        result = store.score_rubric_directly(rubric_dict_single, top_n_paragraphs=10)
+                        result = store.score_rubric_directly(rubric_dict_single, df=section_df, top_n_paragraphs=10)
                         # result is a dict keyed by cid
                         if cid not in results:
                             results[cid] = {'score': 0, 'context': '', 'analysis': {}}
@@ -1447,6 +1440,10 @@ if not openai_api_key:
     st.info("For local development, you can use a .env file or set the environment variable.")
     # Continue with limited functionality or show instructions on setup
 
+# Initialize session state if not already set
+if 'similar_df' not in st.session_state:
+    st.session_state['similar_df'] = pd.DataFrame()
+
 # Initialize data and embeddings - wrap in try/except for better error handling
 try:
     # Use the extended data loading function that includes the new visualizations data
@@ -1550,34 +1547,1408 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Exploración de Evidencia-Lecciones Aprendidas",
-                                         "Evaluación de Documentos con Rúbricas por Criterios",
-                                         "Chatea con tus Documentos",
-                                         "Evaluación de sostenibilidad del proyecto",
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Exploración de Evidencia-Recomendaciones", 
+                                         "Exploración de Evidencia-Lecciones Aprendidas",
+                                         "Exploración de Evidencia-Buenas Prácticas",
+                                         "Análisis por Rúbricas",
+                                         "Document Chat",
+                                         "Evaluación de PRODOCs",
                                          "Appraisal Checklist"])
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
+# Tab 1: Filters, Text Analysis and Similar Recommendations
+with tab1:
+    st.header("Exploración de Evidencia - Recomendaciones")
+    
+    # --- DATASET LOADING ---
+    # Use the main recommendations dataset
+    filtered_df = df.copy()
+    
+    # --- FILTER ROW WITHIN TAB ---
+    st.markdown("### Filtros")
+    filter_container = st.container()
+    
+    with filter_container:
+        # Create 3 columns for filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Administrative unit filter
+            office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
+            selected_offices = st.multiselect('Unidad Administrativa:', 
+                                             options=office_options, 
+                                             default='All', 
+                                             key='unidad_administrativa_tab1')
+            
+            # Country filter
+            country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
+            selected_countries = st.multiselect('País:', 
+                                              options=country_options, 
+                                              default='All', 
+                                              key='pais_tab1')
+        
+        with col2:
+            # Year filter with slider
+            min_year = int(df['year'].min())
+            max_year = int(df['year'].max())
+            selected_year_range = st.slider('Rango de Años:', 
+                                          min_value=min_year, 
+                                          max_value=max_year, 
+                                          value=(min_year, max_year), 
+                                          key='rango_anos_tab1')
+            
+            # Evaluation theme filter
+            evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
+            selected_evaltheme = st.multiselect('Tema (Evaluación):', 
+                                              options=evaltheme_options, 
+                                              default='All', 
+                                              key='tema_eval_tab1')
+        
+        with col3:
+            # Recommendation theme filter
+            rectheme_options = ['All'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
+            selected_rectheme = st.multiselect('Tema (Recomendación):', 
+                                             options=rectheme_options, 
+                                             default='All', 
+                                             key='tema_recomendacion_tab1')
+            
+            # Management response filter
+            mgtres_options = ['All'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
+            selected_mgtres = st.multiselect('Respuesta de gerencia:', 
+                                           options=mgtres_options, 
+                                           default='All', 
+                                           key='respuesta_gerencia_tab1')
+    
+    # Second row for text source selection
+    text_source_container = st.container()
+    with text_source_container:
+        st.markdown("#### Fuentes de Texto")
+        text_col1, text_col2, text_col3, text_col4, text_col5 = st.columns(5)
+        
+        # Initialize session state for checkboxes if not exists
+        if 'select_all_tab1' not in st.session_state:
+            st.session_state.select_all_tab1 = False
+        if 'recomendaciones_tab1' not in st.session_state:
+            st.session_state.recomendaciones_tab1 = True
+        if 'lecciones_aprendidas_tab1' not in st.session_state:
+            st.session_state.lecciones_aprendidas_tab1 = False
+        if 'buenas_practicas_tab1' not in st.session_state:
+            st.session_state.buenas_practicas_tab1 = False
+        if 'planes_accion_tab1' not in st.session_state:
+            st.session_state.planes_accion_tab1 = False
+        
+        # Handle select all logic
+        select_all = text_col5.checkbox('Seleccionar Todas', value=st.session_state.select_all_tab1, key='todas_fuentes_tab1')
+        
+        # If select all was just clicked, update all individual checkboxes
+        if select_all != st.session_state.select_all_tab1:
+            st.session_state.select_all_tab1 = select_all
+            st.session_state.recomendaciones_tab1 = select_all
+            st.session_state.lecciones_aprendidas_tab1 = select_all
+            st.session_state.buenas_practicas_tab1 = select_all
+            st.session_state.planes_accion_tab1 = select_all
+            st.rerun()
+        
+        # Individual checkboxes using session state
+        analyze_recommendations = text_col1.checkbox('Recomendaciones', 
+                                                    value=st.session_state.recomendaciones_tab1, 
+                                                    key='recomendaciones_tab1')
+        analyze_lessons = text_col2.checkbox('Lecciones Aprendidas', 
+                                           value=st.session_state.lecciones_aprendidas_tab1, 
+                                           key='lecciones_aprendidas_tab1')
+        analyze_practices = text_col3.checkbox('Buenas Prácticas', 
+                                             value=st.session_state.buenas_practicas_tab1, 
+                                             key='buenas_practicas_tab1')
+        analyze_plans = text_col4.checkbox('Planes de Acción', 
+                                         value=st.session_state.planes_accion_tab1, 
+                                         key='planes_accion_tab1')
+        
+        # Update session state when individual checkboxes change
+        if analyze_recommendations != st.session_state.recomendaciones_tab1:
+            st.session_state.recomendaciones_tab1 = analyze_recommendations
+        if analyze_lessons != st.session_state.lecciones_aprendidas_tab1:
+            st.session_state.lecciones_aprendidas_tab1 = analyze_lessons
+        if analyze_practices != st.session_state.buenas_practicas_tab1:
+            st.session_state.buenas_practicas_tab1 = analyze_practices
+        if analyze_plans != st.session_state.planes_accion_tab1:
+            st.session_state.planes_accion_tab1 = analyze_plans
+        
+        # Check if select all should be automatically unchecked
+        all_selected = (analyze_recommendations and analyze_lessons and 
+                       analyze_practices and analyze_plans)
+        if not all_selected and st.session_state.select_all_tab1:
+            st.session_state.select_all_tab1 = False
+        
+        # Show current selection status
+        selected_sources = []
+        if analyze_recommendations:
+            selected_sources.append("Recomendaciones")
+        if analyze_lessons:
+            selected_sources.append("Lecciones Aprendidas")
+        if analyze_practices:
+            selected_sources.append("Buenas Prácticas")
+        if analyze_plans:
+            selected_sources.append("Planes de Acción")
+        
+        if selected_sources:
+            st.info(f"📋 Fuentes seleccionadas: {', '.join(selected_sources)}")
+        else:
+            st.warning("⚠️ No se ha seleccionado ninguna fuente de texto")
+    
+    # Apply filters dynamically
+    # Apply year filter first
+    filtered_df = filtered_df[(filtered_df['year'] >= selected_year_range[0]) & 
+                            (filtered_df['year'] <= selected_year_range[1])]
+    
+    # Apply remaining filters
+    if 'All' not in selected_offices and selected_offices:
+        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].astype(str).isin(selected_offices)]
+    
+    if 'All' not in selected_countries and selected_countries:
+        filtered_df = filtered_df[filtered_df['Country(ies)'].astype(str).isin(selected_countries)]
+    
+    if 'All' not in selected_evaltheme and selected_evaltheme:
+        filtered_df = filtered_df[filtered_df['Theme_cl'].astype(str).isin(selected_evaltheme)]
+    
+    if 'All' not in selected_rectheme and selected_rectheme:
+        filtered_df = filtered_df[filtered_df['Recommendation_theme'].astype(str).isin(selected_rectheme)]
+    
+    if 'All' not in selected_mgtres and selected_mgtres:
+        filtered_df = filtered_df[filtered_df['Management_response'].astype(str).isin(selected_mgtres)]
+    
+    # Extract unique texts
+    unique_texts = filtered_df['Recommendation_description'].unique()
+    unique_texts_str = [str(text) for text in unique_texts]  # Convert each element to string
+    
+    # Add a small info text showing the number of filtered recommendations
+    st.info(f"Mostrando {len(unique_texts)} recomendaciones con los filtros seleccionados.")
+    
+    # Create filtered_df_unique for summary statistics (drop duplicates)
+    filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
+    
+    # Display summary KPIs
+    st.markdown("#### Información General")
+    
+    # KPIs for totals (responsive to filters)
+    total_recs = len(filtered_df_unique)
+    num_countries = filtered_df_unique['Country(ies)'].nunique()
+    num_years = filtered_df_unique['year'].nunique()
+    num_evals = filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else 'N/A'
+    
+    # Display KPIs in columns
+    total_cols = st.columns(4)
+    total_kpi_labels = ["Total Recomendaciones", "Países", "Años", "Evaluaciones"]
+    total_kpi_values = [total_recs, num_countries, num_years, num_evals]
+    
+    total_kpi_html = [
+        f"""
+        <div style='text-align:center;'>
+            <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+            <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+        </div>
+        """
+        for label, value in zip(total_kpi_labels, total_kpi_values)
+    ]
+    
+    for col, html in zip(total_cols, total_kpi_html):
+        col.markdown(html, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+    
+    # KPIs for management response statuses (Respuesta de Gerencia)
+    mgmt_labels = [
+        ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),  # Green
+        ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),  # Yellow
+        ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),  # Orange
+        ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),  # Purple
+        ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),  # Blue
+        ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),  # Red
+    ]
+    
+    st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
+    kpi_cols = st.columns(3)
+    for i, (label, value, color) in enumerate(mgmt_labels):
+        kpi_cols[i % 3].markdown(
+            f"""
+            <div style='text-align:center;'>
+                <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+                <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    # Display plots if data is available
+    if not filtered_df.empty:
+        country_counts = filtered_df_unique['Country(ies)'].value_counts()
+        
+        # Add CSS for dashboard styling
+        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+        
+        # Create two columns for charts
+        row1_col1, row1_col2 = st.columns(2)
+        
+        with row1_col1:
+            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Bar(
+                y=country_counts.index.tolist(),
+                x=country_counts.values.tolist(),
+                orientation='h',
+                text=country_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='%{y}: %{x} recomendaciones'
+            ))
+            
+            # Fixed height for alignment with year plot
+            fixed_height = 500
+            fig1.update_layout(
+                xaxis_title='Número de Recomendaciones',
+                yaxis_title='País',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=fixed_height,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+            fig1.update_yaxes(showgrid=False)
+            st.plotly_chart(fig1, use_container_width=True)
+        
+        with row1_col2:
+            st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
+            year_counts = filtered_df_unique['year'].value_counts().sort_index()
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=year_counts.index.astype(str).tolist(),
+                y=year_counts.values.tolist(),
+                text=year_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='Año %{x}: %{y} recomendaciones',
+                textfont=dict(size=22)
+            ))
+            fig2.update_layout(
+                xaxis_title='Año',
+                yaxis_title='Número de Recomendaciones',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=500,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        # Dimension treemap
+        st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
+        
+        # Clean and prepare dimension data
+        import numpy as np
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({
+            'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+        })
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['dimension'].notna()]
+        
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
+            'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+        })
+        filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
+        filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
+        
+        # Count recommendations by dimension
+        dimension_counts = filtered_df.groupby('dimension').agg({
+            'index_df': 'nunique'
+        }).reset_index()
+        
+        # Calculate percentages and format text
+        dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
+        dimension_counts['text'] = dimension_counts.apply(
+            lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", 
+            axis=1
+        )
+        dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
+        
+        # Remove 'Sin Clasificar' and capitalize dimension labels
+        dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
+        dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
+        
+        # Create treemap
+        fig3 = px.treemap(
+            dimension_counts, 
+            path=['dimension'], 
+            values='index_df',
+            title='Composición de Recomendaciones por Dimensión',
+            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            custom_data=['text']
+        )
+        fig3.update_traces(
+            textinfo='label+value', 
+            hovertemplate='%{customdata[0]}',
+            textfont_size=32
+        )
+        fig3.update_layout(
+            margin=dict(t=50, l=25, r=25, b=25), 
+            width=900, 
+            height=500,
+            title_font_size=32,
+            font=dict(size=28),
+            legend_font_size=28
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+        
+        # Subdimension treemap
+        # Harmonize process/processes before plotting subdimensions
+        filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+        
+        # Remove 'Sin Clasificar' from both dimension and subdimension
+        filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
+        filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
+        
+        # Capitalize dimension and subdimension labels
+        filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
+        filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
+        
+        # Count by subdimension
+        subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
+            'index_df': 'nunique'
+        }).reset_index()
+        
+        # Calculate percentages and format text
+        subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
+        subdimension_counts['text'] = subdimension_counts.apply(
+            lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%", 
+            axis=1
+        )
+        subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10
+        
+        # Create treemap
+        fig4 = px.treemap(
+            subdimension_counts, 
+            path=['dimension', 'subdim'], 
+            values='index_df',
+            title='Composición de Recomendaciones por Subdimensión',
+            hover_data={'text': True, 'index_df': False, 'percentage': False},
+            custom_data=['text']
+        )
+        fig4.update_traces(
+            textinfo='label+value', 
+            hovertemplate='%{customdata[0]}',
+            textfont_size=32
+        )
+        fig4.update_layout(
+            margin=dict(t=50, l=25, r=25, b=25), 
+            width=900, 
+            height=500,
+            title_font_size=32,
+            font=dict(size=28),
+            legend_font_size=28
+        )
+        st.plotly_chart(fig4, use_container_width=True)
+        
+        # Add the advanced visualization section
+        add_advanced_visualization_section(filtered_df, tab_id="tab1")
+    else:
+        st.warning("No hay datos disponibles para los filtros seleccionados.")
+    
+    # Text analysis section
+    st.markdown("""
+    <h3 style='color:#3498db; margin-top:0;'>Análisis de Textos</h3>
+    <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+    Personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, 
+    acciones recomendadas y actores clave de las recomendaciones seleccionadas, usando IA avanzada.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+    """, unsafe_allow_html=True)
+    
+    user_template_part = st.text_area(
+        "",
+        value="""Analiza el conjunto completo de contenido y proporciona un resumen comprehensivo en español. Identifica las acciones principales propuestas, los actores clave involucrados, y los temas más importantes y recurrentes. Organiza la información de manera clara y estructurada según consideres más apropiado para facilitar la comprensión. Incluye también consideraciones importantes para la implementación futura de las propuestas identificadas.""",
+        height=180,
+        key="user_template_part_main"
+    )
+    
+    combine_template_prefix = "The following is a set of summaries:\n{text}\n"
+    
+    # Define the map prompt for initial summarization of chunks
+    map_template = """Summarize the following text: {text}
+    Helpful Answer:"""
+    
+    # Analysis button
+    if st.button('Analizar Textos'):
+        selections = {
+            'recommendations': analyze_recommendations,
+            'lessons': analyze_lessons,
+            'practices': analyze_practices,
+            'plans': analyze_plans
+        }
+        
+        combined_text = build_combined_text(filtered_df, selections)
+        
+        if combined_text:
+            with st.spinner('Analizando textos...'):
+                result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
+                if result:
+                    st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("No se pudo generar el análisis.")
+        else:
+            st.warning("Por favor seleccione al menos una fuente de texto para analizar.")
+    
+    # Button to download the filtered dataframe as Excel file
+    if st.button('Descargar Datos Filtrados'):
+        try:
+            # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+            def sanitize_cell(x):
+                if isinstance(x, list):
+                    return ', '.join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+            
+            sanitized_df = filtered_df.copy()
+            for col in sanitized_df.columns:
+                if sanitized_df[col].dtype == 'O':
+                    sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+            
+            filtered_data = to_excel(sanitized_df)
+            st.download_button(
+                label='📥 Descargar Excel',
+                data=filtered_data,
+                file_name='recomendaciones_filtradas.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            st.error(f"No se pudo exportar los datos filtrados: {e}")
+            import traceback
+            st.error(traceback.format_exc())
+    
+    # Chat section for querying similar recommendations
+    st.header("Búsqueda de Recomendaciones")
+    st.markdown("### Búsqueda")
+    
+    # Input for user query
+    user_query = st.text_input("Búsqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab1')
+    
+    # Search method selection
+    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab1')
+    
+    # Slider for similarity score threshold (only relevant for similarity search)
+    if search_method == "Por Similitud":
+        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab1')
+    
+    # Function to display results
+    def display_results(results):
+        if results:
+            st.markdown("#### Recomendaciones similares")
+            for i, result in enumerate(results):
+                st.markdown(f"**Recomendación {i+1}:**")
+                st.markdown(f"**Texto:** {result['recommendation']}")
+                if "similarity" in result:
+                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+                st.markdown(f"**País:** {result['country']}")
+                st.markdown(f"**Año:** {result['year']}")
+                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+                st.markdown("---")
+        else:
+            st.write("No se encontraron recomendaciones para la búsqueda.")
+    
+    # Button to search for recommendations
+    if st.button("Buscar Recomendaciones", key='search_button_tab1'):
+        if user_query:
+            with st.spinner('Buscando recomendaciones...'):
+                if search_method == "Por Similitud":
+                    query_embedding = get_embedding_with_retry(user_query)
+                    if query_embedding is not None:
+                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
+                        display_results(results)
+                    else:
+                        st.error("No se pudo generar el embedding para la consulta.")
+                else:
+                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
+                    display_results(results)
 
-#===================######################=====================
-# ================== TAB 2: DOCUMENT CHAT =====================
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
+# Tab 2: Filters, Text Analysis and Similar Lessons Learned
 with tab2:
-    st.header("Chatea con tus Documentos")
+    st.header("Exploración de Evidencia - Lecciones Aprendidas")
+    
+    # --- DATASET LOADING ---
+    # Load the correct lessons learned Excel file
+    @st.cache_data
+    def load_lessons_data():
+        lessons_df = pd.read_excel('./40486578_Producto_2_BD_Lecciones_Aprendidas.xlsx')
+        lessons_df['year'] = pd.to_datetime(lessons_df['Completion date']).dt.year
+        return lessons_df
+    
+    lessons_df = load_lessons_data()
+    
+    # Initialize the filtered dataframe with all data
+    filtered_df_ll = lessons_df.copy()
+    
+    # --- FILTER ROW WITHIN TAB ---
+    st.markdown("### Filtros")
+    filter_container = st.container()
+    
+    with filter_container:
+        # Create 3 columns for filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Administrative unit filter
+            office_options = ['All'] + sorted([str(x) for x in lessons_df['Administrative unit(s)'].unique() if not pd.isna(x)])
+            selected_offices = st.multiselect('Unidad Administrativa:', 
+                                             options=office_options, 
+                                             default='All', 
+                                             key='unidad_administrativa_tab2')
+            
+            # Country filter
+            country_options = ['All'] + sorted([str(x) for x in lessons_df['Country(ies)'].unique() if not pd.isna(x)])
+            selected_countries = st.multiselect('País:', 
+                                              options=country_options, 
+                                              default='All', 
+                                              key='pais_tab2')
+        
+        with col2:
+            # Year filter with slider
+            min_year = int(lessons_df['year'].min())
+            max_year = int(lessons_df['year'].max())
+            selected_year_range = st.slider('Rango de Años:', 
+                                          min_value=min_year, 
+                                          max_value=max_year, 
+                                          value=(min_year, max_year), 
+                                          key='rango_anos_tab2')
+            
+            # Dimension filter if it exists
+            if 'Dimension' in lessons_df.columns:
+                dimension_options = ['All'] + sorted([str(x) for x in lessons_df['Dimension'].unique() if not pd.isna(x)])
+                selected_dimensions = st.multiselect('Dimensión:', 
+                                                   options=dimension_options, 
+                                                   default='All', 
+                                                   key='dimension_tab2')
+        
+        with col3:
+            # Subdimension filter if it exists
+            if 'Subdimension' in lessons_df.columns:
+                subdim_options = ['All'] + sorted([str(x) for x in lessons_df['Subdimension'].unique() if not pd.isna(x)])
+                selected_subdimensions = st.multiselect('Subdimensión:', 
+                                                      options=subdim_options, 
+                                                      default='All', 
+                                                      key='subdim_tab2')
+            
+            # Theme filter if it exists
+            if 'Theme' in lessons_df.columns:
+                theme_options = ['All'] + sorted([str(x) for x in lessons_df['Theme'].unique() if not pd.isna(x)])
+                selected_themes = st.multiselect('Tema:', 
+                                               options=theme_options, 
+                                               default='All', 
+                                               key='tema_tab2')
+    
+    # Apply filters dynamically - no button needed
+    # Apply year filter
+    filtered_df_ll = filtered_df_ll[(filtered_df_ll['year'] >= selected_year_range[0]) & 
+                                   (filtered_df_ll['year'] <= selected_year_range[1])]
+    
+    # Apply remaining filters
+    if 'All' not in selected_offices and selected_offices:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Administrative unit(s)'].astype(str).isin(selected_offices)]
+    
+    if 'All' not in selected_countries and selected_countries:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Country(ies)'].astype(str).isin(selected_countries)]
+    
+    if 'Dimension' in lessons_df.columns and 'All' not in selected_dimensions and selected_dimensions:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].astype(str).isin(selected_dimensions)]
+    
+    if 'Subdimension' in lessons_df.columns and 'All' not in selected_subdimensions and selected_subdimensions:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].astype(str).isin(selected_subdimensions)]
+    
+    if 'Theme' in lessons_df.columns and 'All' not in selected_themes and selected_themes:
+        filtered_df_ll = filtered_df_ll[filtered_df_ll['Theme'].astype(str).isin(selected_themes)]
+    
+    # Add a small info text showing the number of filtered lessons
+    st.info(f"Mostrando {len(filtered_df_ll)} lecciones aprendidas con los filtros seleccionados.")
+    
+    # Extract unique texts for analysis
+    if 'Lessons learned description' in filtered_df_ll.columns:
+        unique_texts = filtered_df_ll['Lessons learned description'].unique()
+    else:
+        # Fallback to first column if the expected column isn't found
+        unique_texts = filtered_df_ll.iloc[:,0].unique()
+    
+    unique_texts_str = [str(text) for text in unique_texts]  # Convert elements to strings
+    
+    # Create filtered_df_unique_ll for summary statistics
+    filtered_df_unique_ll = filtered_df_ll.drop_duplicates(['Lessons learned description'])
+    
+    # Display summary KPIs
+    st.markdown("#### Información General")
+    
+    # KPIs for totals (responsive to filters)
+    total_lessons = len(filtered_df_unique_ll)
+    num_countries = filtered_df_unique_ll['Country(ies)'].nunique()
+    num_years = filtered_df_unique_ll['year'].nunique()
+    num_evals = filtered_df_unique_ll['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique_ll.columns else 'N/A'
+    
+    # Display KPIs in columns
+    total_cols = st.columns(4)
+    total_kpi_labels = ["Total Lecciones Aprendidas", "Países", "Años", "Evaluaciones"]
+    total_kpi_values = [total_lessons, num_countries, num_years, num_evals]
+    
+    total_kpi_html = [
+        f"""
+        <div style='text-align:center;'>
+            <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+            <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+        </div>
+        """
+        for label, value in zip(total_kpi_labels, total_kpi_values)
+    ]
+    
+    for col, html in zip(total_cols, total_kpi_html):
+        col.markdown(html, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+    
+    # Display plots if data is available
+    if not filtered_df_ll.empty:
+        country_counts = filtered_df_unique_ll['Country(ies)'].value_counts()
+        
+        # Add CSS for dashboard styling
+        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+        
+        # Create two columns for charts
+        row1_col1, row1_col2 = st.columns(2)
+        
+        with row1_col1:
+            st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por País</div>', unsafe_allow_html=True)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Bar(
+                y=country_counts.index.tolist(),
+                x=country_counts.values.tolist(),
+                orientation='h',
+                text=country_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='%{y}: %{x} lecciones aprendidas'
+            ))
+            
+            # Fixed height for alignment with year plot
+            fixed_height = 500
+            fig1.update_layout(
+                xaxis_title='Número de Lecciones Aprendidas',
+                yaxis_title='País',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=fixed_height,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+            fig1.update_yaxes(showgrid=False)
+            st.plotly_chart(fig1, use_container_width=True)
+        
+        with row1_col2:
+            st.markdown('<div class="dashboard-subtitle">Número de Lecciones Aprendidas por Año</div>', unsafe_allow_html=True)
+            year_counts = filtered_df_unique_ll['year'].value_counts().sort_index()
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=year_counts.index.astype(str).tolist(),
+                y=year_counts.values.tolist(),
+                text=year_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='Año %{x}: %{y} lecciones aprendidas',
+                textfont=dict(size=22)
+            ))
+            fig2.update_layout(
+                xaxis_title='Año',
+                yaxis_title='Número de Lecciones Aprendidas',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=500,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        # Dimension treemap (if dimension data exists)
+        if 'Dimension' in filtered_df_ll.columns:
+            st.markdown('<div class="dashboard-subtitle">Composición de Lecciones Aprendidas por Dimensión</div>', unsafe_allow_html=True)
+            
+            # Clean and prepare dimension data
+            filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.strip().str.lower()
+            filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'process': 'Process'})
+            filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].notna()]
+            
+            # Count lessons by dimension
+            id_col = 'ID_LeccionAprendida' if 'ID_LeccionAprendida' in filtered_df_ll.columns else filtered_df_ll.columns[0]
+            dimension_counts = filtered_df_ll.groupby('Dimension').agg({
+                id_col: 'nunique' if id_col == 'ID_LeccionAprendida' else 'count'
+            }).reset_index()
+            
+            # Calculate percentages and format text
+            dimension_counts['percentage'] = dimension_counts[id_col] / dimension_counts[id_col].sum() * 100
+            dimension_counts['text'] = dimension_counts.apply(
+                lambda row: f"{row['Dimension']}<br>Lecciones Aprendidas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
+                axis=1
+            )
+            
+            # Remove 'Sin Clasificar' from dimension_counts for treemap
+            dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
+            
+            # Capitalize dimension labels
+            dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
+            
+            # Create treemap
+            fig3 = px.treemap(
+                dimension_counts, 
+                path=['Dimension'], 
+                values=id_col,
+                title='Composición de Lecciones Aprendidas por Dimensión',
+                hover_data={'text': True, id_col: False, 'percentage': False},
+                custom_data=['text']
+            )
+            fig3.update_traces(
+                textinfo='label+value', 
+                hovertemplate='%{customdata[0]}',
+                textfont_size=32
+            )
+            fig3.update_layout(
+                margin=dict(t=50, l=25, r=25, b=25), 
+                width=900, 
+                height=500,
+                title_font_size=32,
+                font=dict(size=28),
+                legend_font_size=28
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            # Subdimension treemap if applicable
+            if 'Subdimension' in filtered_df_ll.columns:
+                # Harmonize process/processes naming
+                filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+                
+                # Remove 'Sin Clasificar' entries
+                filtered_df_ll = filtered_df_ll[filtered_df_ll['Dimension'].str.lower() != 'sin clasificar']
+                filtered_df_ll = filtered_df_ll[filtered_df_ll['Subdimension'].str.lower() != 'sin clasificar']
+                
+                # Capitalize dimension and subdimension labels
+                filtered_df_ll['Dimension'] = filtered_df_ll['Dimension'].astype(str).str.title()
+                filtered_df_ll['Subdimension'] = filtered_df_ll['Subdimension'].astype(str).str.title()
+                
+                # Count by subdimension
+                subdimension_counts = filtered_df_ll.groupby(['Dimension', 'Subdimension']).agg({
+                    id_col: 'nunique' if id_col == 'ID_LeccionAprendida' else 'count'
+                }).reset_index()
+                
+                # Calculate percentages and format text
+                subdimension_counts['percentage'] = subdimension_counts[id_col] / subdimension_counts[id_col].sum() * 100
+                subdimension_counts['text'] = subdimension_counts.apply(
+                    lambda row: f"{row['Subdimension']}<br>Lecciones Aprendidas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
+                    axis=1
+                )
+                
+                # Create treemap
+                fig4 = px.treemap(
+                    subdimension_counts, 
+                    path=['Dimension', 'Subdimension'], 
+                    values=id_col,
+                    title='Composición de Lecciones Aprendidas por Subdimensión',
+                    hover_data={'text': True, id_col: False, 'percentage': False},
+                    custom_data=['text']
+                )
+                fig4.update_traces(
+                    textinfo='label+value', 
+                    hovertemplate='%{customdata[0]}',
+                    textfont_size=32
+                )
+                fig4.update_layout(
+                    margin=dict(t=50, l=25, r=25, b=25), 
+                    width=900, 
+                    height=500,
+                    title_font_size=32,
+                    font=dict(size=28),
+                    legend_font_size=28
+                )
+                st.plotly_chart(fig4, use_container_width=True)
+    else:
+        st.warning("No hay datos disponibles para los filtros seleccionados.")
+    
+    # Text analysis section
+    st.markdown("""
+    <h3 style='color:#3498db; margin-top:0;'>Análisis de Textos de Lecciones Aprendidas</h3>
+    <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+    Personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, 
+    acciones recomendadas y actores clave de las lecciones aprendidas seleccionadas, usando IA avanzada.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+    """, unsafe_allow_html=True)
+    
+    user_template_part = st.text_area(
+        "",
+        value="""Produce un breve resumen en español del conjunto completo de lecciones aprendidas. Después, incluye una lista con viñetas que resuma 
+        los principales aprendizajes y los actores específicos involucrados, así como otra lista con viñetas para los temas principales y recurrentes. 
+        Este formato debe aclarar qué se aprendió y quiénes fueron los actores clave. Adicionalmente, genera una lista con viñetas de recomendaciones 
+        para aplicar estas lecciones aprendidas en futuros proyectos.""",
+        height=180,
+        key="user_template_part_main_tab2"
+    )
+    
+    combine_template_prefix = "The following is a set of summaries of lessons learned:\n{text}\n"
+    
+    # Define the map prompt for initial summarization of chunks
+    map_template = """Summarize the following text containing lessons learned: {text}
+    Helpful Answer:"""
+    
+    # Analysis button
+    if st.button('Analizar Lecciones Aprendidas', key='analyze_button_tab2'):
+        # For tab2, we're only using lessons learned
+        selections = {
+            'recommendations': False,
+            'lessons': True,  # Only lessons learned are True
+            'practices': False,
+            'plans': False
+        }
+        
+        # Build text directly from lessons learned column
+        if 'Lessons learned description' in filtered_df_ll.columns:
+            combined_text = ' '.join(filtered_df_ll['Lessons learned description'].astype(str).dropna().tolist())
+        else:
+            # Try to build using the standard function
+            combined_text = build_combined_text(filtered_df_ll, selections)
+        
+        if combined_text:
+            with st.spinner('Analizando lecciones aprendidas...'):
+                result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
+                if result:
+                    st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("No se pudo generar el análisis.")
+        else:
+            st.warning("No hay texto de lecciones aprendidas para analizar con los filtros actuales.")
+    
+    # Button to download the filtered dataframe as Excel file
+    if st.button('Descargar Datos Filtrados', key='download_button_tab2'):
+        try:
+            # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+            def sanitize_cell(x):
+                if isinstance(x, list):
+                    return ', '.join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+            
+            sanitized_df = filtered_df_ll.copy()
+            for col in sanitized_df.columns:
+                if sanitized_df[col].dtype == 'O':
+                    sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+            
+            filtered_data = to_excel(sanitized_df)
+            st.download_button(
+                label='📥 Descargar Excel',
+                data=filtered_data,
+                file_name='lecciones_aprendidas_filtradas.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            st.error(f"No se pudo exportar los datos filtrados: {e}")
+            import traceback
+            st.error(traceback.format_exc())
+            
+    # # Chat section for querying similar lessons learned
+    # st.header("Búsqueda de Lecciones Aprendidas")
+    # st.markdown("### Búsqueda")
 
-    # Presentation box
-    st.info("""
+    # # Load lessons learned embeddings (if available)
+    # lessons_texts = filtered_df_ll['Lessons learned description'].tolist() if 'Lessons learned description' in filtered_df_ll.columns else []
 
-    Arrastra uno o más DOCX/TXT (max 200MB) y conversa directamente con su contenido. Este chat responde solo con la información de los archivos cargados—no recurre a fuentes externas—para ayudarte a revisar propuestas antes de enviarlas, aclarar pasajes de informes, preparar notas técnicas y comprobar coherencias entre objetivos, actividades y resultados.
+    # # Check if we have embeddings already loaded
+    # if 'lessons_embeddings' not in st.session_state:
+    #     try:
+    #         # Try to load pre-computed embeddings
+    #         lessons_embeddings, structured_lessons, lessons_index = load_lessons_embeddings()
+    #         st.session_state['lessons_embeddings'] = lessons_embeddings
+    #         st.session_state['structured_lessons'] = structured_lessons
+    #         st.session_state['lessons_index'] = lessons_index
+    #     except Exception as e:
+    #         st.warning(f"No se pudieron cargar embeddings para lecciones aprendidas: {str(e)}. La búsqueda por similitud puede no estar disponible.")
+    #         st.session_state['lessons_embeddings'] = None
+    #         st.session_state['structured_lessons'] = None
+    #         st.session_state['lessons_index'] = None
 
-    Al formular tus preguntas, indica el nivel de detalle que necesitas y pide que las respuestas incluyan citas breves entre comillas y metadatos (título, sección/página, año) para mantener la trazabilidad. Si un dato no existe en los archivos, se marcará "ND" sin inventar información.
+    # # Input for user query
+    # user_query = st.text_input("Búsqueda en lecciones aprendidas:", value="¿Qué lecciones existen sobre coordinación con partes interesadas?", key='user_query_lessons')
 
-    **Úsalo para:**
-    - Aprender de experiencias de evaluación
-    - Profundizar en el conocimiento de secciones de los informes
-    - Preparar notas técnicas a partir de esta evidencia
-    - Verificar la coherencia entre objetivos, actividades y resultados
-    - Generar tablas copiables a Excel
-    - Comparar varios documentos (hasta de 200MB) en una misma conversación
+    # # Search method selection
+    # search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_lessons')
 
-    *Nota: El chat mantiene memoria de la conversación durante la sesión activa.*
-    """)
+    # # Similarity threshold (only shown for similarity search)
+    # score_threshold = 0.5
+    # if search_method == "Por Similitud":
+    #     score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_lessons')
+
+    # # Function to display results
+    # def display_lessons_results(results):
+    #     if results:
+    #         st.markdown("#### Lecciones aprendidas similares")
+    #         for i, result in enumerate(results):
+    #             st.markdown(f"**Lección {i+1}:**")
+    #             st.markdown(f"**Texto:** {result['lesson']}")
+    #             if "similarity" in result:
+    #                 st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+    #             st.markdown(f"**País:** {result['country']}")
+    #             st.markdown(f"**Año:** {result['year']}")
+    #             st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+    #             st.markdown("---")
+    #     else:
+    #         st.write("No se encontraron lecciones aprendidas para la búsqueda.")
+
+    # # Button to search for lessons
+    # if st.button("Buscar Lecciones", key='search_button_lessons'):
+    #     if user_query:
+    #         with st.spinner('Buscando lecciones aprendidas...'):
+    #             if search_method == "Por Similitud" and st.session_state['lessons_embeddings'] is not None:
+    #                 # Get query embedding
+    #                 query_embedding = get_lessons_embedding_with_retry(user_query)
+    #                 if query_embedding is not None:
+    #                     # Find similar lessons
+    #                     results = find_similar_lessons(
+    #                         query_embedding, 
+    #                         st.session_state['lessons_index'], 
+    #                         st.session_state['lessons_embeddings'], 
+    #                         st.session_state['structured_lessons'], 
+    #                         score_threshold
+    #                     )
+    #                     display_lessons_results(results)
+    #                 else:
+    #                     st.error("No se pudo generar el embedding para la consulta.")
+    #             else:
+    #                 # Fallback to term matching if embeddings not available or user chose this method
+    #                 if search_method == "Por Similitud" and st.session_state['lessons_embeddings'] is None:
+    #                     st.warning("Búsqueda por similitud no disponible. Usando coincidencia de términos.")
+                    
+    #                 # Try to create structured metadata for term matching if not loaded from files
+    #                 if st.session_state['structured_lessons'] is None:
+    #                     # Create basic metadata structure from filtered_df_ll
+    #                     structured_lessons = []
+    #                     for i, row in filtered_df_ll.iterrows():
+    #                         if 'Lessons learned description' in row and not pd.isna(row['Lessons learned description']):
+    #                             lesson = {
+    #                                 "text": row['Lessons learned description'],
+    #                                 "country": row['Country(ies)'] if 'Country(ies)' in row else "No especificado",
+    #                                 "year": row['year'] if 'year' in row else "No especificado",
+    #                                 "eval_id": row['Evaluation number'] if 'Evaluation number' in row else "No especificado"
+    #                             }
+    #                             structured_lessons.append(lesson)
+    #                 else:
+    #                     structured_lessons = st.session_state['structured_lessons']
+                    
+    #                 results = find_lessons_by_term_matching(user_query, lessons_texts, structured_lessons)
+    #                 display_lessons_results(results)
+            
+#-----------------------#-----------------------#
+#-----------------------#-----------------------#
+# Tab 3: Upload and Evaluate Document by Rubric
+
+with tab3:
+    st.header("Exploración de Evidencia - Buenas Prácticas")
+    
+    # --- DATASET LOADING ---
+    # Load the correct good practices Excel file
+    practices_df = pd.read_excel('./40486578_Producto_3_BD_Buenas_Practicas.xlsx')
+    practices_df['year'] = pd.to_datetime(practices_df['Completion date']).dt.year
+    
+    # Initialize the filtered dataframe with all data
+    filtered_df_bp = practices_df.copy()
+    
+    # --- FILTER ROW WITHIN TAB ---
+    st.markdown("### Filtros")
+    filter_container = st.container()
+    
+    with filter_container:
+        # Create 3 columns for filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Administrative unit filter
+            office_options = ['All'] + sorted([str(x) for x in practices_df['Administrative unit(s)'].unique() if not pd.isna(x)])
+            selected_offices = st.multiselect('Unidad Administrativa:', 
+                                             options=office_options, 
+                                             default='All', 
+                                             key='unidad_administrativa_tab3')
+            
+            # Country filter
+            country_options = ['All'] + sorted([str(x) for x in practices_df['Country(ies)'].unique() if not pd.isna(x)])
+            selected_countries = st.multiselect('País:', 
+                                              options=country_options, 
+                                              default='All', 
+                                              key='pais_tab3')
+        
+        with col2:
+            # Year filter with slider
+            min_year = int(practices_df['year'].min())
+            max_year = int(practices_df['year'].max())
+            selected_year_range = st.slider('Rango de Años:', 
+                                          min_value=min_year, 
+                                          max_value=max_year, 
+                                          value=(min_year, max_year), 
+                                          key='rango_anos_tab3')
+            
+            # Dimension filter if it exists
+            if 'Dimension' in practices_df.columns:
+                dimension_options = ['All'] + sorted([str(x) for x in practices_df['Dimension'].unique() if not pd.isna(x)])
+                selected_dimensions = st.multiselect('Dimensión:', 
+                                                   options=dimension_options, 
+                                                   default='All', 
+                                                   key='dimension_tab3')
+        
+        with col3:
+            # Subdimension filter if it exists
+            if 'Subdimension' in practices_df.columns:
+                subdim_options = ['All'] + sorted([str(x) for x in practices_df['Subdimension'].unique() if not pd.isna(x)])
+                selected_subdimensions = st.multiselect('Subdimensión:', 
+                                                      options=subdim_options, 
+                                                      default='All', 
+                                                      key='subdim_tab3')
+            
+            # Theme filter if it exists
+            if 'Theme' in practices_df.columns:
+                theme_options = ['All'] + sorted([str(x) for x in practices_df['Theme'].unique() if not pd.isna(x)])
+                selected_themes = st.multiselect('Tema:', 
+                                               options=theme_options, 
+                                               default='All', 
+                                               key='tema_tab3')
+    
+    # Apply filters dynamically - no button needed
+    # Apply year filter
+    filtered_df_bp = filtered_df_bp[(filtered_df_bp['year'] >= selected_year_range[0]) & 
+                                   (filtered_df_bp['year'] <= selected_year_range[1])]
+    
+    # Apply remaining filters
+    if 'All' not in selected_offices and selected_offices:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Administrative unit(s)'].astype(str).isin(selected_offices)]
+    
+    if 'All' not in selected_countries and selected_countries:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Country(ies)'].astype(str).isin(selected_countries)]
+    
+    if 'Dimension' in practices_df.columns and 'All' not in selected_dimensions and selected_dimensions:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Dimension'].astype(str).isin(selected_dimensions)]
+    
+    if 'Subdimension' in practices_df.columns and 'All' not in selected_subdimensions and selected_subdimensions:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Subdimension'].astype(str).isin(selected_subdimensions)]
+    
+    if 'Theme' in practices_df.columns and 'All' not in selected_themes and selected_themes:
+        filtered_df_bp = filtered_df_bp[filtered_df_bp['Theme'].astype(str).isin(selected_themes)]
+    
+    # Add a small info text showing the number of filtered good practices
+    st.info(f"Mostrando {len(filtered_df_bp)} buenas prácticas con los filtros seleccionados.")
+    
+    # Extract unique texts for analysis
+    if 'Good practices description' in filtered_df_bp.columns:
+        unique_texts = filtered_df_bp['Good practices description'].unique()
+    else:
+        # Fallback to first column if the expected column isn't found
+        unique_texts = filtered_df_bp.iloc[:,0].unique()
+    
+    unique_texts_str = [str(text) for text in unique_texts]  # Convert elements to strings
+    
+    # Create filtered_df_unique_bp for summary statistics
+    filtered_df_unique_bp = filtered_df_bp.drop_duplicates(['Good practices description'])
+    
+    # Display summary KPIs
+    st.markdown("#### Información General")
+    
+    # KPIs for totals (responsive to filters)
+    total_practices = len(filtered_df_unique_bp)
+    num_countries = filtered_df_unique_bp['Country(ies)'].nunique()
+    num_years = filtered_df_unique_bp['year'].nunique()
+    num_evals = filtered_df_unique_bp['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique_bp.columns else 'N/A'
+    
+    # Display KPIs in columns
+    total_cols = st.columns(4)
+    total_kpi_labels = ["Total Buenas Prácticas", "Países", "Años", "Evaluaciones"]
+    total_kpi_values = [total_practices, num_countries, num_years, num_evals]
+    
+    total_kpi_html = [
+        f"""
+        <div style='text-align:center;'>
+            <span style='font-size:1.4em; font-weight:700;'>{label}</span><br>
+            <span style='font-size:2.6em; font-weight:700; color:#fff;'>{value}</span>
+        </div>
+        """
+        for label, value in zip(total_kpi_labels, total_kpi_values)
+    ]
+    
+    for col, html in zip(total_cols, total_kpi_html):
+        col.markdown(html, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+    
+    # Display plots if data is available
+    if not filtered_df_bp.empty:
+        country_counts = filtered_df_unique_bp['Country(ies)'].value_counts()
+        
+        # Add CSS for dashboard styling
+        st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+        
+        # Create two columns for charts
+        row1_col1, row1_col2 = st.columns(2)
+        
+        with row1_col1:
+            st.markdown('<div class="dashboard-subtitle">Número de Buenas Prácticas por País</div>', unsafe_allow_html=True)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Bar(
+                y=country_counts.index.tolist(),
+                x=country_counts.values.tolist(),
+                orientation='h',
+                text=country_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='%{y}: %{x} buenas prácticas'
+            ))
+            
+            # Fixed height for alignment with year plot
+            fixed_height = 500
+            fig1.update_layout(
+                xaxis_title='Número de Buenas Prácticas',
+                yaxis_title='País',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=fixed_height,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+            fig1.update_yaxes(showgrid=False)
+            st.plotly_chart(fig1, use_container_width=True)
+        
+        with row1_col2:
+            st.markdown('<div class="dashboard-subtitle">Número de Buenas Prácticas por Año</div>', unsafe_allow_html=True)
+            year_counts = filtered_df_unique_bp['year'].value_counts().sort_index()
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=year_counts.index.astype(str).tolist(),
+                y=year_counts.values.tolist(),
+                text=year_counts.values.tolist(),
+                textposition='auto',
+                marker_color='#3498db',
+                hovertemplate='Año %{x}: %{y} buenas prácticas',
+                textfont=dict(size=22)
+            ))
+            fig2.update_layout(
+                xaxis_title='Año',
+                yaxis_title='Número de Buenas Prácticas',
+                margin=dict(t=10, l=10, r=10, b=40),
+                font=dict(size=22),
+                height=500,
+                plot_bgcolor='white',
+                showlegend=False
+            )
+            fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+            fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        # Dimension treemap (if dimension data exists)
+        if 'Dimension' in filtered_df_bp.columns:
+            st.markdown('<div class="dashboard-subtitle">Composición de Buenas Prácticas por Dimensión</div>', unsafe_allow_html=True)
+            
+            # Clean and prepare dimension data
+            filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].astype(str).str.strip().str.lower()
+            filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].replace({'process': 'Process'})
+            filtered_df_bp = filtered_df_bp[filtered_df_bp['Dimension'].notna()]
+            
+            # Count practices by dimension
+            id_col = 'ID_BuenaPractica' if 'ID_BuenaPractica' in filtered_df_bp.columns else filtered_df_bp.columns[0]
+            dimension_counts = filtered_df_bp.groupby('Dimension').agg({
+                id_col: 'nunique' if id_col == 'ID_BuenaPractica' else 'count'
+            }).reset_index()
+            
+            # Calculate percentages and format text
+            dimension_counts['percentage'] = dimension_counts[id_col] / dimension_counts[id_col].sum() * 100
+            dimension_counts['text'] = dimension_counts.apply(
+                lambda row: f"{row['Dimension']}<br>Buenas Prácticas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
+                axis=1
+            )
+            
+            # Remove 'Sin Clasificar' from dimension_counts for treemap
+            dimension_counts = dimension_counts[dimension_counts['Dimension'].str.lower() != 'sin clasificar']
+            
+            # Capitalize dimension labels
+            dimension_counts['Dimension'] = dimension_counts['Dimension'].astype(str).str.title()
+            
+            # Create treemap
+            fig3 = px.treemap(
+                dimension_counts, 
+                path=['Dimension'], 
+                values=id_col,
+                title='Composición de Buenas Prácticas por Dimensión',
+                hover_data={'text': True, id_col: False, 'percentage': False},
+                custom_data=['text']
+            )
+            fig3.update_traces(
+                textinfo='label+value', 
+                hovertemplate='%{customdata[0]}',
+                textfont_size=32
+            )
+            fig3.update_layout(
+                margin=dict(t=50, l=25, r=25, b=25), 
+                width=900, 
+                height=500,
+                title_font_size=32,
+                font=dict(size=28),
+                legend_font_size=28
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            # Subdimension treemap if applicable
+            if 'Subdimension' in filtered_df_bp.columns:
+                # Harmonize process/processes naming
+                filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+                
+                # Remove 'Sin Clasificar' entries
+                filtered_df_bp = filtered_df_bp[filtered_df_bp['Dimension'].str.lower() != 'sin clasificar']
+                filtered_df_bp = filtered_df_bp[filtered_df_bp['Subdimension'].str.lower() != 'sin clasificar']
+                
+                # Capitalize dimension and subdimension labels
+                filtered_df_bp['Dimension'] = filtered_df_bp['Dimension'].astype(str).str.title()
+                filtered_df_bp['Subdimension'] = filtered_df_bp['Subdimension'].astype(str).str.title()
+                
+                # Count by subdimension
+                subdimension_counts = filtered_df_bp.groupby(['Dimension', 'Subdimension']).agg({
+                    id_col: 'nunique' if id_col == 'ID_BuenaPractica' else 'count'
+                }).reset_index()
+                
+                # Calculate percentages and format text
+                subdimension_counts['percentage'] = subdimension_counts[id_col] / subdimension_counts[id_col].sum() * 100
+                subdimension_counts['text'] = subdimension_counts.apply(
+                    lambda row: f"{row['Subdimension']}<br>Buenas Prácticas: {row[id_col]}<br>Porcentaje: {row['percentage']:.2f}%", 
+                    axis=1
+                )
+                
+                # Create treemap
+                fig4 = px.treemap(
+                    subdimension_counts, 
+                    path=['Dimension', 'Subdimension'], 
+                    values=id_col,
+                    title='Composición de Buenas Prácticas por Subdimensión',
+                    hover_data={'text': True, id_col: False, 'percentage': False},
+                    custom_data=['text']
+                )
+                fig4.update_traces(
+                    textinfo='label+value', 
+                    hovertemplate='%{customdata[0]}',
+                    textfont_size=32
+                )
+                fig4.update_layout(
+                    margin=dict(t=50, l=25, r=25, b=25), 
+                    width=900, 
+                    height=500,
+                    title_font_size=32,
+                    font=dict(size=28),
+                    legend_font_size=28
+                )
+                st.plotly_chart(fig4, use_container_width=True)
+    else:
+        st.warning("No hay datos disponibles para los filtros seleccionados.")
+    
+    # Text analysis section
+    st.markdown("""
+    <h3 style='color:#3498db; margin-top:0;'>Análisis de Textos de Buenas Prácticas</h3>
+    <div style='font-size:1.1em; text-align:justify; margin-bottom:1em;'>
+    Personaliza la instrucción de análisis si lo deseas. Al pulsar <b>Analizar Textos</b>, la herramienta resumirá y extraerá los temas principales, 
+    enfoques innovadores y actores clave de las buenas prácticas seleccionadas, usando IA avanzada.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style='margin-top:1em; margin-bottom:0.3em; font-weight:600;'>Instrucción de análisis (puedes personalizarla):</div>
+    """, unsafe_allow_html=True)
+    
+    user_template_part = st.text_area(
+        "",
+        value="""Produce un breve resumen en español del conjunto completo de buenas prácticas. Después, incluye una lista con viñetas que resuma 
+        las prácticas innovadoras y los actores específicos involucrados, así como otra lista con viñetas para los temas principales y recurrentes. 
+        Este formato debe aclarar qué prácticas fueron exitosas y cómo se implementaron. Adicionalmente, genera una lista con viñetas de recomendaciones 
+        para replicar estas buenas prácticas en otros contextos.""",
+        height=180,
+        key="user_template_part_main_tab3"
+    )
+    
+    combine_template_prefix = "The following is a set of summaries of good practices:\n{text}\n"
+    
+    # Define the map prompt for initial summarization of chunks
+    map_template = """Summarize the following text containing good practices: {text}
+    Helpful Answer:"""
+    
+    # Analysis button
+    if st.button('Analizar Buenas Prácticas', key='analyze_button_tab3'):
+        # For tab3, we're only using good practices
+        selections = {
+            'recommendations': False,
+            'lessons': False,
+            'practices': True,  # Only good practices are True
+            'plans': False
+        }
+        
+        # Build text directly from good practices column
+        if 'Good practices description' in filtered_df_bp.columns:
+            combined_text = ' '.join(filtered_df_bp['Good practices description'].astype(str).dropna().tolist())
+        else:
+            # Try to build using the standard function
+            combined_text = build_combined_text(filtered_df_bp, selections)
+        
+        if combined_text:
+            with st.spinner('Analizando buenas prácticas...'):
+                result = process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part)
+                if result:
+                    st.markdown(f"<div style='text-align: justify;'>{result}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("No se pudo generar el análisis.")
+        else:
+            st.warning("No hay texto de buenas prácticas para analizar con los filtros actuales.")
+    
+    # Button to download the filtered dataframe as Excel file
+    if st.button('Descargar Datos Filtrados', key='download_button_tab3'):
+        try:
+            # Sanitize all columns to avoid ArrowInvalid and ExcelWriter errors
+            def sanitize_cell(x):
+                if isinstance(x, list):
+                    return ', '.join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return str(x) if not isinstance(x, (int, float, pd.Timestamp, type(None))) else x
+            
+            sanitized_df = filtered_df_bp.copy()
+            for col in sanitized_df.columns:
+                if sanitized_df[col].dtype == 'O':
+                    sanitized_df[col] = sanitized_df[col].apply(sanitize_cell)
+            
+            filtered_data = to_excel(sanitized_df)
+            st.download_button(
+                label='📥 Descargar Excel',
+                data=filtered_data,
+                file_name='buenas_practicas_filtradas.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            st.error(f"No se pudo exportar los datos filtrados: {e}")
+            import traceback
+            st.error(traceback.format_exc())
+
+#-----------------------#-----------------------#
+#-----------------------#-----------------------#
+# Tab 4: Upload and Evaluate Document by Rubric
+with tab4:
+    st.header("Subir y Evaluar Documento DOCX")
 
     # Read rubrics from Excel files as in megaparse_example.py
     import pandas as pd
@@ -1593,33 +2964,29 @@ with tab2:
         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_engagement.iterrows():
             indicador = row['Indicador']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
-            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
-            engagement_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+            valores = row.drop('Indicador').values.tolist()
+            engagement_rubric[indicador] = valores
 
         df_rubric_performance = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_performance')
         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
         for idx, row in df_rubric_performance.iterrows():
             criterio = row['subdim']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
-            valores = row.drop(['subdim', 'Dimensión'], errors='ignore').values.tolist()
-            performance_rubric[criterio] = {'valores': valores, 'dimension': dimension}
+            valores = row.drop('subdim').values.tolist()
+            performance_rubric[criterio] = valores
 
         df_rubric_parteval = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_parteval')
         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_parteval.iterrows():
             indicador = row['Indicador']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
-            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
-            parteval_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+            valores = row.drop('Indicador').values.tolist()
+            parteval_rubric[indicador] = valores
 
         df_rubric_gender = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_gender_')
         df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_gender.iterrows():
             indicador = row['Indicador']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
-            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
-            gender_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+            valores = row.drop('Indicador').values.tolist()
+            gender_rubric[indicador] = valores
 
         # Load TJ Traditional rubric from Rubricas_6ago2025.xlsx
         try:
@@ -1628,9 +2995,8 @@ with tab2:
             for idx, row in df_rubric_tj_traditional.iterrows():
                 indicador = row['Indicador']
                 if pd.notna(indicador) and str(indicador).strip():
-                    dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
-                    valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
-                    tj_traditional_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+                    valores = row.drop('Indicador').values.tolist()
+                    tj_traditional_rubric[indicador] = valores
         except Exception as e:
             st.error(f"❌ Error cargando TJ Tradicional: {e}")
             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
@@ -1642,9 +3008,8 @@ with tab2:
             for idx, row in df_rubric_tj_just_transition.iterrows():
                 indicador = row['Indicador']
                 if pd.notna(indicador) and str(indicador).strip():
-                    dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
-                    valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
-                    tj_just_transition_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+                    valores = row.drop('Indicador').values.tolist()
+                    tj_just_transition_rubric[indicador] = valores
         except Exception as e:
             st.error(f"❌ Error cargando TJ Transición Justa: {e}")
             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
@@ -2004,12 +3369,11 @@ with tab2:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 48
         def eval_one_criterion(args):
-            crit, descriptions, dimension, rubric_name = args
+            crit, descriptions, rubric_name = args
             try:
                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                 return {
                     'Criterio': crit,
-                    'Dimensión': dimension,
                     'Score': result.get('score', 0),
                     'Análisis': result.get('analysis', ''),
                     'Evidencia': result.get('evidence', ''),
@@ -2019,7 +3383,6 @@ with tab2:
             except Exception as e:
                 return {
                     'Criterio': crit,
-                    'Dimensión': dimension,
                     'Score': 0,
                     'Análisis': '',
                     'Evidencia': '',
@@ -2038,13 +3401,8 @@ with tab2:
             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
-                        executor.submit(eval_one_criterion, (
-                            crit,
-                            rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
-                            rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
-                            rubric_name
-                        )): (crit, idx)
-                        for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+                        executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
+                        for idx, (crit, descriptions) in enumerate(rubric_dict.items())
                     }
                     completed = 0
                     for future in as_completed(futures):
@@ -2059,17 +3417,17 @@ with tab2:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                 if not rubric_analysis_df.empty:
-                    # Ensure 'Evidencia' column is present
+                    # Ensure 'Evidencia' column is present and first for visibility
                     if 'Evidencia' not in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = ''
-
-                    # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
+                    # Reorder columns to show 'Evidencia' after 'Análisis' if present
                     cols = rubric_analysis_df.columns.tolist()
-                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
-                    new_order = [col for col in desired_order if col in cols]
-                    remaining_cols = [col for col in cols if col not in desired_order]
-                    final_order = new_order + remaining_cols
-                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    if 'Análisis' in cols and 'Evidencia' in cols:
+                        new_order = cols.copy()
+                        if new_order.index('Evidencia') < new_order.index('Análisis'):
+                            new_order.remove('Evidencia')
+                            new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                        rubric_analysis_df = rubric_analysis_df[new_order]
                     # Normalize 'Evidencia' column to always be a string
                     if 'Evidencia' in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
@@ -2106,25 +3464,8 @@ with tab2:
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
 with tab5:
-    st.header("Chatea con tu documento")
-
-    # Presentation box
-    st.info("""
-
-    Arrastra uno o más DOCX/TXT (max 200MB) y conversa directamente con su contenido. Este chat responde solo con la información de los archivos cargados—no recurre a fuentes externas—para ayudarte a revisar propuestas antes de enviarlas, aclarar pasajes de informes, preparar notas técnicas y comprobar coherencias entre objetivos, actividades y resultados.
-
-    Al formular tus preguntas, indica el nivel de detalle que necesitas y pide que las respuestas incluyan citas breves entre comillas y metadatos (título, sección/página, año) para mantener la trazabilidad. Si un dato no existe en los archivos, se marcará "ND" sin inventar información.
-
-    **Úsalo para:**
-    - Aprender de experiencias de evaluación
-    - Profundizar en el conocimiento de secciones de los informes
-    - Preparar notas técnicas a partir de esta evidencia
-    - Verificar la coherencia entre objetivos, actividades y resultados
-    - Generar tablas copiables a Excel
-    - Comparar varios documentos (hasta de 200MB) en una misma conversación
-
-    *Nota: El chat mantiene memoria de la conversación durante la sesión activa.*
-    """)
+    st.header("Document Chat: Chatea con tu Documento")
+    st.write("Sube un documento (DOCX o TXT) y hazle preguntas usando IA (GPT-4.1-mini). Tus preguntas y respuestas aparecerán aquí.")
 
     # Session state for chat and document
     if 'doc_chat_history' not in st.session_state:
@@ -2307,7 +3648,7 @@ with tab5:
 
 # ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
 with tab6:
-    st.header("Evaluación de sostenibilidad del proyecto")
+    st.header("Evaluación de PRODOCs")
     
     # Read rubric from Excel file
     import pandas as pd
@@ -2485,12 +3826,11 @@ with tab6:
             MAX_WORKERS = 48
             
             def eval_one_criterion(args):
-                crit, descriptions, dimension, rubric_name = args
+                crit, descriptions, rubric_name = args
                 try:
                     result = evaluate_criterion_with_llm(document_text, crit, descriptions)
                     return {
                         'Criterio': crit,
-                        'Dimensión': dimension,
                         'Score': result.get('score', 0),
                         'Análisis': result.get('analysis', ''),
                         'Evidencia': result.get('evidence', ''),
@@ -2500,7 +3840,6 @@ with tab6:
                 except Exception as e:
                     return {
                         'Criterio': crit,
-                        'Dimensión': dimension,
                         'Score': 0,
                         'Análisis': '',
                         'Evidencia': '',
@@ -2515,13 +3854,8 @@ with tab6:
                 with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                         futures = {
-                            executor.submit(eval_one_criterion, (
-                                crit,
-                                rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
-                                rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
-                                rubric_name
-                            )): (crit, idx)
-                            for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+                            executor.submit(eval_one_criterion, (crit, descriptions, rubric_name)): (crit, idx)
+                            for idx, (crit, descriptions) in enumerate(rubric_dict.items())
                         }
                         completed = 0
                         for future in as_completed(futures):
@@ -2537,17 +3871,17 @@ with tab6:
                 for rubric_name, rubric_analysis_df in rubric_results:
                     st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                     if not rubric_analysis_df.empty:
-                        # Ensure 'Evidencia' column is present
+                        # Ensure 'Evidencia' column is present and first for visibility
                         if 'Evidencia' not in rubric_analysis_df.columns:
                             rubric_analysis_df['Evidencia'] = ''
-
-                        # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
+                        # Reorder columns to show 'Evidencia' after 'Análisis' if present
                         cols = rubric_analysis_df.columns.tolist()
-                        desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
-                        new_order = [col for col in desired_order if col in cols]
-                        remaining_cols = [col for col in cols if col not in desired_order]
-                        final_order = new_order + remaining_cols
-                        rubric_analysis_df = rubric_analysis_df[final_order]
+                        if 'Análisis' in cols and 'Evidencia' in cols:
+                            new_order = cols.copy()
+                            if new_order.index('Evidencia') < new_order.index('Análisis'):
+                                new_order.remove('Evidencia')
+                                new_order.insert(new_order.index('Análisis')+1, 'Evidencia')
+                            rubric_analysis_df = rubric_analysis_df[new_order]
                         # Normalize 'Evidencia' column to always be a string
                         if 'Evidencia' in rubric_analysis_df.columns:
                             rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
@@ -2986,391 +4320,3 @@ with tab7:
             st.info("👆 Click 'Analyze Document' to start the appraisal evaluation.")
         else:
             st.info("📁 Please upload a DOCX file to begin.")
-
-#--------------------------#-------------------------------#
-#--------------------------#-------------------------------#
-# Tab 8: Tablero de seguimiento de recomendaciones y planes de acción
-with tab8:
-    st.header("📊 Tablero de seguimiento de recomendaciones y planes de acción")
-
-    # Comprehensive presentation box
-    st.info("""
-
-    En esta ventana se presentan gráficos y estadísticas derivados de las respuestas institucionales a las recomendaciones (incluidos sus planes de acción) ya procesadas por la herramienta. El panel permite seguir el estado de respuesta (completadas, parcialmente completadas, acción no planificada, acción no tomada, rechazadas, sin respuesta), analizar la calidad de la respuesta (coherencia con el plan, calidad del plan, nivel de atención), observar la evolución en el tiempo y la composición por país, año y dimensión (gobernanza, participación, género, transición justa, capacidades, sostenibilidad financiera, incidencia).
-
-    También muestra atributos de las recomendaciones (innovación, precisión/claridad, viabilidad, horizonte temporal, impacto esperado) e identifica barreras de implementación.
-
-    **🎯 Orientado al nivel directivo y unidades de programación para:**
-    - Conducir conversaciones de seguimiento: qué ocurrió después de decidir implementar (o no) cada recomendación
-    - Identificar por qué quedaron pendientes y qué ajustes corresponden
-    - Facilitar acuerdos operativos (responsables y plazos)
-    - Realizar reprogramaciones cuando haya cuellos de botella
-    - Escalar barreras críticas
-    - Preparar notas técnicas/minutas con evidencia gráfica para rendición de cuentas ante mandantes
-
-    **💡 En síntesis:** El tablero transforma la evidencia en prioridades de acción verificables y ciclos de aprendizaje para cerrar brechas y sostener avances.
-
-    **🔍 Análisis por similitud:** Use la opción "Por similitud" para estimar la correspondencia entre el núcleo de la recomendación y la respuesta/plan. Una similitud baja puede señalar un desajuste de alcance, actores o resultados esperados; tómelo como insumo para discutir ajustes y seguimiento con los equipos.
-
-    *Sugerencia: comience con un umbral de 0.70 y ajústelo según el contexto.*
-    """)
-
-    # Chat section for querying similar recommendations
-    st.header("Búsqueda de Recomendaciones")
-    st.markdown("### Búsqueda")
-
-    # Input for user query
-    user_query = st.text_input("Búsqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab8')
-
-    # Search method selection
-    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab8')
-
-    # Slider for similarity score threshold (only relevant for similarity search)
-    if search_method == "Por Similitud":
-        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab8')
-
-    # Function to display results
-    def display_results(results):
-        if results:
-            st.markdown("#### Recomendaciones similares")
-            for i, result in enumerate(results):
-                st.markdown(f"**Recomendación {i+1}:**")
-                st.markdown(f"**Texto:** {result['recommendation']}")
-                if "similarity" in result:
-                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
-                st.markdown(f"**País:** {result['country']}")
-                st.markdown(f"**Año:** {result['year']}")
-                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
-                st.markdown("---")
-        else:
-            st.write("No se encontraron recomendaciones para la búsqueda.")
-
-    # Button to search for recommendations
-    if st.button("Buscar Recomendaciones", key='search_button_tab8'):
-        if user_query:
-            with st.spinner('Buscando recomendaciones...'):
-                if search_method == "Por Similitud":
-                    query_embedding = get_embedding_with_retry(user_query)
-                    if query_embedding is not None:
-                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
-                        display_results(results)
-                    else:
-                        st.error("No se pudo generar el embedding para la consulta.")
-                else:
-                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
-                    display_results(results)
-
-    # Use the main recommendations dataset
-    filtered_df = df.copy()
-
-    # --- FILTER ROW WITHIN TAB ---
-    st.markdown("### Filtros")
-    filter_container = st.container()
-
-    with filter_container:
-        # Create 3 columns for filters
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            # Administrative unit filter
-            office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
-            selected_offices_viz = st.multiselect('Unidad Administrativa:',
-                                             options=office_options,
-                                             default='All',
-                                             key='unidad_administrativa_viz')
-
-            # Country filter
-            country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
-            selected_countries_viz = st.multiselect('País:',
-                                              options=country_options,
-                                              default='All',
-                                              key='pais_viz')
-
-        with col2:
-            # Year filter with slider
-            min_year = int(df['year'].min())
-            max_year = max(int(df['year'].max()), 2025)
-            selected_year_range_viz = st.slider('Rango de Años:',
-                                          min_value=min_year,
-                                          max_value=max_year,
-                                          value=(min_year, max_year),
-                                          key='rango_anos_viz')
-
-            # Evaluation theme filter
-            evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
-            selected_evaltheme_viz = st.multiselect('Tema (Evaluación):',
-                                              options=evaltheme_options,
-                                              default='All',
-                                              key='tema_eval_viz')
-
-        with col3:
-            # Recommendation theme filter
-            rectheme_options = ['All'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
-            selected_rectheme_viz = st.multiselect('Tema (Recomendación):',
-                                             options=rectheme_options,
-                                             default='All',
-                                             key='tema_recomendacion_viz')
-
-            # Management response filter
-            mgtres_options = ['All'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
-            selected_mgtres_viz = st.multiselect('Respuesta de gerencia:',
-                                           options=mgtres_options,
-                                           default='All',
-                                           key='respuesta_gerencia_viz')
-
-    # Apply filters
-    if 'All' not in selected_offices_viz and selected_offices_viz:
-        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
-
-    if 'All' not in selected_countries_viz and selected_countries_viz:
-        filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries_viz)]
-
-    filtered_df = filtered_df[
-        (filtered_df['year'] >= selected_year_range_viz[0]) &
-        (filtered_df['year'] <= selected_year_range_viz[1])
-    ]
-
-    if 'All' not in selected_evaltheme_viz and selected_evaltheme_viz:
-        filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme_viz)]
-
-    if 'All' not in selected_rectheme_viz and selected_rectheme_viz:
-        filtered_df = filtered_df[filtered_df['Recommendation_theme'].isin(selected_rectheme_viz)]
-
-    if 'All' not in selected_mgtres_viz and selected_mgtres_viz:
-        filtered_df = filtered_df[filtered_df['Management_response'].isin(selected_mgtres_viz)]
-
-    # Remove duplicates for plotting
-    filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
-
-    # --- KPIs FOR VISUALIZATION TAB ---
-    if not filtered_df_unique.empty:
-        # Main KPIs
-        total_kpi_labels = [
-            "Total Recomendaciones",
-            "Países",
-            "Evaluaciones",
-            "Años Cubiertos"
-        ]
-        total_kpi_values = [
-            filtered_df_unique.shape[0],
-            filtered_df_unique['Country(ies)'].nunique(),
-            filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 0,
-            filtered_df_unique['year'].nunique()
-        ]
-
-        total_cols = st.columns(4)
-        total_kpi_html = [
-            f"""
-            <div style='text-align:center;'>
-                <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-                <span style='font-size:2.3em; font-weight:700; color:#3498db;'>{value}</span>
-            </div>
-            """
-            for label, value in zip(total_kpi_labels, total_kpi_values)
-        ]
-
-        for col, html in zip(total_cols, total_kpi_html):
-            col.markdown(html, unsafe_allow_html=True)
-
-        st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
-
-        # KPIs for management response statuses
-        mgmt_labels = [
-            ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),
-            ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),
-            ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),
-            ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),
-            ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),
-            ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),
-        ]
-
-        st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
-        kpi_cols = st.columns(3)
-        for i, (label, value, color) in enumerate(mgmt_labels):
-            kpi_cols[i % 3].markdown(
-                f"""
-                <div style='text-align:center;'>
-                    <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-                    <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-        # Display plots if data is available
-        if not filtered_df.empty:
-            country_counts = filtered_df_unique['Country(ies)'].value_counts()
-
-            # Add CSS for dashboard styling
-            st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
-
-            # Create two columns for charts
-            row1_col1, row1_col2 = st.columns(2)
-
-            with row1_col1:
-                st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
-                fig1 = go.Figure()
-                fig1.add_trace(go.Bar(
-                    y=country_counts.index.tolist(),
-                    x=country_counts.values.tolist(),
-                    orientation='h',
-                    text=country_counts.values.tolist(),
-                    textposition='auto',
-                    marker_color='#3498db',
-                    hovertemplate='%{y}: %{x} recomendaciones'
-                ))
-
-                # Fixed height for alignment with year plot
-                fixed_height = 500
-                fig1.update_layout(
-                    xaxis_title='Número de Recomendaciones',
-                    yaxis_title='País',
-                    margin=dict(t=10, l=10, r=10, b=40),
-                    font=dict(size=22),
-                    height=fixed_height,
-                    plot_bgcolor='white',
-                    showlegend=False
-                )
-                fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
-                fig1.update_yaxes(showgrid=False)
-                st.plotly_chart(fig1, use_container_width=True)
-
-            with row1_col2:
-                st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
-                year_counts = filtered_df_unique['year'].value_counts().sort_index()
-                fig2 = go.Figure()
-                fig2.add_trace(go.Bar(
-                    x=year_counts.index.astype(str).tolist(),
-                    y=year_counts.values.tolist(),
-                    text=year_counts.values.tolist(),
-                    textposition='auto',
-                    marker_color='#3498db',
-                    hovertemplate='Año %{x}: %{y} recomendaciones',
-                    textfont=dict(size=22)
-                ))
-                fig2.update_layout(
-                    xaxis_title='Año',
-                    yaxis_title='Número de Recomendaciones',
-                    margin=dict(t=10, l=10, r=10, b=40),
-                    font=dict(size=22),
-                    height=500,
-                    plot_bgcolor='white',
-                    showlegend=False
-                )
-                fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
-                fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
-                st.plotly_chart(fig2, use_container_width=True)
-
-            # Dimension treemap
-            st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
-
-            # Clean and prepare dimension data
-            import numpy as np
-            filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({
-                'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-            })
-            filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
-            filtered_df = filtered_df[filtered_df['dimension'].notna()]
-
-            filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
-                'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-            })
-            filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
-            filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
-
-            # Count recommendations by dimension
-            dimension_counts = filtered_df.groupby('dimension').agg({
-                'index_df': 'nunique'
-            }).reset_index()
-
-            # Calculate percentages and format text
-            dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
-            dimension_counts['text'] = dimension_counts.apply(
-                lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%",
-                axis=1
-            )
-            dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
-
-            # Remove 'Sin Clasificar' and capitalize dimension labels
-            dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
-            dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
-
-            # Create treemap
-            fig3 = px.treemap(
-                dimension_counts,
-                path=['dimension'],
-                values='index_df',
-                title='Composición de Recomendaciones por Dimensión',
-                hover_data={'text': True, 'index_df': False, 'percentage': False},
-                custom_data=['text']
-            )
-            fig3.update_traces(
-                textinfo='label+value',
-                hovertemplate='%{customdata[0]}',
-                textfont_size=32
-            )
-            fig3.update_layout(
-                margin=dict(t=50, l=25, r=25, b=25),
-                width=900,
-                height=500,
-                title_font_size=32,
-                font=dict(size=28),
-                legend_font_size=28
-            )
-            st.plotly_chart(fig3, use_container_width=True)
-
-            # Subdimension treemap
-            # Harmonize process/processes before plotting subdimensions
-            filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-
-            # Remove 'Sin Clasificar' from both dimension and subdimension
-            filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
-            filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
-
-            # Capitalize dimension and subdimension labels
-            filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
-            filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
-
-            # Count by subdimension
-            subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
-                'index_df': 'nunique'
-            }).reset_index()
-
-            # Calculate percentages and format text
-            subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
-            subdimension_counts['text'] = subdimension_counts.apply(
-                lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%",
-                axis=1
-            )
-            subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10
-
-            # Create treemap
-            fig4 = px.treemap(
-                subdimension_counts,
-                path=['dimension', 'subdim'],
-                values='index_df',
-                title='Composición de Recomendaciones por Subdimensión',
-                hover_data={'text': True, 'index_df': False, 'percentage': False},
-                custom_data=['text']
-            )
-            fig4.update_traces(
-                textinfo='label+value',
-                hovertemplate='%{customdata[0]}',
-                textfont_size=32
-            )
-            fig4.update_layout(
-                margin=dict(t=50, l=25, r=25, b=25),
-                width=900,
-                height=500,
-                title_font_size=32,
-                font=dict(size=28),
-                legend_font_size=28
-            )
-            st.plotly_chart(fig4, use_container_width=True)
-
-            # Add the advanced visualization section
-            add_advanced_visualization_section(filtered_df, tab_id="tab8")
-        else:
-            st.warning("No hay datos disponibles para los filtros seleccionados.")
-    else:
-        st.warning("No hay datos disponibles para los filtros seleccionados.")
