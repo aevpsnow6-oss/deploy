@@ -1553,7 +1553,7 @@ def load_lessons_embeddings():
 tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Evaluación de Documentos con Rúbricas por Criterios",
                                          "Chatea con tus Documentos",
                                          "Evaluación de sostenibilidad del proyecto",
-                                         "Appraisal Checklist",
+                                         "Valoración Preliminar de Calidad de Proyectos",
                                          "Tablero de seguimiento de recomendaciones y planes de acción"])
 
 #-----------------------#-----------------------#
@@ -2847,7 +2847,7 @@ Response Distribution:
 
 # Main tab interface
 with tab4:
-    st.header("📋 Appraisal Checklist")
+    st.header("📋 Valoración Preliminar de Calidad de Proyectos")
     
     # Load questions
     df_appraisal, error_msg = load_appraisal_questions()
