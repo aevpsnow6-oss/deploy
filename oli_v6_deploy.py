@@ -2862,21 +2862,21 @@ with tab1:
             for idx, row in df_appraisal.iterrows():
                 st.markdown(f"**{idx + 1}.** {row['Pregunta_Realizada']}")
         else:
-            st.warning("No questions loaded")
+            st.warning("No se han cargado preguntas")
     
-    # Instructions
+    # Instrucciones
     st.markdown("""
-    ### 📋 Instructions
+    ### Instrucciones
     
-    1. **Upload Document**: Select a DOCX file for appraisal analysis
-    2. **Process**: Click 'Analyze Document' to start the evaluation
-    3. **Review Results**: Examine the analysis results in the interactive table
-    4. **Download**: Get all results and evidence in a ZIP file
+    1. **Subir documento**: Selecciona un archivo DOCX para el análisis de tasación
+    2. **Procesar**: Haz clic en 'Analizar documento' para iniciar la evaluación
+    3. **Revisar resultados**: Examina los resultados del análisis en la tabla interactiva
+    4. **Descargar**: Obtén todos los resultados y las pruebas en un archivo ZIP
     
     ---
     """)
     
-    # File upload and processing section
+    # Sección de carga y procesamiento de archivo
     col1, col2 = st.columns([2, 1])
     
     with col1:
