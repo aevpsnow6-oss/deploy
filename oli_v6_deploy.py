@@ -1564,7 +1564,11 @@ with tab2:
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Puedes exportar a Excel (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica).
+    Sube un informe de evaluación (o en algunos casos un TPR) en formato Word (.docx) 
+    para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. 
+    La herramienta extrae secciones clave, aplica la matriz de criterios y asigna 
+    puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). 
+    Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica).
 
     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
@@ -1893,7 +1897,7 @@ with tab2:
     # Move instructions/info to the top of the tab
     st.info("""
     **Instrucciones:**
-    1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
+    1. Cargue un informe de evaluación en formato .DOCX y presione el botón 'Procesar y Evaluar'.
     2. Revise los resultados de cada rúbrica en la tabla interactiva.
     3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
     4. Descargue todos los resultados y evidencias en un archivo ZIP.
@@ -1983,12 +1987,12 @@ with tab2:
             st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
             st.stop()
         rubrics = [
-            ("Participación (Engagement)", engagement_rubric),
-            ("Desempeño (Performance)", performance_rubric),
-            ("Participación Evaluada (Parteval)", parteval_rubric),
-            ("Género (Gender)", gender_rubric),
-            ("TJ (Tradicional)", tj_traditional_rubric),
-            ("TJ (Transición Justa)", tj_just_transition_rubric)
+            ("Participación de Actores (durante el proyecto)", engagement_rubric),
+            ("Desempeño del proyecto (según informe de evaluación)", performance_rubric),
+            ("Participación durante la evaluación (metodología)", parteval_rubric),
+            ("Enfoque de Género", gender_rubric),
+            ("Transición Justa: Enfoque Tradicional", tj_traditional_rubric),
+            ("Transición Justa: Enfoque Moderno", tj_just_transition_rubric)
         ]
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
