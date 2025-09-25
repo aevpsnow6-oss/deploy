@@ -1550,10 +1550,10 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Acercamiento a Valoración de Calidad de Proyectos",
-                                         "Pregúntale a tus Documentos",
+tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
+                                         "Acercamiento a Valoración de Calidad de Proyectos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
-                                         "Valoración Preliminar de Calidad de Proyectos",
+                                         "Pregúntale a tus Documentos",
                                          "Tablero de Seguimiento de Recomendaciones y Planes de Acción"])
 
 #-----------------------#-----------------------#
