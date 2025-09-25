@@ -1643,7 +1643,7 @@ with tab2:
     except Exception as e:
         st.error(f"Error leyendo las rúbricas: {e}")
 
-    Debug: Show Excel sheet names and rubric status
+    # Debug: Show Excel sheet names and rubric status
     try:
         available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
         st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
