@@ -2359,57 +2359,28 @@ with tab3:
         for criterion, values in prodoc_rubric.items():
             st.markdown(f"**{criterion}**: {values}")
     
-    # Document upload interface - Two sections
-    st.markdown("### 📄 Sección 1: PRODOC Document")
+    # Instrucciones generales
+    st.info("""
+    **Instrucciones:**
+    1. Suba los archivos DOCX en las secciones correspondientes.
+    2. Presione el botón de evaluación en cada sección para analizar el documento.
+    3. Revise los resultados de cada rúbrica en las tablas interactivas.
+    4. Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
+    5. Descargue todos los resultados y evidencias en archivos ZIP.
+    """)
+
+    # Sección 1: Documento PRODOC
+    st.markdown("### 📄 Sección 1: Documento PRODOC")
     st.info("Suba el documento PRODOC para evaluación de sostenibilidad del proyecto.")
     uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX del PRODOC:", type=["docx"], key="prodoc_file_uploader")
 
-    st.markdown("### 📋 Sección 2: Evaluation Document")
-    st.info("Suba el documento de evaluación para análisis comparativo.")
-    uploaded_file_evaluation = st.file_uploader("Suba un archivo DOCX de evaluación:", type=["docx"], key="evaluation_file_uploader")
+    if st.button('🔍 Procesar y Evaluar PRODOC', key="prodoc_process_button"):
+        # Only process if file is uploaded
+        if uploaded_file_prodoc is not None:
+            uploaded_file = uploaded_file_prodoc
+            document_type = "PRODOC"
+            st.markdown(f"#### Procesando documento {document_type}...")
 
-    # Move instructions/info to the top of the tab
-    st.info("""
-    **Instrucciones:**
-    1. Suba ambos archivos DOCX (PRODOC y documento de evaluación).
-    2. Seleccione qué documento evaluar y presione el botón correspondiente.
-    3. Revise los resultados de cada rúbrica en la tabla interactiva.
-    4. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
-    5. Descargue todos los resultados y evidencias en un archivo ZIP.
-    """)
-
-    # Document selection for processing
-    st.markdown("#### Seleccione el documento a evaluar:")
-    doc_selection = st.radio(
-        "Elija el documento que desea procesar:",
-        ["PRODOC Document", "Evaluation Document"],
-        key="doc_selection_radio"
-    )
-
-    # Set the uploaded_file variable based on selection
-    if doc_selection == "PRODOC Document":
-        uploaded_file = uploaded_file_prodoc
-        document_type = "PRODOC"
-    else:
-        uploaded_file = uploaded_file_evaluation
-        document_type = "Evaluation"
-
-    # Unified process, evaluate, and download button
-    st.markdown(f"#### Procesamiento y Evaluación de Documento ({document_type})")
-    st.markdown('---')
-
-    # Instructions for the user
-    st.markdown(f"""
-    ## Instrucciones para {document_type}
-    1. Asegúrese de que el archivo {document_type} esté subido arriba.
-    2. Haga clic en 'Procesar y Evaluar {document_type}' para analizar el documento.
-    3. Revise los resultados de la evaluación por cada rúbrica.
-    4. Descargue todos los resultados y evidencias en un archivo ZIP.
-    """)
-    
-    if st.button(f'Procesar y Evaluar {document_type}', key="prodoc_process_button"):
-        # Only process if file is uploaded and not already processed for this file
-        if uploaded_file is not None:
             file_hash = hash(uploaded_file.getvalue())
             if st.session_state.get('prodoc_last_file_hash') != file_hash:
                 with st.spinner("Procesando documento..."):
@@ -2680,8 +2651,72 @@ with tab3:
         else:
             st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
     else:
-        st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
-        
+        st.info("Por favor suba un archivo DOCX del PRODOC para comenzar.")
+
+    # Sección 2: Documento de Evaluación
+    st.markdown("### 📋 Sección 2: Documento de Evaluación")
+    st.info("Suba el documento de evaluación para análisis comparativo con la misma rúbrica de sostenibilidad.")
+    uploaded_file_evaluation = st.file_uploader("Suba un archivo DOCX de evaluación:", type=["docx"], key="evaluation_file_uploader")
+
+    if st.button('🔍 Procesar y Evaluar Documento de Evaluación', key="evaluation_process_button"):
+        # Only process if file is uploaded
+        if uploaded_file_evaluation is not None:
+            uploaded_file = uploaded_file_evaluation
+            document_type = "Evaluación"
+            st.markdown(f"#### Procesando documento {document_type}...")
+
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('evaluation_last_file_hash') != file_hash:
+                with st.spinner("Procesando documento de evaluación..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                        doc_result = docx2python(tmp_file.name)
+                        df = extract_docx_structure(tmp_file.name)
+
+                        # Use the same rubric processing logic as PRODOC
+                        all_sections = extract_all_sections(doc_result)
+
+                        # Process with the same rubric (prodoc_rubric)
+                        results_evaluation = process_with_rubrics(all_sections, prodoc_rubric, document_type, progress_bar)
+
+                        # Store in session state with different key
+                        st.session_state['evaluation_results'] = results_evaluation
+                        st.session_state['evaluation_sections'] = all_sections
+                        st.session_state['evaluation_last_file_hash'] = file_hash
+                        st.session_state['evaluation_document_processed'] = True
+
+                        os.unlink(tmp_file.name)
+                        progress_bar.progress(1.0, text="¡Análisis completado!")
+
+                        st.success("✅ Documento de evaluación procesado exitosamente")
+
+                    except Exception as e:
+                        st.error(f"Error al procesar el documento de evaluación: {str(e)}")
+                        st.session_state['evaluation_document_processed'] = False
+                        import traceback
+                        st.error(f"Detalles del error: {traceback.format_exc()}")
+            else:
+                st.info("✅ Este archivo ya ha sido procesado. Mostrando resultados existentes.")
+                st.session_state['evaluation_document_processed'] = True
+        else:
+            st.info("Por favor suba un archivo DOCX de evaluación para comenzar.")
+    else:
+        st.info("Por favor suba un archivo DOCX de evaluación para comenzar.")
+
+    # Display evaluation results if processed
+    if st.session_state.get('evaluation_document_processed', False) and 'evaluation_results' in st.session_state:
+        st.markdown("#### 📊 Resultados de Evaluación - Documento de Evaluación")
+        results_evaluation = st.session_state['evaluation_results']
+
+        # Same display logic as PRODOC
+        if results_evaluation:
+            display_results(results_evaluation, document_type="Evaluación", tab_key="evaluation")
+        else:
+            st.warning("No se generaron resultados para ninguna rúbrica del documento de evaluación.")
+
 # ================== TAB 7: APPRAISAL CHECKLIST (IMPROVED) =====================
 # Configuration
 from concurrent.futures import ThreadPoolExecutor, as_completed
