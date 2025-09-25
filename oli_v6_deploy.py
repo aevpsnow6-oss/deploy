@@ -1425,8 +1425,7 @@ def summarize_text(text, prompt_template):
 # Set page config
 st.set_page_config(layout="wide")
 st.markdown("""
-    <h2 style='text-align:center; color:#3498db; margin-top:0;'>EVAL-Insights LAC</h2>
-    <h3 style='text-align:center; color:#3498db; margin-top:0;'>Análisis Automatizado de Recomendaciones, BBPP, LLAA e Informes de Evaluación</h3>
+    <h2 style='text-align:center; color:#3498db; margin-top:0;'>Caja de Herramientas para la Mejora de Proyectos</h3>
     <hr style='border-top: 2px solid #3498db;'>
 """, unsafe_allow_html=True)
 
@@ -1554,7 +1553,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
                                          "Acercamiento a Valoración de Calidad de Proyectos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
-                                         "Estadísticas Sobre Recomendaciones y Planes de Acción"])
+                                         "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -3041,7 +3040,7 @@ with tab1:
 #--------------------------#-------------------------------#
 # Tab 8: Tablero de seguimiento de recomendaciones y planes de acción
 with tab5:
-    st.header("📊 Estadísticas Sobre Recomendaciones y Planes de Acción")
+    st.header("📊 Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción")
 
     # Comprehensive presentation box
     st.info("""
