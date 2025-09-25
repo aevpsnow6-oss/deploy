@@ -2875,33 +2875,15 @@ with tab1:
     ---
     """)
     
-    # Sección de carga y procesamiento de archivo
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("📄 Carga de documento")
-        uploaded_file = st.file_uploader(
-            "Sube un DOCX para la evaluación:",
-            type=["docx"],
-            key="appraisal_file_uploader",
-            help="Selecciona un documento de Word (.docx) para el análisis de tasación"
-        )
-    
-    with col2:
-        st.subheader("📊 Estadísticas del documento")
-        if 'appraisal_document_stats' in st.session_state:
-            stats = st.session_state['appraisal_document_stats']
-            
-            # Safe access to stats with fallbacks
-            file_size = stats.get('file_size', 0)
-            word_count = stats.get('word_count', stats.get('n_words', 0))  # Try both keys
-            
-            if file_size > 0:
-                st.metric("Tamaño del archivo", f"{file_size/1024:.1f} KB")
-            if word_count > 0:
-                st.metric("Palabras", f"{word_count:,}")
-        else:
-            st.info("Sube un documento para ver estadísticas")
+  
+  # Sección de carga y procesamiento de archivo
+    st.subheader("📄 Carga de documento")
+    uploaded_file = st.file_uploader(
+        "Sube un DOCX para la evaluación:",
+        type=["docx"],
+        key="appraisal_file_uploader",
+        help="Selecciona un documento de Word (.docx) para el análisis de tasación"
+    )
     
     # Processing button
     if st.button('🔍 Analizar documento', key="appraisal_process_button", type="primary"):
