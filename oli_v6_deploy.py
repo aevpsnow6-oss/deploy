@@ -1551,7 +1551,7 @@ def load_lessons_embeddings():
     
 # Tabs
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Exploración de evidencia-Insights evaluativos",
-                                         "Revisión por criterios con trazabilidad",
+                                         "Evaluación de Documentos con Rúbricas por Criterios",
                                          "Exploración de Evidencia-Lecciones Aprendidas",
                                          "Exploración de Evidencia-Buenas Prácticas",
                                          "Document Chat",
@@ -2731,7 +2731,7 @@ with tab4:
 #-----------------------#-----------------------#
 # Tab 2: Revisión por criterios con trazabilidad
 with tab2:
-    st.header("Revisión por criterios con trazabilidad")
+    st.header("Evaluación de Documentos con Rúbricas por Criterios")
 
     # Descriptive text box
     st.info("""
