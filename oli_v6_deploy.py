@@ -25,7 +25,7 @@ import zipfile
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Filtered Data')
+        df.to_excel(writer, index=False, sheet_name='Datos Filtrados')
     processed_data = output.getvalue()
     return processed_data
 
@@ -42,14 +42,14 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 # Function to get embeddings from OpenAI
 def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
     if not openai_api_key:
-        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        st.error("No se encontró la clave de API de OpenAI. Por favor, configura la variable de entorno OPENAI_API_KEY.")
         return None
     for attempt in range(max_retries):
         try:
             response = openai.Embedding.create(input=text, model=model)
             return np.array(response['data'][0]['embedding'])
         except Exception as e:
-            st.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+            st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
             time.sleep(delay)
     return None
 
@@ -79,7 +79,7 @@ def find_similar_recommendations(query_embedding, index, doc_embeddings, structu
                 break
         return filtered_recommendations
     except Exception as e:
-        st.error(f"Error in similarity search: {str(e)}")
+        st.error(f"Error en la búsqueda por similitud: {str(e)}")
         return []
 
 # Function to find recommendations by term matching
@@ -101,7 +101,7 @@ def find_recommendations_by_term_matching(query, doc_texts, structured_embedding
         matched_recommendations = sorted(matched_recommendations, key=lambda x: len(str(x["recommendation"])))
         return matched_recommendations[:top_n]
     except Exception as e:
-        st.error(f"Error in term matching: {str(e)}")
+        st.error(f"Error en la coincidencia de términos: {str(e)}")
         return []
 
 # ============= DOCX PARSING FUNCTIONS =============
@@ -645,7 +645,7 @@ def plot_score_evolution(filtered_df):
     score_columns = [col for col in filtered_df.columns if col.endswith('_score') and col != 'clean_tags']
     
     if not score_columns or filtered_df.empty:
-        st.warning("No score data available for the selected filters.")
+        st.warning("No hay datos de puntuación disponibles para los filtros seleccionados.")
         return
     
     # Create a copy of the filtered dataframe to avoid modifying the original
@@ -667,7 +667,7 @@ def plot_score_evolution(filtered_df):
     
     # Only proceed if we have data
     if yearly_scores.empty or yearly_scores[score_columns].isna().all().all():
-        st.warning("No usable score data available for the selected years.")
+        st.warning("No hay datos de puntuación utilizables para los años seleccionados.")
         return
     
     # Create a Plotly line chart
@@ -722,7 +722,7 @@ def create_composition_plot(filtered_df, var_name, title):
     Harmonizes 'process' and 'processes' if var_name is 'dimension'.
     """
     if var_name not in filtered_df.columns or filtered_df.empty:
-        st.warning(f"No data available for {var_name} with the selected filters.")
+        st.warning(f"No hay datos disponibles para {var_name} con los filtros seleccionados.")
         return
 
     # Group by year and variable, then count
@@ -731,7 +731,7 @@ def create_composition_plot(filtered_df, var_name, title):
     var_by_year_pct = var_by_year.div(var_by_year.sum(axis=1), axis=0) * 100
     # Only proceed if we have data
     if var_by_year_pct.empty:
-        st.warning(f"No data available for {var_name} with the selected years.")
+        st.warning(f"No hay datos disponibles para {var_name} con los años seleccionados.")
         return
     
     # Create a Plotly stacked bar chart
@@ -799,7 +799,7 @@ def create_tag_composition_plot(filtered_df, top_n=8):
     Creates a stacked bar chart showing the composition of tags over time.
     """
     if 'tags' not in filtered_df.columns or filtered_df.empty:
-        st.warning("No tag data available for the selected filters.")
+        st.warning("No hay datos de etiquetas disponibles para los filtros seleccionados.")
         return
     
     # Explode the dataframe by tags
@@ -809,7 +809,7 @@ def create_tag_composition_plot(filtered_df, top_n=8):
     exploded_df = exploded_df.dropna(subset=['tags']).reset_index(drop=True)
     
     if exploded_df.empty:
-        st.warning("No tag data available after filtering.")
+        st.warning("No hay datos de etiquetas disponibles después del filtrado.")
         return
     
     # Count occurrences of each tag
@@ -820,7 +820,7 @@ def create_tag_composition_plot(filtered_df, top_n=8):
     
     # Replace non-top tags with 'Other tags'
     exploded_df['tag_category'] = exploded_df['tags'].apply(
-        lambda x: x if x in top_tags else 'Other tags'
+        lambda x: x if x in top_tags else 'Otras etiquetas'
     )
     
     # Count yearly occurrences for each tag category
@@ -831,7 +831,7 @@ def create_tag_composition_plot(filtered_df, top_n=8):
     
     # Only proceed if we have data
     if yearly_tag_percentages.empty:
-        st.warning("No tag data available for the selected years.")
+        st.warning("No hay datos de etiquetas disponibles para los años seleccionados.")
         return
     
     # Create a Plotly stacked bar chart
@@ -887,7 +887,7 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     Creates a stacked bar chart showing the composition of rejection difficulty classifications over time.
     """
     if 'clean_tags' not in filtered_df.columns or filtered_df.empty:
-        st.warning("No classification data available for the selected filters.")
+        st.warning("No hay datos de clasificación disponibles para los filtros seleccionados.")
         return
     
     # Explode the dataframe by tags
@@ -899,7 +899,7 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     ].reset_index(drop=True)
     
     if exploded_df.empty:
-        st.warning("No classification data available after filtering.")
+        st.warning("No hay datos de clasificación disponibles después del filtrado.")
         return
     
     # Count occurrences of each tag
@@ -910,7 +910,7 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     
     # Replace non-top tags with 'Other tags'
     exploded_df['tag_category'] = exploded_df['clean_tags'].apply(
-        lambda x: x if x in top_tags else 'Other tags'
+        lambda x: x if x in top_tags else 'Otras etiquetas'
     )
     
     # Count yearly occurrences for each tag category
@@ -921,7 +921,7 @@ def create_difficulty_classification_plot(filtered_df, top_n=8):
     
     # Only proceed if we have data
     if yearly_tag_percentages.empty:
-        st.warning("No classification data available for the selected years.")
+        st.warning("No hay datos de clasificación disponibles para los años seleccionados.")
         return
     
     # Create a Plotly stacked bar chart
@@ -1228,13 +1228,11 @@ def load_extended_data():
             # Store the analyzed dataframe in session state for potential use elsewhere
             st.session_state['analyzed_df'] = analyzed_df
         else:
-            st.warning("Additional analysis data file not found. Some visualizations may not be available.")
+            st.warning("No se encontró el archivo de datos de análisis adicional. Es posible que algunas visualizaciones no estén disponibles.")
             st.session_state['analyzed_df'] = None
-            
-    except Exception as e:
-        st.warning(f"Note: Additional analysis data could not be loaded. Some visualizations may not be available. Error: {str(e)}")
-        st.session_state['analyzed_df'] = None
-    
+        except Exception as e:
+            st.warning(f"Nota: No se pudieron cargar los datos de análisis adicionales. Algunas visualizaciones pueden no estar disponibles. Error: {str(e)}")
+            st.session_state['analyzed_df'] = None
     # Process the main dataframe with the additional preparation
     df = prepare_additional_data(df)
     
@@ -1417,7 +1415,7 @@ def summarize_text(text, prompt_template):
         )
         return response['choices'][0]['message']['content'].strip()
     except Exception as e:
-        st.error(f"Error calling OpenAI API: {e}")
+        st.error(f"Error al llamar a la API de OpenAI: {e}")
         return None
 
 # ============= MAIN APP CODE =============
@@ -1436,14 +1434,14 @@ try:
     doc_embeddings, structured_embeddings, index = load_embeddings()
     doc_texts = df_raw['Recommendation_description'].tolist()
 except Exception as e:
-    st.error(f"Error loading data: {str(e)}")
+    st.error(f"Error cargando datos: {str(e)}")
     st.stop()
 
 
 # Check for API key before running the app
 if not openai_api_key:
-    st.warning("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable in Streamlit Cloud.")
-    st.info("For local development, you can use a .env file or set the environment variable.")
+    st.warning("No se encontró la clave de API de OpenAI. Configura la variable de entorno OPENAI_API_KEY en Streamlit Cloud.")
+    st.info("Para desarrollo local, puedes usar un archivo .env o configurar la variable de entorno.")
     # Continue with limited functionality or show instructions on setup
 
 # Initialize data and embeddings - wrap in try/except for better error handling
@@ -1453,20 +1451,20 @@ try:
     doc_embeddings, structured_embeddings, index = load_embeddings()
     doc_texts = df_raw['Recommendation_description'].tolist()
 except Exception as e:
-    st.error(f"Error loading data: {str(e)}")
+    st.error(f"Error cargando datos: {str(e)}")
     st.stop()
 
 # Function to get embeddings for lessons learned
 def get_lessons_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
     if not openai_api_key:
-        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        st.error("No se encontró la clave de API de OpenAI. Por favor, configura la variable de entorno OPENAI_API_KEY.")
         return None
     for attempt in range(max_retries):
         try:
             response = openai.Embedding.create(input=text, model=model)
             return np.array(response['data'][0]['embedding'])
         except Exception as e:
-            st.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+            st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
             time.sleep(delay)
     return None
 
@@ -1543,7 +1541,7 @@ def load_lessons_embeddings():
         
         return lessons_embeddings, structured_lessons, lessons_index
     except Exception as e:
-        st.error(f"Error loading lessons embeddings: {str(e)}")
+        st.error(f"Error cargando embeddings de lecciones: {str(e)}")
         # Return placeholder data to avoid errors
         return np.array([]), [], None
     
@@ -2729,12 +2727,12 @@ def load_appraisal_questions():
     try:
         df = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
         if 'Pregunta_Realizada' not in df.columns:
-            return None, "Column 'Pregunta_Realizada' not found in Excel file."
+            return None, "La columna 'Pregunta_Realizada' no se encontró en el archivo de Excel."
         return df, None
     except FileNotFoundError:
-        return None, "APPRAISAL_rubric.xlsx not found. Please ensure it exists in the app directory."
+        return None, "No se encontró el archivo APPRAISAL_rubric.xlsx. Asegúrate de que exista en el directorio de la aplicación."
     except Exception as e:
-        return None, f"Error loading questions file: {str(e)}"
+        return None, f"Error al cargar el archivo de preguntas: {str(e)}"
 
 def extract_document_content(uploaded_file):
     """Extract and process content from uploaded DOCX file"""
@@ -2829,14 +2827,14 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
         
         # Add summary report
         summary = f"""
-Appraisal Checklist Analysis Summary
-===================================
+Resumen del Análisis de la Lista de Verificación de Tasación
+===========================================================
 
-Total Questions Analyzed: {len(results_df)}
-Successful Analyses: {len(results_df[results_df['Status'] == 'Success'])}
-Failed Analyses: {len(results_df[results_df['Status'] == 'Error'])}
+Total de preguntas analizadas: {len(results_df)}
+Análisis exitosos: {len(results_df[results_df['Status'] == 'Success'])}
+Análisis fallidos: {len(results_df[results_df['Status'] == 'Error'])}
 
-Response Distribution:
+Distribución de respuestas:
 {results_df['Respuesta'].value_counts().to_string()}
         """
         zipf.writestr(f"{filename_base}_summary.txt", summary)
@@ -2856,9 +2854,9 @@ with tab1:
         st.stop()
     
     # Display loaded questions
-    with st.expander("📝 View Loaded Questions"):
+    with st.expander("📝 Ver preguntas cargadas"):
         if df_appraisal is not None:
-            st.subheader("Appraisal Checklist Questions")
+            st.subheader("Preguntas de la lista de verificación de la tasación")
             for idx, row in df_appraisal.iterrows():
                 st.markdown(f"**{idx + 1}.** {row['Pregunta_Realizada']}")
         else:
@@ -2880,16 +2878,16 @@ with tab1:
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("📄 Document Upload")
+        st.subheader("📄 Carga de documento")
         uploaded_file = st.file_uploader(
-            "Upload DOCX for evaluation:",
+            "Sube un DOCX para la evaluación:",
             type=["docx"],
             key="appraisal_file_uploader",
-            help="Select a Word document (.docx) for appraisal analysis"
+            help="Selecciona un documento de Word (.docx) para el análisis de tasación"
         )
     
     with col2:
-        st.subheader("📊 Document Stats")
+        st.subheader("📊 Estadísticas del documento")
         if 'appraisal_document_stats' in st.session_state:
             stats = st.session_state['appraisal_document_stats']
             
@@ -2898,24 +2896,24 @@ with tab1:
             word_count = stats.get('word_count', stats.get('n_words', 0))  # Try both keys
             
             if file_size > 0:
-                st.metric("File Size", f"{file_size/1024:.1f} KB")
+                st.metric("Tamaño del archivo", f"{file_size/1024:.1f} KB")
             if word_count > 0:
-                st.metric("Words", f"{word_count:,}")
+                st.metric("Palabras", f"{word_count:,}")
         else:
-            st.info("Upload a document to see stats")
+            st.info("Sube un documento para ver estadísticas")
     
     # Processing button
-    if st.button('🔍 Analyze Document', key="appraisal_process_button", type="primary"):
+    if st.button('🔍 Analizar documento', key="appraisal_process_button", type="primary"):
         if uploaded_file is None:
-            st.warning("⚠️ Please upload a DOCX file first.")
+            st.warning("⚠️ Por favor sube un archivo DOCX primero.")
             st.stop()
         
         # Extract document content
-        with st.spinner("📖 Extracting document content..."):
+        with st.spinner("📖 Extrayendo contenido del documento..."):
             doc_result = extract_document_content(uploaded_file)
         
         if not doc_result['success']:
-            st.error(f"❌ Error processing document: {doc_result['error']}")
+            st.error(f"❌ Error procesando el documento: {doc_result['error']}")
             st.stop()
         
         # Store document stats (using consistent key names)
@@ -2926,22 +2924,22 @@ with tab1:
         }
         
         # Display document info
-        st.success("✅ Document processed successfully!")
+        st.success("✅ ¡Documento procesado con éxito!")
         st.info(f"""
-        **Document Summary:**
-        - File Size: {doc_result['file_size']/1024:.2f} KB
-        - Word Count: {doc_result['word_count']:,}
+        **Resumen del documento:**
+        - Tamaño del archivo: {doc_result['file_size']/1024:.2f} KB
+        - Número de palabras: {doc_result['word_count']:,}
         """)
         
         # Get questions for analysis
         questions = df_appraisal['Pregunta_Realizada'].dropna().unique().tolist()
         
         if not questions:
-            st.error("❌ No questions found for analysis.")
+            st.error("❌ No se encontraron preguntas para el análisis.")
             st.stop()
         
         # Analyze questions
-        st.markdown("### 🔍 Analysis Progress")
+        st.markdown("### 🔍 Progreso del análisis")
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -2964,45 +2962,45 @@ with tab1:
                 # Update progress
                 progress = completed / len(questions)
                 progress_bar.progress(progress)
-                status_text.text(f"Analyzed {completed}/{len(questions)} questions")
+                status_text.text(f"Analizadas {completed}/{len(questions)} preguntas")
         
         # Create results DataFrame
         results_df = pd.DataFrame(results)
         
         # Display results
-        st.markdown("### 📊 Analysis Results")
+        st.markdown("### 📊 Resultados del análisis")
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Total Questions", len(results_df))
+            st.metric("Total de preguntas", len(results_df))
         with col2:
             success_count = len(results_df[results_df['Status'] == 'Success'])
-            st.metric("Successful", success_count)
+            st.metric("Exitosas", success_count)
         with col3:
             error_count = len(results_df[results_df['Status'] == 'Error'])
-            st.metric("Errors", error_count)
+            st.metric("Errores", error_count)
         with col4:
             if success_count > 0:
                 yes_count = len(results_df[results_df['Respuesta'] == 'Yes'])
-                st.metric("'Yes' Responses", yes_count)
+                st.metric("Respuestas 'Sí'", yes_count)
         
         # Results table
-        st.markdown("#### 📋 Detailed Results")
+        st.markdown("#### 📋 Resultados detallados")
         
         # Filter options
         col1, col2 = st.columns([1, 1])
         with col1:
             response_filter = st.selectbox(
-                "Filter by Response:",
-                ['All'] + results_df['Respuesta'].unique().tolist(),
+                "Filtrar por respuesta:",
+                ['Todas'] + results_df['Respuesta'].unique().tolist(),
                 key="response_filter"
             )
         
         # Apply filter
         filtered_df = results_df.copy()
-        if response_filter != 'All':
+        if response_filter != 'Todas':
             filtered_df = filtered_df[filtered_df['Respuesta'] == response_filter]
         
         # Display filtered results
@@ -3013,28 +3011,28 @@ with tab1:
         )
         
         # Download section
-        st.markdown("### 📥 Download Results")
+        st.markdown("### 📥 Descargar resultados")
         
         if len(results_df) > 0:
             zip_buffer = create_results_download(results_df)
             
             st.download_button(
-                label="📦 Download Results as ZIP",
+                label="📦 Descargar resultados en ZIP",
                 data=zip_buffer,
                 file_name="appraisal_checklist_results.zip",
                 mime="application/zip",
                 key="appraisal_download_button"
             )
             
-            st.success("✅ Analysis complete! Use the download button above to get all results.")
+            st.success("✅ ¡Análisis completo! Usa el botón de descarga para obtener todos los resultados.")
         else:
-            st.warning("⚠️ No results to download.")
+            st.warning("⚠️ No hay resultados para descargar.")
     
     else:
         if uploaded_file:
-            st.info("👆 Click 'Analyze Document' to start the appraisal evaluation.")
+            st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la tasación.")
         else:
-            st.info("📁 Please upload a DOCX file to begin.")
+            st.info("📁 Por favor sube un archivo DOCX para comenzar.")
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
@@ -3122,17 +3120,17 @@ with tab5:
 
         with col1:
             # Administrative unit filter
-            office_options = ['All'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
+            office_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
             selected_offices_viz = st.multiselect('Unidad Administrativa:',
                                              options=office_options,
-                                             default='All',
+                                             default='Todas',
                                              key='unidad_administrativa_viz')
 
             # Country filter
-            country_options = ['All'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
+            country_options = ['Todas'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
             selected_countries_viz = st.multiselect('País:',
                                               options=country_options,
-                                              default='All',
+                                              default='Todas',
                                               key='pais_viz')
 
         with col2:
@@ -3146,32 +3144,32 @@ with tab5:
                                           key='rango_anos_viz')
 
             # Evaluation theme filter
-            evaltheme_options = ['All'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
+            evaltheme_options = ['Todas'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
             selected_evaltheme_viz = st.multiselect('Tema (Evaluación):',
                                               options=evaltheme_options,
-                                              default='All',
+                                              default='Todas',
                                               key='tema_eval_viz')
 
         with col3:
             # Recommendation theme filter
-            rectheme_options = ['All'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
+            rectheme_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
             selected_rectheme_viz = st.multiselect('Tema (Recomendación):',
                                              options=rectheme_options,
-                                             default='All',
+                                             default='Todas',
                                              key='tema_recomendacion_viz')
 
             # Management response filter
-            mgtres_options = ['All'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
+            mgtres_options = ['Todas'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
             selected_mgtres_viz = st.multiselect('Respuesta de gerencia:',
                                            options=mgtres_options,
-                                           default='All',
+                                           default='Todas',
                                            key='respuesta_gerencia_viz')
 
     # Apply filters
-    if 'All' not in selected_offices_viz and selected_offices_viz:
+    if 'Todas' not in selected_offices_viz and selected_offices_viz:
         filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
 
-    if 'All' not in selected_countries_viz and selected_countries_viz:
+    if 'Todas' not in selected_countries_viz and selected_countries_viz:
         filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries_viz)]
 
     filtered_df = filtered_df[
@@ -3179,13 +3177,13 @@ with tab5:
         (filtered_df['year'] <= selected_year_range_viz[1])
     ]
 
-    if 'All' not in selected_evaltheme_viz and selected_evaltheme_viz:
+    if 'Todas' not in selected_evaltheme_viz and selected_evaltheme_viz:
         filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme_viz)]
 
-    if 'All' not in selected_rectheme_viz and selected_rectheme_viz:
+    if 'Todas' not in selected_rectheme_viz and selected_rectheme_viz:
         filtered_df = filtered_df[filtered_df['Recommendation_theme'].isin(selected_rectheme_viz)]
 
-    if 'All' not in selected_mgtres_viz and selected_mgtres_viz:
+    if 'Todas' not in selected_mgtres_viz and selected_mgtres_viz:
         filtered_df = filtered_df[filtered_df['Management_response'].isin(selected_mgtres_viz)]
 
     # Remove duplicates for plotting
