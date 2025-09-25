@@ -2960,7 +2960,7 @@ with tab1:
     # Display loaded questions
     with st.expander("📝 Ver preguntas cargadas"):
         if df_appraisal is not None:
-            st.subheader("Preguntas del APPRAISAL CHECKLIST")
+            st.subheader("Preguntas de la lista de verificación preliminar de calidad (Preguntas del APPRAISAL CHECKLIST) ")
             for idx, row in df_appraisal.iterrows():
                 st.markdown(f"**{idx + 1}.** {row['Pregunta_Realizada']}")
         else:
