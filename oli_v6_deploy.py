@@ -1423,7 +1423,8 @@ def summarize_text(text, prompt_template):
 # Set page config
 st.set_page_config(layout="wide")
 st.markdown("""
-    <h2 style='text-align:center; color:#3498db; margin-top:0;'>Caja de Herramientas para la Mejora de Proyectos</h3>
+    <h2 style='text-align:center; color:#3498db; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos</h3>
+    <h3 style='text-align:center; color:#3498db; margin-top:0;'>Usando Evidencia de las Evaluaciones</h3>
     <hr style='border-top: 2px solid #3498db;'>
 """, unsafe_allow_html=True)
 
