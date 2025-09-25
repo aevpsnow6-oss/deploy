@@ -1650,12 +1650,12 @@ with tab2:
 
     st.error(f"""
     **ESTADO DE RÚBRICAS:**
-    - Engagement: {len(engagement_rubric)} criterios
-    - Performance: {len(performance_rubric)} criterios
-    - Parteval: {len(parteval_rubric)} criterios
-    - Gender: {len(gender_rubric)} criterios
-    - TJ Traditional: {len(tj_traditional_rubric)} criterios  ⚠️
-    - TJ Just Transition: {len(tj_just_transition_rubric)} criterios  ⚠️
+    - Participación: {len(engagement_rubric)} criterios
+    - Desempeño: {len(performance_rubric)} criterios
+    - Enfoque Participativo de Evaluación: {len(parteval_rubric)} criterios
+    - Género: {len(gender_rubric)} criterios
+    - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
+    - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
 
     # Function to extract document structure
