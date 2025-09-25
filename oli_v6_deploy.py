@@ -2359,32 +2359,55 @@ with tab3:
         for criterion, values in prodoc_rubric.items():
             st.markdown(f"**{criterion}**: {values}")
     
-    # Document upload interface
-    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader")
+    # Document upload interface - Two sections
+    st.markdown("### 📄 Sección 1: PRODOC Document")
+    st.info("Suba el documento PRODOC para evaluación de sostenibilidad del proyecto.")
+    uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX del PRODOC:", type=["docx"], key="prodoc_file_uploader")
+
+    st.markdown("### 📋 Sección 2: Evaluation Document")
+    st.info("Suba el documento de evaluación para análisis comparativo.")
+    uploaded_file_evaluation = st.file_uploader("Suba un archivo DOCX de evaluación:", type=["docx"], key="evaluation_file_uploader")
 
     # Move instructions/info to the top of the tab
     st.info("""
     **Instrucciones:**
-    1. Suba un archivo DOCX y presione el botón 'Procesar y Evaluar'.
-    2. Revise los resultados de cada rúbrica en la tabla interactiva.
-    3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
-    4. Descargue todos los resultados y evidencias en un archivo ZIP.
+    1. Suba ambos archivos DOCX (PRODOC y documento de evaluación).
+    2. Seleccione qué documento evaluar y presione el botón correspondiente.
+    3. Revise los resultados de cada rúbrica en la tabla interactiva.
+    4. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
+    5. Descargue todos los resultados y evidencias en un archivo ZIP.
     """)
-    
+
+    # Document selection for processing
+    st.markdown("#### Seleccione el documento a evaluar:")
+    doc_selection = st.radio(
+        "Elija el documento que desea procesar:",
+        ["PRODOC Document", "Evaluation Document"],
+        key="doc_selection_radio"
+    )
+
+    # Set the uploaded_file variable based on selection
+    if doc_selection == "PRODOC Document":
+        uploaded_file = uploaded_file_prodoc
+        document_type = "PRODOC"
+    else:
+        uploaded_file = uploaded_file_evaluation
+        document_type = "Evaluation"
+
     # Unified process, evaluate, and download button
-    st.markdown("#### Procesamiento y Evaluación de Documento")
+    st.markdown(f"#### Procesamiento y Evaluación de Documento ({document_type})")
     st.markdown('---')
-    
+
     # Instructions for the user
-    st.markdown("""
-    ## Instrucciones
-    1. Suba un archivo DOCX para evaluación.
-    2. Haga clic en 'Procesar y Evaluar' para analizar el documento.
+    st.markdown(f"""
+    ## Instrucciones para {document_type}
+    1. Asegúrese de que el archivo {document_type} esté subido arriba.
+    2. Haga clic en 'Procesar y Evaluar {document_type}' para analizar el documento.
     3. Revise los resultados de la evaluación por cada rúbrica.
     4. Descargue todos los resultados y evidencias en un archivo ZIP.
     """)
     
-    if st.button('Procesar y Evaluar', key="prodoc_process_button"):
+    if st.button(f'Procesar y Evaluar {document_type}', key="prodoc_process_button"):
         # Only process if file is uploaded and not already processed for this file
         if uploaded_file is not None:
             file_hash = hash(uploaded_file.getvalue())
