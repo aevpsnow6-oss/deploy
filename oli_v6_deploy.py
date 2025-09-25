@@ -1651,7 +1651,7 @@ with tab2:
     st.error(f"""
     **ESTADO DE RÚBRICAS:**
     - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
-    - Desempeño del Proyecto (según evaluación): {len(performance_rubric)} criterios
+    - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
     - Evaluación con Enfoque Participativo (metodología): {len(parteval_rubric)} criterios
     - Enfoque de Género: {len(gender_rubric)} criterios
     - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
