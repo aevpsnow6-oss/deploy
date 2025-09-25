@@ -1564,10 +1564,7 @@ with tab2:
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    Sube un informe de evaluación (o en algunos casos un TPR) en formato Word (.docx) 
-    para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. 
-    La herramienta extrae secciones clave, aplica la matriz de criterios y asigna 
-    puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). 
+    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Los criterios de Participación de Actores, Género y Transición Justa se aplican a un documento de proyecto. En cuanto a los criterios de "Desempeño del Proyecto" se deberán aplicar exclusivamente a informes de evaluación ya que se basan en la metodología de meta-análisis de la Oficina de Evaluación de la OIT. Finalmente, los criterios de Metodologías con Enfoque Participativo se aplican a informes de evaluación u otros tipos de documentos. 
     Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica).
 
     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
