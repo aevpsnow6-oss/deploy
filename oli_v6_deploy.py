@@ -2960,7 +2960,7 @@ with tab1:
     # Display loaded questions
     with st.expander("📝 Ver preguntas cargadas"):
         if df_appraisal is not None:
-            st.subheader("Preguntas de la lista de verificación de la tasación")
+            st.subheader("Preguntas de la lista de verificación de la Verificación Preliminar de Calidad")
             for idx, row in df_appraisal.iterrows():
                 st.markdown(f"**{idx + 1}.** {row['Pregunta_Realizada']}")
         else:
@@ -2970,7 +2970,7 @@ with tab1:
     st.markdown("""
     ### Instrucciones
     
-    1. **Subir documento**: Selecciona un archivo DOCX para el análisis de tasación
+    1. **Subir documento**: Selecciona un archivo DOCX para el análisis de valoración preliminar de calidad
     2. **Procesar**: Haz clic en 'Analizar documento' para iniciar la evaluación
     3. **Revisar resultados**: Examina los resultados del análisis en la tabla interactiva
     4. **Descargar**: Obtén todos los resultados y las pruebas en un archivo ZIP
@@ -2985,7 +2985,7 @@ with tab1:
         "Sube un DOCX para la evaluación:",
         type=["docx"],
         key="appraisal_file_uploader",
-        help="Selecciona un documento de Word (.docx) para el análisis de tasación"
+        help="Selecciona un documento de Word (.docx) para el análisis de valoración preliminar de calidad"
     )
     
     # Processing button
@@ -3116,7 +3116,7 @@ with tab1:
     
     else:
         if uploaded_file:
-            st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la tasación.")
+            st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la valoración preliminar de calidad.")
         else:
             st.info("📁 Por favor sube un archivo DOCX para comenzar.")
 
