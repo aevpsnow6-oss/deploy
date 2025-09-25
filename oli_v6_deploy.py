@@ -2931,7 +2931,7 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
         
         # Add summary report
         summary = f"""
-Resumen del Análisis de la Lista de Verificación de Tasación
+Resumen del Análisis de la Lista de la Valoración Preliminar de la Calidad
 ===========================================================
 
 Total de preguntas analizadas: {len(results_df)}
