@@ -1749,7 +1749,7 @@ with tab2:
         # For multiple chunks, evaluate each and then synthesize
         chunk_results = []
         for i, chunk in enumerate(chunks):
-            # st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
+            st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
             result = evaluate_single_chunk(chunk, criterion, descriptions)
             chunk_results.append(result)
 
