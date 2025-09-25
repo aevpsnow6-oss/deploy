@@ -1230,9 +1230,9 @@ def load_extended_data():
         else:
             st.warning("No se encontró el archivo de datos de análisis adicional. Es posible que algunas visualizaciones no estén disponibles.")
             st.session_state['analyzed_df'] = None
-        except Exception as e:
-            st.warning(f"Nota: No se pudieron cargar los datos de análisis adicionales. Algunas visualizaciones pueden no estar disponibles. Error: {str(e)}")
-            st.session_state['analyzed_df'] = None
+    except Exception as e:
+        st.warning(f"Nota: No se pudieron cargar los datos de análisis adicionales. Algunas visualizaciones pueden no estar disponibles. Error: {str(e)}")
+        st.session_state['analyzed_df'] = None
     # Process the main dataframe with the additional preparation
     df = prepare_additional_data(df)
     
