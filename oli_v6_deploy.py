@@ -1661,79 +1661,79 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #     """)
 
 #     # Function to extract document structure
-#     def extract_docx_structure(docx_path):
-#         from docx import Document
-#         doc = Document(docx_path)
-#         filename = os.path.basename(docx_path)
-#         rows = []
-#         current_headers = {i: '' for i in range(1, 7)}
-#         para_counter = 0
+    def extract_docx_structure(docx_path):
+        from docx import Document
+        doc = Document(docx_path)
+        filename = os.path.basename(docx_path)
+        rows = []
+        current_headers = {i: '' for i in range(1, 7)}
+        para_counter = 0
 
-#         def get_header_level(style_name):
-#             for i in range(1, 7):
-#                 if style_name.lower().startswith(f'heading {i}'.lower()):
-#                     return i
-#             return None
+        def get_header_level(style_name):
+            for i in range(1, 7):
+                if style_name.lower().startswith(f'heading {i}'.lower()):
+                    return i
+            return None
 
-#         def header_dict():
-#             return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+        def header_dict():
+            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
 
-#         for para in doc.paragraphs:
-#             para_counter += 1
-#             level = get_header_level(para.style.name)
-#             if level and 1 <= level <= 6:
-#                 current_headers[level] = para.text.strip()
-#                 for l in range(level+1, 7):
-#                     current_headers[l] = ''
-#                 rows.append({
-#                     'filename': filename,
-#                     **header_dict(),
-#                     'content': '',
-#                     'source_type': 'heading',
-#                     'paragraph_number': para_counter,
-#                     'page_number': None
-#                 })
-#             elif para.text.strip():
-#                 rows.append({
-#                     'filename': filename,
-#                     **header_dict(),
-#                     'content': para.text.strip(),
-#                     'source_type': 'paragraph',
-#                     'paragraph_number': para_counter,
-#                     'page_number': None
-#                 })
-#         return pd.DataFrame(rows)
+        for para in doc.paragraphs:
+            para_counter += 1
+            level = get_header_level(para.style.name)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+            elif para.text.strip():
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+        return pd.DataFrame(rows)
 
-#     # Function to split text into chunks respecting the token limit
-#     def split_text_into_chunks(text, max_tokens=7000):
-#         import re
-#         # Split by paragraphs first
-#         paragraphs = text.split('\n')
-#         chunks = []
-#         current_chunk = []
-#         current_length = 0
+    # Function to split text into chunks respecting the token limit
+    def split_text_into_chunks(text, max_tokens=7000):
+        import re
+        # Split by paragraphs first
+        paragraphs = text.split('\n')
+        chunks = []
+        current_chunk = []
+        current_length = 0
 
-#         # Rough estimate: 1 token ≈ 4 characters in Spanish
-#         tokens_per_char = 0.25
+        # Rough estimate: 1 token ≈ 4 characters in Spanish
+        tokens_per_char = 0.25
 
-#         for para in paragraphs:
-#             # Estimate tokens in this paragraph
-#             para_tokens = len(para) * tokens_per_char
+        for para in paragraphs:
+            # Estimate tokens in this paragraph
+            para_tokens = len(para) * tokens_per_char
 
-#             # If adding this paragraph would exceed the max, start a new chunk
-#             if current_length + para_tokens > max_tokens and current_chunk:
-#                 chunks.append('\n'.join(current_chunk))
-#                 current_chunk = [para]
-#                 current_length = para_tokens
-#             else:
-#                 current_chunk.append(para)
-#                 current_length += para_tokens
+            # If adding this paragraph would exceed the max, start a new chunk
+            if current_length + para_tokens > max_tokens and current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = [para]
+                current_length = para_tokens
+            else:
+                current_chunk.append(para)
+                current_length += para_tokens
 
-#         # Add the last chunk if there's content
-#         if current_chunk:
-#             chunks.append('\n'.join(current_chunk))
+        # Add the last chunk if there's content
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
 
-#         return chunks
+        return chunks
 
 #     # Function to directly evaluate content against a criterion using LLM
 #     # def evaluate_criterion_with_llm(document_text, criterion, descriptions):
