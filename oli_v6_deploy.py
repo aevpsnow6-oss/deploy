@@ -3680,7 +3680,7 @@ with tab1:
         if df_appraisal is not None:
             st.subheader("Preguntas de la lista de verificación preliminar de calidad (Preguntas del APPRAISAL CHECKLIST) ")
             for _, row in df_appraisal.iterrows():
-                st.markdown(f"{row[1]['Pregunta_Realizada']}")
+                st.markdown(f"{row['Pregunta_Realizada']}")
         else:
             st.warning("No se han cargado preguntas")
     
