@@ -1736,25 +1736,77 @@ with tab2:
         return chunks
 
     # Function to directly evaluate content against a criterion using LLM
+    # def evaluate_criterion_with_llm(document_text, criterion, descriptions):
+    #     """Evaluate document against a criterion directly with LLM"""
+
+    #     # Split document into manageable chunks if needed
+    #     chunks = split_text_into_chunks(document_text)
+
+    #     # If text fits in one chunk, evaluate directly
+    #     if len(chunks) == 1:
+    #         return evaluate_single_chunk(chunks[0], criterion, descriptions)
+
+    #     # For multiple chunks, evaluate each and then synthesize
+    #     chunk_results = []
+    #     for i, chunk in enumerate(chunks):
+    #         st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
+    #         result = evaluate_single_chunk(chunk, criterion, descriptions)
+    #         chunk_results.append(result)
+
+    #     # Synthesize results from all chunks
+    #     return synthesize_evaluations(chunk_results, criterion, descriptions)
+
     def evaluate_criterion_with_llm(document_text, criterion, descriptions):
-        """Evaluate document against a criterion directly with LLM"""
-
-        # Split document into manageable chunks if needed
-        chunks = split_text_into_chunks(document_text)
-
-        # If text fits in one chunk, evaluate directly
-        if len(chunks) == 1:
-            return evaluate_single_chunk(chunks[0], criterion, descriptions)
-
-        # For multiple chunks, evaluate each and then synthesize
-        chunk_results = []
-        for i, chunk in enumerate(chunks):
-            st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
-            result = evaluate_single_chunk(chunk, criterion, descriptions)
-            chunk_results.append(result)
-
-        # Synthesize results from all chunks
-        return synthesize_evaluations(chunk_results, criterion, descriptions)
+        """Analyze complete document efficiently using a two-stage approach"""
+        
+        # Stage 1: Extract relevant sections (cheap, fast model)
+        chunks = split_text_into_chunks(document_text, max_tokens=7000)
+        
+        relevant_chunks = []
+        for chunk in chunks:
+            # Quick relevance check with cheap model
+            check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",  # Cheap model for filtering
+                messages=[{"role": "user", "content": check_prompt}],
+                max_tokens=5,
+                temperature=0
+            )
+            
+            if "YES" in response["choices"][0]["message"]["content"].upper():
+                relevant_chunks.append(chunk)
+        
+        # Stage 2: Deep analysis only on relevant chunks
+        if not relevant_chunks:
+            # If nothing relevant found, use first and last chunks as context
+            relevant_chunks = [chunks[0], chunks[-1]] if len(chunks) > 1 else chunks
+        
+        # Combine relevant chunks (limit to ~10k chars)
+        combined_text = "\n\n---\n\n".join(relevant_chunks)[:10000]
+        
+        # Now do the expensive analysis on focused content
+        prompt = f"""Evaluate this document against: {criterion}
+    
+    Scoring levels: {json.dumps(descriptions)}
+    
+    Relevant document sections:
+    {combined_text}
+    
+    Provide JSON with:
+    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
+    
+        response = openai.ChatCompletion.create(
+            model="gpt-4.1-nano",
+            messages=[
+                {"role": "system", "content": "You are an expert document evaluator."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.1
+        )
+        
+        return json.loads(response["choices"][0]["message"]["content"])
 
     # Function to evaluate a single text chunk
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
@@ -1994,7 +2046,7 @@ with tab2:
         ]
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        MAX_WORKERS = 48
+        MAX_WORKERS = 8
         def eval_one_criterion(args):
             crit, descriptions, dimension, rubric_name = args
             try:
