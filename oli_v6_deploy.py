@@ -1557,6 +1557,597 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
 # Tab 2: Revisión por criterios con trazabilidad
+# with tab2:
+#     st.header("Acercamiento a Valoración de Calidad de Proyectos")
+
+#     # Descriptive text box
+#     st.info("""
+#     **📋 Descripción de la herramienta:**
+
+#     Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Los criterios de Participación de Actores, Género y Transición Justa se aplican a un documento de proyecto. En cuanto a los criterios de "Desempeño del Proyecto" se deberán aplicar exclusivamente a informes de evaluación ya que se basan en la metodología de meta-análisis de la Oficina de Evaluación de la OIT. Finalmente, los criterios de Metodologías con Enfoque Participativo se aplican a informes de evaluación u otros tipos de documentos. 
+    
+#     Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+
+#     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
+#     """)
+
+#     # Read rubrics from Excel files as in megaparse_example.py
+#     import pandas as pd
+#     engagement_rubric = {}
+#     performance_rubric = {}
+#     parteval_rubric = {}
+#     gender_rubric = {}
+#     tj_traditional_rubric = {}
+#     tj_just_transition_rubric = {}
+
+#     try:
+#         df_rubric_engagement = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_engagement')
+#         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_engagement.iterrows():
+#             indicador = row['Indicador']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#             engagement_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+#         df_rubric_performance = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_performance')
+#         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_performance.iterrows():
+#             criterio = row['subdim']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['subdim', 'Dimensión'], errors='ignore').values.tolist()
+#             performance_rubric[criterio] = {'valores': valores, 'dimension': dimension}
+
+#         df_rubric_parteval = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_parteval')
+#         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_parteval.iterrows():
+#             indicador = row['Indicador']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#             parteval_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+#         df_rubric_gender = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_gender_')
+#         df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_gender.iterrows():
+#             indicador = row['Indicador']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#             gender_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+#         # Load TJ Traditional rubric from Rubricas_6ago2025.xlsx
+#         try:
+#             df_rubric_tj_traditional = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_Traditional')
+#             df_rubric_tj_traditional.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#             for idx, row in df_rubric_tj_traditional.iterrows():
+#                 indicador = row['Indicador']
+#                 if pd.notna(indicador) and str(indicador).strip():
+#                     dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#                     valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#                     tj_traditional_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+#         except Exception as e:
+#             st.error(f"❌ Error cargando TJ Tradicional: {e}")
+#             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+
+#         # Load TJ Just Transition rubric from Rubricas_6ago2025.xlsx
+#         try:
+#             df_rubric_tj_just_transition = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_TJ')
+#             df_rubric_tj_just_transition.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#             for idx, row in df_rubric_tj_just_transition.iterrows():
+#                 indicador = row['Indicador']
+#                 if pd.notna(indicador) and str(indicador).strip():
+#                     dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#                     valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#                     tj_just_transition_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+#         except Exception as e:
+#             st.error(f"❌ Error cargando TJ Transición Justa: {e}")
+#             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+#     except Exception as e:
+#         st.error(f"Error leyendo las rúbricas: {e}")
+
+#     # Debug: Show Excel sheet names and rubric status
+#     try:
+#         available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
+#         st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
+#     except Exception as e:
+#         st.error(f"Error leyendo Excel: {e}")
+
+#     st.error(f"""
+#     **ESTADO DE RÚBRICAS:**
+#     - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
+#     - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
+#     - Metodologías con Enfoque Participativo: {len(parteval_rubric)} criterios
+#     - Enfoque de Género: {len(gender_rubric)} criterios
+#     - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
+#     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
+#     """)
+
+#     # Function to extract document structure
+#     def extract_docx_structure(docx_path):
+#         from docx import Document
+#         doc = Document(docx_path)
+#         filename = os.path.basename(docx_path)
+#         rows = []
+#         current_headers = {i: '' for i in range(1, 7)}
+#         para_counter = 0
+
+#         def get_header_level(style_name):
+#             for i in range(1, 7):
+#                 if style_name.lower().startswith(f'heading {i}'.lower()):
+#                     return i
+#             return None
+
+#         def header_dict():
+#             return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+
+#         for para in doc.paragraphs:
+#             para_counter += 1
+#             level = get_header_level(para.style.name)
+#             if level and 1 <= level <= 6:
+#                 current_headers[level] = para.text.strip()
+#                 for l in range(level+1, 7):
+#                     current_headers[l] = ''
+#                 rows.append({
+#                     'filename': filename,
+#                     **header_dict(),
+#                     'content': '',
+#                     'source_type': 'heading',
+#                     'paragraph_number': para_counter,
+#                     'page_number': None
+#                 })
+#             elif para.text.strip():
+#                 rows.append({
+#                     'filename': filename,
+#                     **header_dict(),
+#                     'content': para.text.strip(),
+#                     'source_type': 'paragraph',
+#                     'paragraph_number': para_counter,
+#                     'page_number': None
+#                 })
+#         return pd.DataFrame(rows)
+
+#     # Function to split text into chunks respecting the token limit
+#     def split_text_into_chunks(text, max_tokens=7000):
+#         import re
+#         # Split by paragraphs first
+#         paragraphs = text.split('\n')
+#         chunks = []
+#         current_chunk = []
+#         current_length = 0
+
+#         # Rough estimate: 1 token ≈ 4 characters in Spanish
+#         tokens_per_char = 0.25
+
+#         for para in paragraphs:
+#             # Estimate tokens in this paragraph
+#             para_tokens = len(para) * tokens_per_char
+
+#             # If adding this paragraph would exceed the max, start a new chunk
+#             if current_length + para_tokens > max_tokens and current_chunk:
+#                 chunks.append('\n'.join(current_chunk))
+#                 current_chunk = [para]
+#                 current_length = para_tokens
+#             else:
+#                 current_chunk.append(para)
+#                 current_length += para_tokens
+
+#         # Add the last chunk if there's content
+#         if current_chunk:
+#             chunks.append('\n'.join(current_chunk))
+
+#         return chunks
+
+#     # Function to directly evaluate content against a criterion using LLM
+#     # def evaluate_criterion_with_llm(document_text, criterion, descriptions):
+#     #     """Evaluate document against a criterion directly with LLM"""
+
+#     #     # Split document into manageable chunks if needed
+#     #     chunks = split_text_into_chunks(document_text)
+
+#     #     # If text fits in one chunk, evaluate directly
+#     #     if len(chunks) == 1:
+#     #         return evaluate_single_chunk(chunks[0], criterion, descriptions)
+
+#     #     # For multiple chunks, evaluate each and then synthesize
+#     #     chunk_results = []
+#     #     for i, chunk in enumerate(chunks):
+#     #         st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
+#     #         result = evaluate_single_chunk(chunk, criterion, descriptions)
+#     #         chunk_results.append(result)
+
+#     #     # Synthesize results from all chunks
+#     #     return synthesize_evaluations(chunk_results, criterion, descriptions)
+
+#     def evaluate_criterion_with_llm(document_text, criterion, descriptions):
+#         """Analyze complete document efficiently using a two-stage approach"""
+        
+#         # Stage 1: Extract relevant sections (cheap, fast model)
+#         chunks = split_text_into_chunks(document_text, max_tokens=7000)
+        
+#         relevant_chunks = []
+#         for chunk in chunks:
+#             # Quick relevance check with cheap model
+#             check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
+            
+#             response = openai.ChatCompletion.create(
+#                 model="gpt-4o-mini",  # Cheap model for filtering
+#                 messages=[{"role": "user", "content": check_prompt}],
+#                 max_tokens=5,
+#                 temperature=0
+#             )
+            
+#             if "YES" in response["choices"][0]["message"]["content"].upper():
+#                 relevant_chunks.append(chunk)
+        
+#         # Stage 2: Deep analysis only on relevant chunks
+#         if not relevant_chunks:
+#             # If nothing relevant found, use first and last chunks as context
+#             relevant_chunks = [chunks[0], chunks[-1]] if len(chunks) > 1 else chunks
+        
+#         # Combine relevant chunks (limit to ~10k chars)
+#         combined_text = "\n\n---\n\n".join(relevant_chunks)[:10000]
+        
+#         # Now do the expensive analysis on focused content
+#         prompt = f"""Evaluate this document against: {criterion}
+    
+#     Scoring levels: {json.dumps(descriptions)}
+    
+#     Relevant document sections:
+#     {combined_text}
+    
+#     Provide JSON with:
+#     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
+    
+#         response = openai.ChatCompletion.create(
+#             model="gpt-4.1-nano",
+#             messages=[
+#                 {"role": "system", "content": "You are an expert document evaluator."},
+#                 {"role": "user", "content": prompt}
+#             ],
+#             max_tokens=1500,
+#             temperature=0.1
+#         )
+        
+#         return json.loads(response["choices"][0]["message"]["content"])
+
+#     # Function to evaluate a single text chunk
+#     def evaluate_single_chunk(text_chunk, criterion, descriptions):
+#         """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
+#         import json
+
+#         # Build prompt
+#         prompt = f"""
+#         Estás evaluando un documento contra un criterio específico.
+        
+#         Criterio: {criterion}
+        
+#         Descripciones de los niveles de puntuación:
+#         {json.dumps(descriptions, indent=2)}
+        
+#         Contenido del documento a evaluar:
+#         {text_chunk}
+        
+#         Analiza qué tan bien el documento cumple con este criterio. Proporciona:
+        
+#         1. Un análisis DETALLADO (2-3 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Proporciona un razonamiento profundo que abarque los aspectos del criterio.
+        
+#         2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
+        
+#         3. EVIDENCIA del documento que respalde tu puntuación. Incluye entre 5-8 citas textuales del documento, indicando cómo cada fragmento contribuye a tu evaluación.
+        
+#         Formatea tu respuesta como un objeto JSON con las siguientes claves:
+#         {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "citas textuales del documento (5-8 párrafos)"}}
+        
+#         Devuelve solo el objeto JSON, nada más.
+#         """
+
+#         # Call LLM using OpenAI v0.28 syntax
+#         try:
+#             response = openai.ChatCompletion.create(
+#                 model="gpt-4.1-nano",
+#                 messages=[
+#                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
+#                     {"role": "user", "content": prompt}
+#                 ],
+#                 response_format={"type": "json_object"},
+#                 max_tokens=7000
+#             )
+#             raw = response["choices"][0]["message"]["content"].strip()
+#             parsed = json.loads(raw)
+#             return parsed
+#         except Exception as e:
+#             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
+
+#     # Function to synthesize evaluations
+#     def synthesize_evaluations(chunk_results, criterion, descriptions):
+#         """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
+#         import json
+
+#         # Extract and format the individual evaluations for the synthesis
+#         individual_evals = []
+#         all_evidence = []
+
+#         for i, result in enumerate(chunk_results):
+#             individual_evals.append(f"Evaluación del fragmento {i+1}:\n" +
+#                                     f"Puntuación: {result.get('score', 0)}\n" +
+#                                     f"Análisis: {result.get('analysis', '')}")
+
+#             # Collect all evidence
+#             evidence = result.get('evidence', '')
+#             if evidence:
+#                 all_evidence.append(f"Evidencia del fragmento {i+1}:\n{evidence}")
+
+#         # Define separator outside the f-string to avoid backslash issues
+#         separator = "\n\n"
+
+#         # Create a synthesis prompt
+#         synthesis_prompt = f"""
+#         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
+        
+#         Aquí están las evaluaciones individuales de cada fragmento:
+        
+#         {separator.join(individual_evals)}
+        
+#         Basándote en estas evaluaciones individuales, proporciona:
+        
+#         1. Un análisis DETALLADO (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser comprensivo y abarcar los aspectos relevantes encontrados en el documento.
+        
+#         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
+        
+#         3. Las evidencias más importantes del documento. Selecciona las 8-10 citas textuales más relevantes de los fragmentos individuales.
+        
+#         Formatea tu respuesta como un objeto JSON con las siguientes claves:
+#         {{"analysis": "tu análisis global detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "las citas textuales más relevantes del documento (8-10 párrafos)"}}
+        
+#         Devuelve solo el objeto JSON, nada más.
+#         """
+
+#         # Call LLM for synthesis using OpenAI v0.28 syntax
+#         try:
+#             response = openai.ChatCompletion.create(
+#                 model="gpt-4.1-nano",
+#                 messages=[
+#                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
+#                     {"role": "user", "content": synthesis_prompt}
+#                 ],
+#                 response_format={"type": "json_object"},
+#                 max_tokens=7000
+#             )
+#             raw = response["choices"][0]["message"]["content"].strip()
+#             parsed = json.loads(raw)
+#             return parsed
+#         except Exception as e:
+#             # If synthesis fails, combine results manually in a more limited way
+#             avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
+#             # Take only the first paragraph of each analysis to avoid token limits
+#             analysis_parts = []
+#             for r in chunk_results:
+#                 analysis = r.get('analysis', '')
+#                 first_para = analysis.split('\n\n')[0] if '\n\n' in analysis else analysis
+#                 analysis_parts.append(first_para)
+
+#             # Take only the first few evidence items
+#             evidence_parts = []
+#             evidence_count = 0
+#             for evidence in all_evidence:
+#                 parts = evidence.split('\n\n')
+#                 # Add up to 2 evidence parts per chunk
+#                 for part in parts[:2]:
+#                     if evidence_count < 8:  # Limit to 8 total evidence parts
+#                         evidence_parts.append(part)
+#                         evidence_count += 1
+
+#             return {
+#                 'score': avg_score,
+#                 'analysis': separator.join(analysis_parts),
+#                 'evidence': separator.join(evidence_parts)
+#             }
+
+#     # Document upload interface
+#     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+
+#     # Move instructions/info to the top of the tab
+#     st.info("""
+#     **Instrucciones:**
+#     1. Cargue un informe de evaluación en formato .DOCX y presione el botón 'Procesar y Evaluar'.
+#     2. Revise los resultados de cada rúbrica en la tabla interactiva.
+#     3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
+#     4. Descargue todos los resultados y evidencias en un archivo ZIP.
+#     """)
+#     # Unified process, evaluate, and download button
+#     st.markdown("#### Procesamiento y Evaluación de Documento")
+#     st.markdown('---')
+#     if st.button('Procesar y Evaluar'):
+#         # Only process if file is uploaded and not already processed for this file
+#         if uploaded_file is not None:
+#             file_hash = hash(uploaded_file.getvalue())
+#             if st.session_state.get('last_file_hash') != file_hash:
+#                 with st.spinner("Procesando documento..."):
+#                     try:
+#                         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+#                         tmp_file.write(uploaded_file.read())
+#                         tmp_file.close()
+#                         progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+#                         doc_result = docx2python(tmp_file.name)
+#                         df = extract_docx_structure(tmp_file.name)
+#                         progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+#                         header_1_values = df['header_1'].dropna().unique()
+#                         llm_summary_rows = []
+#                         llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+#                         total_sections = len(header_1_values)
+#                         for idx, header in enumerate(header_1_values):
+#                             section_df = df[df['header_1'] == header].copy()
+#                             full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+#                             if not full_text:
+#                                 llm_output = ""
+#                             else:
+#                                 llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+#                                 try:
+#                                     response = openai.ChatCompletion.create(
+#                                         model="gpt-4.1-nano",
+#                                         messages=[
+#                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+#                                             {"role": "user", "content": full_text}
+#                                         ],
+#                                         max_tokens=1024,
+#                                         temperature=0.01,
+#                                     )
+#                                     llm_output = response["choices"][0]["message"]["content"].strip()
+#                                 except Exception as e:
+#                                     llm_output = f"[LLM ERROR: {e}]"
+#                             llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+#                         llm_progress.progress(1.0, text="LLM parsing completado.")
+#                         llm_summary_df = pd.DataFrame(llm_summary_rows)
+#                         llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+#                         exploded_df = llm_summary_df.assign(
+#                             llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+#                         ).explode('llm_paragraph')
+#                         exploded_df = exploded_df.reset_index(drop=True)
+#                         exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+#                         full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+#                         file_size = os.path.getsize(tmp_file.name)
+#                         n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+#                         n_paragraphs = len(exploded_df)
+#                         st.session_state['full_document_text'] = full_document_text
+#                         st.session_state['document_stats'] = {
+#                             'file_size': file_size,
+#                             'n_words': n_words,
+#                             'n_paragraphs': n_paragraphs
+#                         }
+#                         st.session_state['exploded_df'] = exploded_df
+#                         st.session_state['last_file_hash'] = file_hash
+#                         try:
+#                             os.unlink(tmp_file.name)
+#                         except:
+#                             pass
+#                         progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+#                         st.info(f"**Resumen del documento:**\n\n" + 
+#                                 f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+#                                 f"- Número de palabras: {n_words}\n" + 
+#                                 f"- Número de párrafos: {n_paragraphs}")
+#                         st.markdown("#### Estructura extraída del documento:")
+#                         st.dataframe(exploded_df, use_container_width=True)
+#                         progress_bar.progress(1.0, text="Procesamiento completo.")
+#                     except Exception as e:
+#                         st.error(f"Error procesando el documento: {e}")
+#                         import traceback
+#                         st.error(traceback.format_exc())
+#                         st.stop()
+#         # Now, always run rubric evaluation if document is processed
+#         document_text = st.session_state.get('full_document_text', '')
+#         if not document_text:
+#             st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+#             st.stop()
+#         rubrics = [
+#             ("Participación de Actores (durante el proyecto)", engagement_rubric),
+#             ("Desempeño del proyecto (según informe de evaluación)", performance_rubric),
+#             ("Participación durante la evaluación (metodología)", parteval_rubric),
+#             ("Enfoque de Género", gender_rubric),
+#             ("Transición Justa: Enfoque Tradicional", tj_traditional_rubric),
+#             ("Transición Justa: Enfoque Moderno", tj_just_transition_rubric)
+#         ]
+#         rubric_results = []
+#         from concurrent.futures import ThreadPoolExecutor, as_completed
+#         MAX_WORKERS = 8
+#         def eval_one_criterion(args):
+#             crit, descriptions, dimension, rubric_name = args
+#             try:
+#                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+#                 return {
+#                     'Criterio': crit,
+#                     'Dimensión': dimension,
+#                     'Score': result.get('score', 0),
+#                     'Análisis': result.get('analysis', ''),
+#                     'Evidencia': result.get('evidence', ''),
+#                     'Error': result.get('error', '') if 'error' in result else '',
+#                     'Rúbrica': rubric_name
+#                 }
+#             except Exception as e:
+#                 return {
+#                     'Criterio': crit,
+#                     'Dimensión': dimension,
+#                     'Score': 0,
+#                     'Análisis': '',
+#                     'Evidencia': '',
+#                     'Error': str(e),
+#                     'Rúbrica': rubric_name
+#                 }
+#         for rubric_name, rubric_dict in rubrics:
+#             # Skip empty rubrics
+#             if not rubric_dict:
+#                 st.warning(f"Saltando rúbrica {rubric_name}: sin criterios cargados")
+#                 continue
+
+#             rubric_analysis_data = []
+#             n_criteria = len(rubric_dict)
+#             progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+#             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+#                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+#                     futures = {
+#                         executor.submit(eval_one_criterion, (
+#                             crit,
+#                             rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+#                             rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+#                             rubric_name
+#                         )): (crit, idx)
+#                         for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+#                     }
+#                     completed = 0
+#                     for future in as_completed(futures):
+#                         result = future.result()
+#                         rubric_analysis_data.append(result)
+#                         completed += 1
+#                         crit, idx = futures[future]
+#                         progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+#             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+#         # Show and allow download of both results only after evaluation
+#         if rubric_results:
+#             for rubric_name, rubric_analysis_df in rubric_results:
+#                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+#                 if not rubric_analysis_df.empty:
+#                     # Ensure 'Evidencia' column is present
+#                     if 'Evidencia' not in rubric_analysis_df.columns:
+#                         rubric_analysis_df['Evidencia'] = ''
+
+#                     # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
+#                     cols = rubric_analysis_df.columns.tolist()
+#                     desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+#                     new_order = [col for col in desired_order if col in cols]
+#                     remaining_cols = [col for col in cols if col not in desired_order]
+#                     final_order = new_order + remaining_cols
+#                     rubric_analysis_df = rubric_analysis_df[final_order]
+#                     # Normalize 'Evidencia' column to always be a string
+#                     if 'Evidencia' in rubric_analysis_df.columns:
+#                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                         )
+#                     st.dataframe(rubric_analysis_df, use_container_width=True)
+#                 else:
+#                     st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+#             # Provide a zip download for both results
+#             import io, zipfile
+#             zip_buffer = io.BytesIO()
+#             with zipfile.ZipFile(zip_buffer, "w") as zipf:
+#                 for rubric_name, rubric_analysis_df in rubric_results:
+#                     # Normalize 'Evidencia' column to always be a string before exporting
+#                     if 'Evidencia' in rubric_analysis_df.columns:
+#                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                         )
+#                     csv = rubric_analysis_df.to_csv(index=False)
+#                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
+#                     zipf.writestr(arcname, csv)
+#             zip_buffer.seek(0)
+#             st.download_button(
+#                 label="Descargar ambos resultados como ZIP",
+#                 data=zip_buffer,
+#                 file_name="resultados_rubricas.zip",
+#                 mime="application/zip"
+#             )
+#         else:
+#             st.warning("No se generaron resultados para ninguna rúbrica.")
+#     else:
+#         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+
+# Tab 2: Revisión por criterios con trazabilidad
 with tab2:
     st.header("Acercamiento a Valoración de Calidad de Proyectos")
 
@@ -1585,7 +2176,7 @@ with tab2:
         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_engagement.iterrows():
             indicador = row['Indicador']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            dimension = row.get('Dimensión', 'No especificada')
             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
             engagement_rubric[indicador] = {'valores': valores, 'dimension': dimension}
 
@@ -1593,7 +2184,7 @@ with tab2:
         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
         for idx, row in df_rubric_performance.iterrows():
             criterio = row['subdim']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            dimension = row.get('Dimensión', 'No especificada')
             valores = row.drop(['subdim', 'Dimensión'], errors='ignore').values.tolist()
             performance_rubric[criterio] = {'valores': valores, 'dimension': dimension}
 
@@ -1601,7 +2192,7 @@ with tab2:
         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_parteval.iterrows():
             indicador = row['Indicador']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            dimension = row.get('Dimensión', 'No especificada')
             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
             parteval_rubric[indicador] = {'valores': valores, 'dimension': dimension}
 
@@ -1609,48 +2200,38 @@ with tab2:
         df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
         for idx, row in df_rubric_gender.iterrows():
             indicador = row['Indicador']
-            dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+            dimension = row.get('Dimensión', 'No especificada')
             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
             gender_rubric[indicador] = {'valores': valores, 'dimension': dimension}
 
-        # Load TJ Traditional rubric from Rubricas_6ago2025.xlsx
         try:
             df_rubric_tj_traditional = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_Traditional')
             df_rubric_tj_traditional.drop(columns=['Criterio'], inplace=True, errors='ignore')
             for idx, row in df_rubric_tj_traditional.iterrows():
                 indicador = row['Indicador']
                 if pd.notna(indicador) and str(indicador).strip():
-                    dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+                    dimension = row.get('Dimensión', 'No especificada')
                     valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
                     tj_traditional_rubric[indicador] = {'valores': valores, 'dimension': dimension}
         except Exception as e:
-            st.error(f"❌ Error cargando TJ Tradicional: {e}")
-            st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+            st.error(f"Error cargando TJ Tradicional: {e}")
 
-        # Load TJ Just Transition rubric from Rubricas_6ago2025.xlsx
         try:
             df_rubric_tj_just_transition = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_TJ')
             df_rubric_tj_just_transition.drop(columns=['Criterio'], inplace=True, errors='ignore')
             for idx, row in df_rubric_tj_just_transition.iterrows():
                 indicador = row['Indicador']
                 if pd.notna(indicador) and str(indicador).strip():
-                    dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+                    dimension = row.get('Dimensión', 'No especificada')
                     valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
                     tj_just_transition_rubric[indicador] = {'valores': valores, 'dimension': dimension}
         except Exception as e:
-            st.error(f"❌ Error cargando TJ Transición Justa: {e}")
-            st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+            st.error(f"Error cargando TJ Transición Justa: {e}")
     except Exception as e:
         st.error(f"Error leyendo las rúbricas: {e}")
 
-    # Debug: Show Excel sheet names and rubric status
-    try:
-        available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
-        st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
-    except Exception as e:
-        st.error(f"Error leyendo Excel: {e}")
-
-    st.error(f"""
+    # Show rubric status
+    st.success(f"""
     **ESTADO DE RÚBRICAS:**
     - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
     - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
@@ -1660,393 +2241,213 @@ with tab2:
     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
 
-    # Function to extract document structure
-    def extract_docx_structure(docx_path):
-        from docx import Document
-        doc = Document(docx_path)
-        filename = os.path.basename(docx_path)
-        rows = []
-        current_headers = {i: '' for i in range(1, 7)}
-        para_counter = 0
+    # Document upload
+    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
 
-        def get_header_level(style_name):
-            for i in range(1, 7):
-                if style_name.lower().startswith(f'heading {i}'.lower()):
-                    return i
-            return None
+    # Initialize session state for selections
+    if 'selected_rubrics_tab2' not in st.session_state:
+        st.session_state['selected_rubrics_tab2'] = []
+    if 'selected_criteria_tab2' not in st.session_state:
+        st.session_state['selected_criteria_tab2'] = {}
 
-        def header_dict():
-            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+    # Rubric and Criteria Selection Section
+    st.markdown("### Selección de Rúbricas y Criterios")
+    
+    # All available rubrics
+    all_rubrics = {
+        "Participación de Actores (durante el proyecto)": engagement_rubric,
+        "Desempeño del proyecto (según informe de evaluación)": performance_rubric,
+        "Participación durante la evaluación (metodología)": parteval_rubric,
+        "Enfoque de Género": gender_rubric,
+        "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,
+        "Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+    }
 
-        for para in doc.paragraphs:
-            para_counter += 1
-            level = get_header_level(para.style.name)
-            if level and 1 <= level <= 6:
-                current_headers[level] = para.text.strip()
-                for l in range(level+1, 7):
-                    current_headers[l] = ''
-                rows.append({
-                    'filename': filename,
-                    **header_dict(),
-                    'content': '',
-                    'source_type': 'heading',
-                    'paragraph_number': para_counter,
-                    'page_number': None
-                })
-            elif para.text.strip():
-                rows.append({
-                    'filename': filename,
-                    **header_dict(),
-                    'content': para.text.strip(),
-                    'source_type': 'paragraph',
-                    'paragraph_number': para_counter,
-                    'page_number': None
-                })
-        return pd.DataFrame(rows)
+    # Step 1: Select Rubrics
+    st.markdown("#### 1. Seleccione las rúbricas a aplicar:")
+    selected_rubric_names = st.multiselect(
+        "Rúbricas:",
+        options=list(all_rubrics.keys()),
+        default=st.session_state['selected_rubrics_tab2'],
+        key='rubric_selector_tab2'
+    )
+    st.session_state['selected_rubrics_tab2'] = selected_rubric_names
 
-    # Function to split text into chunks respecting the token limit
-    def split_text_into_chunks(text, max_tokens=7000):
-        import re
-        # Split by paragraphs first
-        paragraphs = text.split('\n')
-        chunks = []
-        current_chunk = []
-        current_length = 0
-
-        # Rough estimate: 1 token ≈ 4 characters in Spanish
-        tokens_per_char = 0.25
-
-        for para in paragraphs:
-            # Estimate tokens in this paragraph
-            para_tokens = len(para) * tokens_per_char
-
-            # If adding this paragraph would exceed the max, start a new chunk
-            if current_length + para_tokens > max_tokens and current_chunk:
-                chunks.append('\n'.join(current_chunk))
-                current_chunk = [para]
-                current_length = para_tokens
-            else:
-                current_chunk.append(para)
-                current_length += para_tokens
-
-        # Add the last chunk if there's content
-        if current_chunk:
-            chunks.append('\n'.join(current_chunk))
-
-        return chunks
-
-    # Function to directly evaluate content against a criterion using LLM
-    # def evaluate_criterion_with_llm(document_text, criterion, descriptions):
-    #     """Evaluate document against a criterion directly with LLM"""
-
-    #     # Split document into manageable chunks if needed
-    #     chunks = split_text_into_chunks(document_text)
-
-    #     # If text fits in one chunk, evaluate directly
-    #     if len(chunks) == 1:
-    #         return evaluate_single_chunk(chunks[0], criterion, descriptions)
-
-    #     # For multiple chunks, evaluate each and then synthesize
-    #     chunk_results = []
-    #     for i, chunk in enumerate(chunks):
-    #         st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
-    #         result = evaluate_single_chunk(chunk, criterion, descriptions)
-    #         chunk_results.append(result)
-
-    #     # Synthesize results from all chunks
-    #     return synthesize_evaluations(chunk_results, criterion, descriptions)
-
-    def evaluate_criterion_with_llm(document_text, criterion, descriptions):
-        """Analyze complete document efficiently using a two-stage approach"""
+    # Step 2: Select Criteria within each rubric
+    if selected_rubric_names:
+        st.markdown("#### 2. Seleccione los criterios específicos:")
         
-        # Stage 1: Extract relevant sections (cheap, fast model)
-        chunks = split_text_into_chunks(document_text, max_tokens=7000)
-        
-        relevant_chunks = []
-        for chunk in chunks:
-            # Quick relevance check with cheap model
-            check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
+        for rubric_name in selected_rubric_names:
+            rubric_dict = all_rubrics[rubric_name]
             
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",  # Cheap model for filtering
-                messages=[{"role": "user", "content": check_prompt}],
-                max_tokens=5,
-                temperature=0
-            )
-            
-            if "YES" in response["choices"][0]["message"]["content"].upper():
-                relevant_chunks.append(chunk)
-        
-        # Stage 2: Deep analysis only on relevant chunks
-        if not relevant_chunks:
-            # If nothing relevant found, use first and last chunks as context
-            relevant_chunks = [chunks[0], chunks[-1]] if len(chunks) > 1 else chunks
-        
-        # Combine relevant chunks (limit to ~10k chars)
-        combined_text = "\n\n---\n\n".join(relevant_chunks)[:10000]
-        
-        # Now do the expensive analysis on focused content
-        prompt = f"""Evaluate this document against: {criterion}
+            with st.expander(f"📋 {rubric_name} ({len(rubric_dict)} criterios disponibles)", expanded=True):
+                # Select all checkbox for this rubric
+                select_all_key = f"select_all_{rubric_name}_tab2"
+                select_all = st.checkbox(f"Seleccionar todos los criterios", key=select_all_key)
+                
+                # Initialize criteria selection for this rubric
+                if rubric_name not in st.session_state['selected_criteria_tab2']:
+                    st.session_state['selected_criteria_tab2'][rubric_name] = []
+                
+                # Show criteria checkboxes
+                selected_criteria = []
+                for criterion in rubric_dict.keys():
+                    # Default checked if select_all or previously selected
+                    default_value = select_all or criterion in st.session_state['selected_criteria_tab2'][rubric_name]
+                    
+                    is_selected = st.checkbox(
+                        f"{criterion}",
+                        value=default_value,
+                        key=f"criterion_{rubric_name}_{criterion}_tab2"
+                    )
+                    
+                    if is_selected:
+                        selected_criteria.append(criterion)
+                
+                # Update session state
+                st.session_state['selected_criteria_tab2'][rubric_name] = selected_criteria
+                
+                st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(rubric_dict)}")
+
+    # Show summary of selections
+    if selected_rubric_names:
+        total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
+        st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
+
+    # Process and Evaluate button
+    st.markdown("---")
+    st.markdown("### Procesamiento y Evaluación")
     
-    Scoring levels: {json.dumps(descriptions)}
-    
-    Relevant document sections:
-    {combined_text}
-    
-    Provide JSON with:
-    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
-    
-        response = openai.ChatCompletion.create(
-            model="gpt-4.1-nano",
-            messages=[
-                {"role": "system", "content": "You are an expert document evaluator."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=1500,
-            temperature=0.1
-        )
-        
-        return json.loads(response["choices"][0]["message"]["content"])
-
-    # Function to evaluate a single text chunk
-    def evaluate_single_chunk(text_chunk, criterion, descriptions):
-        """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
-        import json
-
-        # Build prompt
-        prompt = f"""
-        Estás evaluando un documento contra un criterio específico.
-        
-        Criterio: {criterion}
-        
-        Descripciones de los niveles de puntuación:
-        {json.dumps(descriptions, indent=2)}
-        
-        Contenido del documento a evaluar:
-        {text_chunk}
-        
-        Analiza qué tan bien el documento cumple con este criterio. Proporciona:
-        
-        1. Un análisis DETALLADO (2-3 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Proporciona un razonamiento profundo que abarque los aspectos del criterio.
-        
-        2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
-        
-        3. EVIDENCIA del documento que respalde tu puntuación. Incluye entre 5-8 citas textuales del documento, indicando cómo cada fragmento contribuye a tu evaluación.
-        
-        Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "citas textuales del documento (5-8 párrafos)"}}
-        
-        Devuelve solo el objeto JSON, nada más.
-        """
-
-        # Call LLM using OpenAI v0.28 syntax
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4.1-nano",
-                messages=[
-                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=7000
-            )
-            raw = response["choices"][0]["message"]["content"].strip()
-            parsed = json.loads(raw)
-            return parsed
-        except Exception as e:
-            return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
-
-    # Function to synthesize evaluations
-    def synthesize_evaluations(chunk_results, criterion, descriptions):
-        """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
-        import json
-
-        # Extract and format the individual evaluations for the synthesis
-        individual_evals = []
-        all_evidence = []
-
-        for i, result in enumerate(chunk_results):
-            individual_evals.append(f"Evaluación del fragmento {i+1}:\n" +
-                                    f"Puntuación: {result.get('score', 0)}\n" +
-                                    f"Análisis: {result.get('analysis', '')}")
-
-            # Collect all evidence
-            evidence = result.get('evidence', '')
-            if evidence:
-                all_evidence.append(f"Evidencia del fragmento {i+1}:\n{evidence}")
-
-        # Define separator outside the f-string to avoid backslash issues
-        separator = "\n\n"
-
-        # Create a synthesis prompt
-        synthesis_prompt = f"""
-        Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
-        
-        Aquí están las evaluaciones individuales de cada fragmento:
-        
-        {separator.join(individual_evals)}
-        
-        Basándote en estas evaluaciones individuales, proporciona:
-        
-        1. Un análisis DETALLADO (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser comprensivo y abarcar los aspectos relevantes encontrados en el documento.
-        
-        2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
-        
-        3. Las evidencias más importantes del documento. Selecciona las 8-10 citas textuales más relevantes de los fragmentos individuales.
-        
-        Formatea tu respuesta como un objeto JSON con las siguientes claves:
-        {{"analysis": "tu análisis global detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "las citas textuales más relevantes del documento (8-10 párrafos)"}}
-        
-        Devuelve solo el objeto JSON, nada más.
-        """
-
-        # Call LLM for synthesis using OpenAI v0.28 syntax
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4.1-nano",
-                messages=[
-                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
-                    {"role": "user", "content": synthesis_prompt}
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=7000
-            )
-            raw = response["choices"][0]["message"]["content"].strip()
-            parsed = json.loads(raw)
-            return parsed
-        except Exception as e:
-            # If synthesis fails, combine results manually in a more limited way
-            avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
-            # Take only the first paragraph of each analysis to avoid token limits
-            analysis_parts = []
-            for r in chunk_results:
-                analysis = r.get('analysis', '')
-                first_para = analysis.split('\n\n')[0] if '\n\n' in analysis else analysis
-                analysis_parts.append(first_para)
-
-            # Take only the first few evidence items
-            evidence_parts = []
-            evidence_count = 0
-            for evidence in all_evidence:
-                parts = evidence.split('\n\n')
-                # Add up to 2 evidence parts per chunk
-                for part in parts[:2]:
-                    if evidence_count < 8:  # Limit to 8 total evidence parts
-                        evidence_parts.append(part)
-                        evidence_count += 1
-
-            return {
-                'score': avg_score,
-                'analysis': separator.join(analysis_parts),
-                'evidence': separator.join(evidence_parts)
-            }
-
-    # Document upload interface
-    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
-
-    # Move instructions/info to the top of the tab
-    st.info("""
-    **Instrucciones:**
-    1. Cargue un informe de evaluación en formato .DOCX y presione el botón 'Procesar y Evaluar'.
-    2. Revise los resultados de cada rúbrica en la tabla interactiva.
-    3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
-    4. Descargue todos los resultados y evidencias en un archivo ZIP.
-    """)
-    # Unified process, evaluate, and download button
-    st.markdown("#### Procesamiento y Evaluación de Documento")
-    st.markdown('---')
-    if st.button('Procesar y Evaluar'):
-        # Only process if file is uploaded and not already processed for this file
-        if uploaded_file is not None:
-            file_hash = hash(uploaded_file.getvalue())
-            if st.session_state.get('last_file_hash') != file_hash:
-                with st.spinner("Procesando documento..."):
-                    try:
-                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                        tmp_file.write(uploaded_file.read())
-                        tmp_file.close()
-                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-                        doc_result = docx2python(tmp_file.name)
-                        df = extract_docx_structure(tmp_file.name)
-                        progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
-                        header_1_values = df['header_1'].dropna().unique()
-                        llm_summary_rows = []
-                        llm_progress = st.progress(0, text="Procesando secciones con LLM...")
-                        total_sections = len(header_1_values)
-                        for idx, header in enumerate(header_1_values):
-                            section_df = df[df['header_1'] == header].copy()
-                            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                            if not full_text:
-                                llm_output = ""
-                            else:
-                                llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
-                                try:
-                                    response = openai.ChatCompletion.create(
-                                        model="gpt-4.1-nano",
-                                        messages=[
-                                            {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
-                                            {"role": "user", "content": full_text}
-                                        ],
-                                        max_tokens=1024,
-                                        temperature=0.01,
-                                    )
-                                    llm_output = response["choices"][0]["message"]["content"].strip()
-                                except Exception as e:
-                                    llm_output = f"[LLM ERROR: {e}]"
-                            llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
-                        llm_progress.progress(1.0, text="LLM parsing completado.")
-                        llm_summary_df = pd.DataFrame(llm_summary_rows)
-                        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
-                        exploded_df = llm_summary_df.assign(
-                            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                        ).explode('llm_paragraph')
-                        exploded_df = exploded_df.reset_index(drop=True)
-                        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                        full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
-                        file_size = os.path.getsize(tmp_file.name)
-                        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                        n_paragraphs = len(exploded_df)
-                        st.session_state['full_document_text'] = full_document_text
-                        st.session_state['document_stats'] = {
-                            'file_size': file_size,
-                            'n_words': n_words,
-                            'n_paragraphs': n_paragraphs
-                        }
-                        st.session_state['exploded_df'] = exploded_df
-                        st.session_state['last_file_hash'] = file_hash
-                        try:
-                            os.unlink(tmp_file.name)
-                        except:
-                            pass
-                        progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
-                        st.info(f"**Resumen del documento:**\n\n" + 
-                                f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                                f"- Número de palabras: {n_words}\n" + 
-                                f"- Número de párrafos: {n_paragraphs}")
-                        st.markdown("#### Estructura extraída del documento:")
-                        st.dataframe(exploded_df, use_container_width=True)
-                        progress_bar.progress(1.0, text="Procesamiento completo.")
-                    except Exception as e:
-                        st.error(f"Error procesando el documento: {e}")
-                        import traceback
-                        st.error(traceback.format_exc())
-                        st.stop()
-        # Now, always run rubric evaluation if document is processed
-        document_text = st.session_state.get('full_document_text', '')
-        if not document_text:
-            st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+    if st.button('Procesar y Evaluar', key='process_evaluate_tab2'):
+        if uploaded_file is None:
+            st.error("Por favor suba un archivo DOCX primero.")
             st.stop()
-        rubrics = [
-            ("Participación de Actores (durante el proyecto)", engagement_rubric),
-            ("Desempeño del proyecto (según informe de evaluación)", performance_rubric),
-            ("Participación durante la evaluación (metodología)", parteval_rubric),
-            ("Enfoque de Género", gender_rubric),
-            ("Transición Justa: Enfoque Tradicional", tj_traditional_rubric),
-            ("Transición Justa: Enfoque Moderno", tj_just_transition_rubric)
-        ]
+        
+        if not selected_rubric_names:
+            st.error("Por favor seleccione al menos una rúbrica.")
+            st.stop()
+        
+        if total_criteria == 0:
+            st.error("Por favor seleccione al menos un criterio.")
+            st.stop()
+        
+        # Process document
+        file_hash = hash(uploaded_file.getvalue())
+        if st.session_state.get('last_file_hash_tab2') != file_hash:
+            with st.spinner("Procesando documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Extract structure
+                    df = extract_docx_structure(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    
+                    # Process with LLM
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+                    total_sections = len(header_1_values)
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        
+                        if not full_text:
+                            llm_output = ""
+                        else:
+                            llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+                            try:
+                                response = openai.ChatCompletion.create(
+                                    model="gpt-4.1-nano",
+                                    messages=[
+                                        {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                                        {"role": "user", "content": full_text}
+                                    ],
+                                    max_tokens=1024,
+                                    temperature=0.01,
+                                )
+                                llm_output = response["choices"][0]["message"]["content"].strip()
+                            except Exception as e:
+                                llm_output = f"[LLM ERROR: {e}]"
+                        
+                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+                    
+                    llm_progress.progress(1.0, text="LLM parsing completado.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab2'] = full_document_text
+                    st.session_state['document_stats_tab2'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab2'] = exploded_df
+                    st.session_state['last_file_hash_tab2'] = file_hash
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Procesamiento completo.")
+                    
+                    st.info(f"**Resumen del documento:**\n\n" + 
+                            f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+                            f"- Número de palabras: {n_words}\n" + 
+                            f"- Número de párrafos: {n_paragraphs}")
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Evaluate with selected rubrics and criteria
+        document_text = st.session_state.get('full_document_text_tab2', '')
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
+            st.stop()
+        
+        # Build filtered rubrics based on selection
+        rubrics_to_evaluate = []
+        for rubric_name in selected_rubric_names:
+            selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
+            if selected_criteria_list:
+                # Filter the rubric to only include selected criteria
+                full_rubric = all_rubrics[rubric_name]
+                filtered_rubric = {k: v for k, v in full_rubric.items() if k in selected_criteria_list}
+                rubrics_to_evaluate.append((rubric_name, filtered_rubric))
+        
+        if not rubrics_to_evaluate:
+            st.error("No hay criterios seleccionados para evaluar.")
+            st.stop()
+        
+        # Evaluate
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 8
+        
         def eval_one_criterion(args):
             crit, descriptions, dimension, rubric_name = args
             try:
@@ -2070,15 +2471,15 @@ with tab2:
                     'Error': str(e),
                     'Rúbrica': rubric_name
                 }
-        for rubric_name, rubric_dict in rubrics:
-            # Skip empty rubrics
+        
+        for rubric_name, rubric_dict in rubrics_to_evaluate:
             if not rubric_dict:
-                st.warning(f"Saltando rúbrica {rubric_name}: sin criterios cargados")
                 continue
-
+            
             rubric_analysis_data = []
             n_criteria = len(rubric_dict)
             progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+            
             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
@@ -2090,6 +2491,7 @@ with tab2:
                         )): (crit, idx)
                         for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
                     }
+                    
                     completed = 0
                     for future in as_completed(futures):
                         result = future.result()
@@ -2097,37 +2499,38 @@ with tab2:
                         completed += 1
                         crit, idx = futures[future]
                         progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+            
             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
-        # Show and allow download of both results only after evaluation
+        
+        # Display results
         if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
                 if not rubric_analysis_df.empty:
-                    # Ensure 'Evidencia' column is present
                     if 'Evidencia' not in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = ''
-
-                    # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
+                    
                     cols = rubric_analysis_df.columns.tolist()
                     desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
                     new_order = [col for col in desired_order if col in cols]
                     remaining_cols = [col for col in cols if col not in desired_order]
                     final_order = new_order + remaining_cols
                     rubric_analysis_df = rubric_analysis_df[final_order]
-                    # Normalize 'Evidencia' column to always be a string
+                    
                     if 'Evidencia' in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
+                    
                     st.dataframe(rubric_analysis_df, use_container_width=True)
                 else:
                     st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
-            # Provide a zip download for both results
+            
+            # Download ZIP
             import io, zipfile
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zipf:
                 for rubric_name, rubric_analysis_df in rubric_results:
-                    # Normalize 'Evidencia' column to always be a string before exporting
                     if 'Evidencia' in rubric_analysis_df.columns:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
@@ -2136,8 +2539,9 @@ with tab2:
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
                     zipf.writestr(arcname, csv)
             zip_buffer.seek(0)
+            
             st.download_button(
-                label="Descargar ambos resultados como ZIP",
+                label="Descargar resultados como ZIP",
                 data=zip_buffer,
                 file_name="resultados_rubricas.zip",
                 mime="application/zip"
@@ -2145,7 +2549,7 @@ with tab2:
         else:
             st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
-        st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+        st.info("Suba un documento, seleccione rúbricas y criterios, luego presione 'Procesar y Evaluar'.")
 
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
