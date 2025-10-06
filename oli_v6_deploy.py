@@ -3679,8 +3679,8 @@ with tab1:
     with st.expander("📝 Ver preguntas cargadas"):
         if df_appraisal is not None:
             st.subheader("Preguntas de la lista de verificación preliminar de calidad (Preguntas del APPRAISAL CHECKLIST) ")
-            for idx, row in df_appraisal.iterrows():
-                st.markdown(f"**{idx + 1}.** {row['Pregunta_Realizada']}")
+            for i, row in enumerate(df_appraisal.iterrows(), 1):
+                st.markdown(f"**{i}.** {row[1]['Pregunta_Realizada']}")
         else:
             st.warning("No se han cargado preguntas")
     
