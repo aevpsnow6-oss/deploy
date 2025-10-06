@@ -2392,6 +2392,191 @@ with tab2:
     # Process and Evaluate button
     st.markdown("---")
     st.markdown("### Procesamiento y Evaluación")
+
+    def evaluate_criterion_with_llm(document_text, criterion, descriptions):
+        """Analyze complete document efficiently using a two-stage approach"""
+        
+        # Stage 1: Extract relevant sections (cheap, fast model)
+        chunks = split_text_into_chunks(document_text, max_tokens=7000)
+        
+        relevant_chunks = []
+        for chunk in chunks:
+            # Quick relevance check with cheap model
+            check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",  # Cheap model for filtering
+                messages=[{"role": "user", "content": check_prompt}],
+                max_tokens=5,
+                temperature=0
+            )
+            
+            if "YES" in response["choices"][0]["message"]["content"].upper():
+                relevant_chunks.append(chunk)
+        
+        # Stage 2: Deep analysis only on relevant chunks
+        if not relevant_chunks:
+            # If nothing relevant found, use first and last chunks as context
+            relevant_chunks = [chunks[0], chunks[-1]] if len(chunks) > 1 else chunks
+        
+        # Combine relevant chunks (limit to ~10k chars)
+        combined_text = "\n\n---\n\n".join(relevant_chunks)[:10000]
+        
+        # Now do the expensive analysis on focused content
+        prompt = f"""Evaluate this document against: {criterion}
+    
+    Scoring levels: {json.dumps(descriptions)}
+    
+    Relevant document sections:
+    {combined_text}
+    
+    Provide JSON with:
+    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
+    
+        response = openai.ChatCompletion.create(
+            model="gpt-4.1-nano",
+            messages=[
+                {"role": "system", "content": "You are an expert document evaluator."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.1
+        )
+        
+        return json.loads(response["choices"][0]["message"]["content"])
+
+    # Function to evaluate a single text chunk
+    def evaluate_single_chunk(text_chunk, criterion, descriptions):
+        """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
+        import json
+
+        # Build prompt
+        prompt = f"""
+        Estás evaluando un documento contra un criterio específico.
+        
+        Criterio: {criterion}
+        
+        Descripciones de los niveles de puntuación:
+        {json.dumps(descriptions, indent=2)}
+        
+        Contenido del documento a evaluar:
+        {text_chunk}
+        
+        Analiza qué tan bien el documento cumple con este criterio. Proporciona:
+        
+        1. Un análisis DETALLADO (2-3 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Proporciona un razonamiento profundo que abarque los aspectos del criterio.
+        
+        2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
+        
+        3. EVIDENCIA del documento que respalde tu puntuación. Incluye entre 5-8 citas textuales del documento, indicando cómo cada fragmento contribuye a tu evaluación.
+        
+        Formatea tu respuesta como un objeto JSON con las siguientes claves:
+        {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "citas textuales del documento (5-8 párrafos)"}}
+        
+        Devuelve solo el objeto JSON, nada más.
+        """
+
+        # Call LLM using OpenAI v0.28 syntax
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4.1-nano",
+                messages=[
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=7000
+            )
+            raw = response["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(raw)
+            return parsed
+        except Exception as e:
+            return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
+
+    # Function to synthesize evaluations
+    def synthesize_evaluations(chunk_results, criterion, descriptions):
+        """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
+        import json
+
+        # Extract and format the individual evaluations for the synthesis
+        individual_evals = []
+        all_evidence = []
+
+        for i, result in enumerate(chunk_results):
+            individual_evals.append(f"Evaluación del fragmento {i+1}:\n" +
+                                    f"Puntuación: {result.get('score', 0)}\n" +
+                                    f"Análisis: {result.get('analysis', '')}")
+
+            # Collect all evidence
+            evidence = result.get('evidence', '')
+            if evidence:
+                all_evidence.append(f"Evidencia del fragmento {i+1}:\n{evidence}")
+
+        # Define separator outside the f-string to avoid backslash issues
+        separator = "\n\n"
+
+        # Create a synthesis prompt
+        synthesis_prompt = f"""
+        Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
+        
+        Aquí están las evaluaciones individuales de cada fragmento:
+        
+        {separator.join(individual_evals)}
+        
+        Basándote en estas evaluaciones individuales, proporciona:
+        
+        1. Un análisis DETALLADO (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser comprensivo y abarcar los aspectos relevantes encontrados en el documento.
+        
+        2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
+        
+        3. Las evidencias más importantes del documento. Selecciona las 8-10 citas textuales más relevantes de los fragmentos individuales.
+        
+        Formatea tu respuesta como un objeto JSON con las siguientes claves:
+        {{"analysis": "tu análisis global detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "las citas textuales más relevantes del documento (8-10 párrafos)"}}
+        
+        Devuelve solo el objeto JSON, nada más.
+        """
+
+        # Call LLM for synthesis using OpenAI v0.28 syntax
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4.1-nano",
+                messages=[
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
+                    {"role": "user", "content": synthesis_prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=7000
+            )
+            raw = response["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(raw)
+            return parsed
+        except Exception as e:
+            # If synthesis fails, combine results manually in a more limited way
+            avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
+            # Take only the first paragraph of each analysis to avoid token limits
+            analysis_parts = []
+            for r in chunk_results:
+                analysis = r.get('analysis', '')
+                first_para = analysis.split('\n\n')[0] if '\n\n' in analysis else analysis
+                analysis_parts.append(first_para)
+
+            # Take only the first few evidence items
+            evidence_parts = []
+            evidence_count = 0
+            for evidence in all_evidence:
+                parts = evidence.split('\n\n')
+                # Add up to 2 evidence parts per chunk
+                for part in parts[:2]:
+                    if evidence_count < 8:  # Limit to 8 total evidence parts
+                        evidence_parts.append(part)
+                        evidence_count += 1
+
+            return {
+                'score': avg_score,
+                'analysis': separator.join(analysis_parts),
+                'evidence': separator.join(evidence_parts)
+            }
     
     if st.button('Procesar y Evaluar', key='process_evaluate_tab2'):
         if uploaded_file is None:
