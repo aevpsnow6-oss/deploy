@@ -3445,7 +3445,7 @@ def load_appraisal_questions():
     """Load and cache appraisal questions from Excel file"""
     try:
         df = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
-        df = df.sort_values('Pregunta_Realizada)
+        df = df.sort_values('Pregunta_Realizada')
         if 'Pregunta_Realizada' not in df.columns:
             return None, "La columna 'Pregunta_Realizada' no se encontró en el archivo de Excel."
         return df, None
