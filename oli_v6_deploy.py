@@ -3445,9 +3445,18 @@ def load_appraisal_questions():
     """Load and cache appraisal questions from Excel file"""
     try:
         df = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
-        df = df.sort_values('Tema')
         if 'Pregunta_Realizada' not in df.columns:
             return None, "La columna 'Pregunta_Realizada' no se encontró en el archivo de Excel."
+        
+        # Replace first 3 characters of Pregunta_Realizada with Tema numbering
+        if 'Tema' in df.columns:
+            df['Pregunta_Realizada'] = df.apply(
+                lambda row: str(row['Tema']) + ' ' + str(row['Pregunta_Realizada'])[3:].strip() 
+                if pd.notna(row['Tema']) and pd.notna(row['Pregunta_Realizada']) and len(str(row['Pregunta_Realizada'])) > 3
+                else row['Pregunta_Realizada'], 
+                axis=1
+            )
+        
         return df, None
     except FileNotFoundError:
         return None, "No se encontró el archivo APPRAISAL_rubric.xlsx. Asegúrate de que exista en el directorio de la aplicación."
