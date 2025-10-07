@@ -4313,12 +4313,12 @@ with tab5:
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            # Administrative unit filter
-            office_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
-            selected_offices_viz = st.multiselect('Unidad Administrativa:',
-                                             options=office_options,
-                                             default='Todas',
-                                             key='unidad_administrativa_viz')
+            # # Administrative unit filter
+            # office_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
+            # selected_offices_viz = st.multiselect('Unidad Administrativa:',
+            #                                  options=office_options,
+            #                                  default='Todas',
+            #                                  key='unidad_administrativa_viz')
 
             # Country filter
             country_options = ['Todas'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
@@ -4360,8 +4360,8 @@ with tab5:
                                            key='respuesta_gerencia_viz')
 
     # Apply filters
-    if 'Todas' not in selected_offices_viz and selected_offices_viz:
-        filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
+    # if 'Todas' not in selected_offices_viz and selected_offices_viz:
+    #     filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
 
     if 'Todas' not in selected_countries_viz and selected_countries_viz:
         filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries_viz)]
