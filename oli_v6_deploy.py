@@ -1407,7 +1407,7 @@ def summarize_text(text, prompt_template):
     try:
         # Use only the older OpenAI SDK (<1.0.0)
         response = openai.ChatCompletion.create(
-            model="gpt-4.1-nano",  # or whatever model you're using
+            model="gpt-4.1-mini",  # or whatever model you're using
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
                 {"role": "user", "content": prompt}
