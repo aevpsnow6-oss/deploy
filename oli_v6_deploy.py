@@ -2715,25 +2715,26 @@ with tab2:
                     st.stop()
         
         # Evaluate with selected rubrics and criteria
-        document_text = st.session_state.get('full_document_text_tab2', '')
-        if not document_text:
-            st.error("No se pudo recuperar el texto del documento.")
-            st.stop()
-        
-        # Build filtered rubrics based on selection
-        rubrics_to_evaluate = []
-        for rubric_name in selected_rubric_names:
-            selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
-            if selected_criteria_list:
-                # Filter the rubric to only include selected criteria
-                full_rubric = all_rubrics[rubric_name]
-                filtered_rubric = {k: v for k, v in full_rubric.items() if k in selected_criteria_list}
-                rubrics_to_evaluate.append((rubric_name, filtered_rubric))
-        
-        if not rubrics_to_evaluate:
-            st.error("No hay criterios seleccionados para evaluar.")
-            st.stop()
-        
+        with st.spinner("Preparando evaluación de criterios..."):
+            document_text = st.session_state.get('full_document_text_tab2', '')
+            if not document_text:
+                st.error("No se pudo recuperar el texto del documento.")
+                st.stop()
+
+            # Build filtered rubrics based on selection
+            rubrics_to_evaluate = []
+            for rubric_name in selected_rubric_names:
+                selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
+                if selected_criteria_list:
+                    # Filter the rubric to only include selected criteria
+                    full_rubric = all_rubrics[rubric_name]
+                    filtered_rubric = {k: v for k, v in full_rubric.items() if k in selected_criteria_list}
+                    rubrics_to_evaluate.append((rubric_name, filtered_rubric))
+
+            if not rubrics_to_evaluate:
+                st.error("No hay criterios seleccionados para evaluar.")
+                st.stop()
+
         # Evaluate
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
