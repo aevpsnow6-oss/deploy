@@ -33,12 +33,9 @@ def to_excel(df):
 # For local development - use .env file or set environment variables
 # For Streamlit Cloud - set these in the app settings
 openai_api_key = os.getenv("OPENAI_API_KEY")
-# Initialize OpenAI with new Responses API
+# Initialize OpenAI with new SDK (v1.0.0+)
 from openai import OpenAI
 client = OpenAI(api_key=openai_api_key)
-# Keep old API for embeddings (still uses old format)
-import openai
-openai.api_key = openai_api_key
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
@@ -49,8 +46,8 @@ def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3
         return None
     for attempt in range(max_retries):
         try:
-            response = openai.Embedding.create(input=text, model=model)
-            return np.array(response['data'][0]['embedding'])
+            response = client.embeddings.create(input=text, model=model)
+            return np.array(response.data[0].embedding)
         except Exception as e:
             st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
             time.sleep(delay)
@@ -1467,8 +1464,8 @@ def get_lessons_embedding_with_retry(text, model='text-embedding-3-large', max_r
         return None
     for attempt in range(max_retries):
         try:
-            response = openai.Embedding.create(input=text, model=model)
-            return np.array(response['data'][0]['embedding'])
+            response = client.embeddings.create(input=text, model=model)
+            return np.array(response.data[0].embedding)
         except Exception as e:
             st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
             time.sleep(delay)
@@ -2944,14 +2941,14 @@ with tab4:
                     else:
                         # 3. Get embeddings for all chunks (batch)
                         try:
-                            chunk_embs_resp = openai.Embedding.create(input=all_chunks, model=emb_model)
-                            chunk_embs = [item["embedding"] for item in chunk_embs_resp["data"]]
+                            chunk_embs_resp = client.embeddings.create(input=all_chunks, model=emb_model)
+                            chunk_embs = [item.embedding for item in chunk_embs_resp.data]
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embeddings de los fragmentos: {str(e)}]"})
                             chunk_embs = []
                         # 4. Embed user question
                         try:
-                            question_emb = openai.Embedding.create(input=question, model=emb_model)["data"][0]["embedding"]
+                            question_emb = client.embeddings.create(input=question, model=emb_model).data[0].embedding
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embedding de la pregunta: {str(e)}]"})
                             question_emb = None
