@@ -2445,7 +2445,17 @@ with tab2:
         )
 
         try:
-            result = json.loads(response.choices[0].message.content)
+            content = response.choices[0].message.content.strip()
+            # Remove markdown code fences if present
+            if content.startswith('```'):
+                # Remove opening fence (```json or ```)
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                # Remove closing fence
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            result = json.loads(content)
             # Normalize evidence field: convert array to string if needed
             if isinstance(result.get('evidence'), list):
                 result['evidence'] = '\n'.join(result['evidence'])
@@ -2453,7 +2463,7 @@ with tab2:
         except json.JSONDecodeError as e:
             # If JSON parsing fails, return a default structure
             return {
-                "analysis": response.choices[0].message.content,
+                "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
                 "score": 3,
                 "evidence": "Unable to parse structured response"
             }
@@ -2503,7 +2513,16 @@ with tab2:
             raw = response.choices[0].message.content
             if not raw or not raw.strip():
                 return {'score': 0, 'analysis': 'Empty response from API', 'evidence': ''}
-            parsed = json.loads(raw.strip())
+
+            # Remove markdown code fences if present
+            content = raw.strip()
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            parsed = json.loads(content)
             # Normalize evidence field: convert array to string if needed
             if isinstance(parsed.get('evidence'), list):
                 parsed['evidence'] = '\n'.join(parsed['evidence'])
@@ -2569,7 +2588,16 @@ with tab2:
             raw = response.choices[0].message.content
             if not raw or not raw.strip():
                 raise ValueError("Empty response from API")
-            parsed = json.loads(raw.strip())
+
+            # Remove markdown code fences if present
+            content = raw.strip()
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            parsed = json.loads(content)
             # Normalize evidence field: convert array to string if needed
             if isinstance(parsed.get('evidence'), list):
                 parsed['evidence'] = '\n'.join(parsed['evidence'])
