@@ -2445,7 +2445,11 @@ with tab2:
         )
 
         try:
-            return json.loads(response.choices[0].message.content)
+            result = json.loads(response.choices[0].message.content)
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(result.get('evidence'), list):
+                result['evidence'] = '\n'.join(result['evidence'])
+            return result
         except json.JSONDecodeError as e:
             # If JSON parsing fails, return a default structure
             return {
@@ -2500,6 +2504,9 @@ with tab2:
             if not raw or not raw.strip():
                 return {'score': 0, 'analysis': 'Empty response from API', 'evidence': ''}
             parsed = json.loads(raw.strip())
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(parsed.get('evidence'), list):
+                parsed['evidence'] = '\n'.join(parsed['evidence'])
             return parsed
         except Exception as e:
             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
@@ -2563,6 +2570,9 @@ with tab2:
             if not raw or not raw.strip():
                 raise ValueError("Empty response from API")
             parsed = json.loads(raw.strip())
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(parsed.get('evidence'), list):
+                parsed['evidence'] = '\n'.join(parsed['evidence'])
             return parsed
         except Exception as e:
             # If synthesis fails, combine results manually in a more limited way
