@@ -4321,10 +4321,16 @@ with tab5:
             #                                  key='unidad_administrativa_viz')
 
             # Country filter
-            country_options = ['Todas'] + sorted([str(x) for x in df['Country(ies)'].unique() if not pd.isna(x)])
+            country_col_candidates = ['Country(ies)', 'Country', 'Countries', 'country', 'Country (ies)', 'Country/ies']
+            country_col = next((c for c in country_col_candidates if c in df.columns), None)
+            if country_col:
+                country_options = ['Todas'] + sorted([str(x) for x in df[country_col].unique() if not pd.isna(x)])
+            else:
+                st.warning("No se encontró una columna de país en los datos.")
+                country_options = ['Todas']
             selected_countries_viz = st.multiselect('País:',
                                               options=country_options,
-                                              default='Todas',
+                                              default='Todas' if 'Todas' in country_options else [],
                                               key='pais_viz')
 
         with col2:
@@ -4363,8 +4369,8 @@ with tab5:
     # if 'Todas' not in selected_offices_viz and selected_offices_viz:
     #     filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
 
-    if 'Todas' not in selected_countries_viz and selected_countries_viz:
-        filtered_df = filtered_df[filtered_df['Country(ies)'].isin(selected_countries_viz)]
+    if 'Todas' not in selected_countries_viz and selected_countries_viz and 'country_col' in locals() and country_col:
+        filtered_df = filtered_df[filtered_df[country_col].isin(selected_countries_viz)]
 
     filtered_df = filtered_df[
         (filtered_df['year'] >= selected_year_range_viz[0]) &
@@ -4394,7 +4400,7 @@ with tab5:
         ]
         total_kpi_values = [
             filtered_df_unique.shape[0],
-            filtered_df_unique['Country(ies)'].nunique(),
+            (filtered_df_unique[country_col].nunique() if 'country_col' in locals() and country_col and country_col in filtered_df_unique.columns else 0),
             filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 0,
             filtered_df_unique['year'].nunique()
         ]
@@ -4440,7 +4446,11 @@ with tab5:
 
         # Display plots if data is available
         if not filtered_df.empty:
-            country_counts = filtered_df_unique['Country(ies)'].value_counts()
+            country_counts = (
+                filtered_df_unique[country_col].value_counts()
+                if 'country_col' in locals() and country_col and country_col in filtered_df_unique.columns
+                else pd.Series(dtype=int)
+            )
 
             # Add CSS for dashboard styling
             st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
@@ -4451,15 +4461,18 @@ with tab5:
             with row1_col1:
                 st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
                 fig1 = go.Figure()
-                fig1.add_trace(go.Bar(
-                    y=country_counts.index.tolist(),
-                    x=country_counts.values.tolist(),
-                    orientation='h',
-                    text=country_counts.values.tolist(),
-                    textposition='auto',
-                    marker_color='#3498db',
-                    hovertemplate='%{y}: %{x} recomendaciones'
-                ))
+                if not country_counts.empty:
+                    fig1.add_trace(go.Bar(
+                        y=country_counts.index.tolist(),
+                        x=country_counts.values.tolist(),
+                        orientation='h',
+                        text=country_counts.values.tolist(),
+                        textposition='auto',
+                        marker_color='#3498db',
+                        hovertemplate='%{y}: %{x} recomendaciones'
+                    ))
+                else:
+                    fig1.add_trace(go.Bar(y=[], x=[]))
 
                 # Fixed height for alignment with year plot
                 fixed_height = 500
