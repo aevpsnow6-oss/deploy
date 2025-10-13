@@ -1706,7 +1706,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
     #         return pd.DataFrame(rows)
     
     #     # Function to split text into chunks respecting the token limit
-    #     def split_text_into_chunks(text, max_tokens=7000):
+    #     def split_text_into_chunks(text, max_completion_tokens=7000):
     #         import re
     #         # Split by paragraphs first
     #         paragraphs = text.split('\n')
@@ -1761,7 +1761,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #         """Analyze complete document efficiently using a two-stage approach"""
         
 #         # Stage 1: Extract relevant sections (cheap, fast model)
-#         chunks = split_text_into_chunks(document_text, max_tokens=7000)
+#         chunks = split_text_into_chunks(document_text, max_completion_tokens=7000)
         
 #         relevant_chunks = []
 #         for chunk in chunks:
@@ -1771,7 +1771,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #             response = openai.ChatCompletion.create(
 #                 model="gpt-5-mini",  # Cheap model for filtering
 #                 messages=[{"role": "user", "content": check_prompt}],
-#                 max_tokens=5,
+#                 max_completion_tokens=5,
 #                 temperature=0
 #             )
             
@@ -1803,7 +1803,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #                 {"role": "system", "content": "You are an expert document evaluator."},
 #                 {"role": "user", "content": prompt}
 #             ],
-#             max_tokens=1500,
+#             max_completion_tokens=1500,
 #             temperature=0.1
 #         )
         
@@ -1849,7 +1849,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #                     {"role": "user", "content": prompt}
 #                 ],
 #                 response_format={"type": "json_object"},
-#                 max_tokens=7000
+#                 max_completion_tokens=7000
 #             )
 #             raw = response["choices"][0]["message"]["content"].strip()
 #             parsed = json.loads(raw)
@@ -1910,7 +1910,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #                     {"role": "user", "content": synthesis_prompt}
 #                 ],
 #                 response_format={"type": "json_object"},
-#                 max_tokens=7000
+#                 max_completion_tokens=7000
 #             )
 #             raw = response["choices"][0]["message"]["content"].strip()
 #             parsed = json.loads(raw)
@@ -1988,7 +1988,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
 #                                             {"role": "user", "content": full_text}
 #                                         ],
-#                                         max_tokens=1024,
+#                                         max_completion_tokens=1024,
 #                                         temperature=0.01,
 #                                     )
 #                                     llm_output = response["choices"][0]["message"]["content"].strip()
@@ -2211,7 +2211,7 @@ with tab2:
         return pd.DataFrame(rows)
     
     # Function to split text into chunks respecting the token limit
-    def split_text_into_chunks(text, max_tokens=7000):
+    def split_text_into_chunks(text, max_completion_tokens=7000):
         import re
         # Split by paragraphs first
         paragraphs = text.split('\n')
@@ -2398,7 +2398,7 @@ with tab2:
         """Analyze complete document efficiently using a two-stage approach"""
         
         # Stage 1: Extract relevant sections (cheap, fast model)
-        chunks = split_text_into_chunks(document_text, max_tokens=7000)
+        chunks = split_text_into_chunks(document_text, max_completion_tokens=7000)
         
         relevant_chunks = []
         for chunk in chunks:
@@ -2408,7 +2408,7 @@ with tab2:
             response = client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[{"role": "user", "content": check_prompt}],
-                max_tokens=16,
+                max_completion_tokens=16,
                 reasoning_effort="minimal"
             )
 
@@ -2440,7 +2440,7 @@ with tab2:
                 {"role": "system", "content": "You are an expert document evaluator."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1500,
+            max_completion_tokens=1500,
             reasoning_effort="minimal"
         )
 
@@ -2508,7 +2508,7 @@ with tab2:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=7000,
+                max_completion_tokens=7000,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2584,7 +2584,7 @@ with tab2:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=7000,
+                max_completion_tokens=7000,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2681,7 +2681,7 @@ with tab2:
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
-                                    max_tokens=1024,
+                                    max_completion_tokens=1024,
                                     reasoning_effort="minimal"
                                 )
                                 llm_output = response.choices[0].message.content.strip()
@@ -2981,7 +2981,7 @@ with tab4:
                             response = client.chat.completions.create(
                                 model="gpt-5-mini",
                                 messages=messages,
-                                max_tokens=2048,
+                                max_completion_tokens=2048,
                                 reasoning_effort="minimal"
                             )
                             answer = response.choices[0].message.content.strip()
@@ -3047,7 +3047,7 @@ with tab4:
                                 response = client.chat.completions.create(
                                     model="gpt-5-mini",
                                     messages=messages,
-                                    max_tokens=2048,
+                                    max_completion_tokens=2048,
                                     reasoning_effort="minimal"
                                 )
                                 answer = response.choices[0].message.content.strip()
@@ -3186,7 +3186,7 @@ with tab4:
 #                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
 #                                             {"role": "user", "content": full_text}
 #                                         ],
-#                                         max_tokens=1024,
+#                                         max_completion_tokens=1024,
 #                                         temperature=0.01,
 #                                     )
 #                                     llm_output = response["choices"][0]["message"]["content"].strip()
@@ -3642,7 +3642,7 @@ with tab3:
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
-                                    max_tokens=1024,
+                                    max_completion_tokens=1024,
                                     reasoning_effort="minimal"
                                 )
                                 llm_output = response.choices[0].message.content.strip()
@@ -3964,7 +3964,7 @@ def extract_document_content(uploaded_file):
 #                     "content": f"Question: {question}\n\nDocument Text: {document_text[:4000]}..."  # Limit context
 #                 }
 #             ],
-#             max_tokens=800,
+#             max_completion_tokens=800,
 #             temperature=0.1,
 #         )
         
@@ -4039,7 +4039,7 @@ def analyze_question_with_llm(question, document_text):
                         "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
                     }
                 ],
-                max_tokens=800,
+                max_completion_tokens=800,
                 reasoning_effort="minimal"
             )
             content = resp.choices[0].message.content
