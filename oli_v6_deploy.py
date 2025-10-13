@@ -2411,7 +2411,7 @@ with tab2:
                 input=check_prompt,
                 reasoning={"effort": "minimal"},
                 text={"verbosity": "low"},
-                max_output_tokens=5
+                max_output_tokens=16
             )
 
             if "YES" in response.output_text.upper():
