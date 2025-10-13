@@ -255,7 +255,7 @@ class SimpleHierarchicalStore:
         """
         try:
             response = openai.chat.completions.create(
-                model="gpt-4.1-nano",
+                model="gpt.5.1-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert document evaluator that provides detailed analysis and scoring based on specific criteria."},
                     {"role": "user", "content": prompt}
@@ -1407,7 +1407,7 @@ def summarize_text(text, prompt_template):
     try:
         # Use only the older OpenAI SDK (<1.0.0)
         response = openai.ChatCompletion.create(
-            model="gpt-4.1-mini",  # or whatever model you're using
+            model="gpt.5.1-mini",  # or whatever model you're using
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
                 {"role": "user", "content": prompt}
@@ -1797,7 +1797,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
     
 #         response = openai.ChatCompletion.create(
-#             model="gpt-4.1-nano",
+#             model="gpt.5.1-mini",
 #             messages=[
 #                 {"role": "system", "content": "You are an expert document evaluator."},
 #                 {"role": "user", "content": prompt}
@@ -1842,7 +1842,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #         # Call LLM using OpenAI v0.28 syntax
 #         try:
 #             response = openai.ChatCompletion.create(
-#                 model="gpt-4.1-nano",
+#                 model="gpt.5.1-mini",
 #                 messages=[
 #                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
 #                     {"role": "user", "content": prompt}
@@ -1903,7 +1903,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #         # Call LLM for synthesis using OpenAI v0.28 syntax
 #         try:
 #             response = openai.ChatCompletion.create(
-#                 model="gpt-4.1-nano",
+#                 model="gpt.5.1-mini",
 #                 messages=[
 #                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
 #                     {"role": "user", "content": synthesis_prompt}
@@ -1982,7 +1982,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #                                 llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
 #                                 try:
 #                                     response = openai.ChatCompletion.create(
-#                                         model="gpt-4.1-nano",
+#                                         model="gpt.5.1-mini",
 #                                         messages=[
 #                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
 #                                             {"role": "user", "content": full_text}
@@ -2434,7 +2434,7 @@ with tab2:
     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
     
         response = openai.ChatCompletion.create(
-            model="gpt-4.1-nano",
+            model="gpt.5.1-mini",
             messages=[
                 {"role": "system", "content": "You are an expert document evaluator."},
                 {"role": "user", "content": prompt}
@@ -2479,7 +2479,7 @@ with tab2:
         # Call LLM using OpenAI v0.28 syntax
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4.1-nano",
+                model="gpt.5.1-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
@@ -2540,7 +2540,7 @@ with tab2:
         # Call LLM for synthesis using OpenAI v0.28 syntax
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4.1-nano",
+                model="gpt.5.1-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
                     {"role": "user", "content": synthesis_prompt}
@@ -2623,7 +2623,7 @@ with tab2:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
                                 response = openai.ChatCompletion.create(
-                                    model="gpt-4.1-nano",
+                                    model="gpt.5.1-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
@@ -2920,7 +2920,7 @@ with tab4:
                             messages.append(msg)
                         try:
                             response = openai.ChatCompletion.create(
-                                model="gpt-4.1-nano",
+                                model="gpt.5.1-mini",
                                 messages=messages,
                                 max_tokens=2048,
                                 temperature=0.3
@@ -2985,7 +2985,7 @@ with tab4:
                                 messages.append(msg)
                             try:
                                 response = openai.ChatCompletion.create(
-                                    model="gpt-4.1-nano",
+                                    model="gpt.5.1-mini",
                                     messages=messages,
                                     max_tokens=2048,
                                     temperature=0.3
@@ -3121,7 +3121,7 @@ with tab4:
 #                                 llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
 #                                 try:
 #                                     response = openai.ChatCompletion.create(
-#                                         model="gpt-4.1-nano",
+#                                         model="gpt.5.1-mini",
 #                                         messages=[
 #                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
 #                                             {"role": "user", "content": full_text}
@@ -3577,7 +3577,7 @@ with tab3:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
                                 response = openai.ChatCompletion.create(
-                                    model="gpt-4.1-nano",
+                                    model="gpt.5.1-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
@@ -3818,7 +3818,7 @@ with tab3:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 MAX_WORKERS = 48  # Reduced from 48 to avoid rate limits
-OPENAI_MODEL = "gpt-4.1-nano"  # Correct model name
+OPENAI_MODEL = "gpt.5.1-mini"  # Correct model name
 
 @st.cache_data
 def load_appraisal_questions():
