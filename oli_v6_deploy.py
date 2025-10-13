@@ -2715,27 +2715,27 @@ with tab2:
                     st.stop()
         
         # Evaluate with selected rubrics and criteria
-        with st.spinner("Preparando evaluación de criterios..."):
-            document_text = st.session_state.get('full_document_text_tab2', '')
-            if not document_text:
-                st.error("No se pudo recuperar el texto del documento.")
-                st.stop()
+        document_text = st.session_state.get('full_document_text_tab2', '')
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
+            st.stop()
 
-            # Build filtered rubrics based on selection
-            rubrics_to_evaluate = []
-            for rubric_name in selected_rubric_names:
-                selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
-                if selected_criteria_list:
-                    # Filter the rubric to only include selected criteria
-                    full_rubric = all_rubrics[rubric_name]
-                    filtered_rubric = {k: v for k, v in full_rubric.items() if k in selected_criteria_list}
-                    rubrics_to_evaluate.append((rubric_name, filtered_rubric))
+        # Build filtered rubrics based on selection
+        rubrics_to_evaluate = []
+        for rubric_name in selected_rubric_names:
+            selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
+            if selected_criteria_list:
+                # Filter the rubric to only include selected criteria
+                full_rubric = all_rubrics[rubric_name]
+                filtered_rubric = {k: v for k, v in full_rubric.items() if k in selected_criteria_list}
+                rubrics_to_evaluate.append((rubric_name, filtered_rubric))
 
-            if not rubrics_to_evaluate:
-                st.error("No hay criterios seleccionados para evaluar.")
-                st.stop()
+        if not rubrics_to_evaluate:
+            st.error("No hay criterios seleccionados para evaluar.")
+            st.stop()
 
         # Evaluate
+        st.info("Iniciando evaluación de criterios...")
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 8
@@ -2770,30 +2770,31 @@ with tab2:
         for rubric_name, rubric_dict in rubrics_to_evaluate:
             if not rubric_dict:
                 continue
-            
+
             rubric_analysis_data = []
             n_criteria = len(rubric_dict)
-            progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
-            
-            with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
-                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    futures = {
-                        executor.submit(eval_one_criterion, (
-                            crit,
-                            rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
-                            rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
-                            rubric_name
-                        )): (crit, idx)
-                        for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
-                    }
-                    
-                    completed = 0
-                    for future in as_completed(futures):
-                        result = future.result()
-                        rubric_analysis_data.append(result)
-                        completed += 1
-                        crit, idx = futures[future]
-                        progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+            progress = st.progress(0, text=f"Preparando evaluación de {n_criteria} criterios para: {rubric_name}...")
+
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                progress.progress(0.01, text=f"Enviando {n_criteria} criterios para evaluación paralela...")
+                futures = {
+                    executor.submit(eval_one_criterion, (
+                        crit,
+                        rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+                        rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                        rubric_name
+                    )): (crit, idx)
+                    for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+                }
+
+                progress.progress(0.05, text=f"Esperando resultados de evaluación...")
+                completed = 0
+                for future in as_completed(futures):
+                    result = future.result()
+                    rubric_analysis_data.append(result)
+                    completed += 1
+                    crit, idx = futures[future]
+                    progress.progress(0.05 + (completed / n_criteria * 0.95), text=f"Completado {completed}/{n_criteria}: {crit}")
             
             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
         
