@@ -2227,7 +2227,7 @@ with tab2:
             para_tokens = len(para) * tokens_per_char
 
             # If adding this paragraph would exceed the max, start a new chunk
-            if current_length + para_tokens > max_tokens and current_chunk:
+            if current_length + para_tokens > max_completion_tokens and current_chunk:
                 chunks.append('\n'.join(current_chunk))
                 current_chunk = [para]
                 current_length = para_tokens
