@@ -1406,16 +1406,15 @@ def summarize_text(text, prompt_template):
     prompt = prompt_template.format(text=text)
     try:
         # Use new Responses API with GPT-5
-        system_msg = "You are a helpful assistant that summarizes and analyzes texts."
-        full_input = f"{system_msg}\n\n{prompt}"
-
-        response = client.responses.create(
-            model="gpt-5-mini",
-            input=full_input,
-            reasoning={"effort": "minimal"},
-            text={"verbosity": "medium"}
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
         )
-        return response.output_text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"Error al llamar a la API de OpenAI: {e}")
         return None
@@ -2406,15 +2405,14 @@ with tab2:
             # Quick relevance check with cheap model
             check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
 
-            response = client.responses.create(
-                model="gpt-5-nano",  # Fastest model for filtering
-                input=check_prompt,
-                reasoning={"effort": "minimal"},
-                text={"verbosity": "low"},
-                max_output_tokens=16
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # Fast model for filtering
+                messages=[{"role": "user", "content": check_prompt}],
+                max_tokens=16,
+                temperature=0
             )
 
-            if "YES" in response.output_text.upper():
+            if "YES" in response.choices[0].message.content.upper():
                 relevant_chunks.append(chunk)
         
         # Stage 2: Deep analysis only on relevant chunks
@@ -2436,18 +2434,17 @@ with tab2:
     Provide JSON with:
     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
 
-        system_msg = "You are an expert document evaluator."
-        full_input = f"{system_msg}\n\n{prompt}"
-
-        response = client.responses.create(
-            model="gpt-5-mini",
-            input=full_input,
-            reasoning={"effort": "low"},
-            text={"verbosity": "medium"},
-            max_output_tokens=1500
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert document evaluator."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.1
         )
 
-        return json.loads(response.output_text)
+        return json.loads(response.choices[0].message.content)
 
     # Function to evaluate a single text chunk
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
@@ -2482,17 +2479,16 @@ with tab2:
 
         # Call LLM using new Responses API
         try:
-            system_msg = "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."
-            full_input = f"{system_msg}\n\n{prompt}"
-
-            response = client.responses.create(
-                model="gpt-5-mini",
-                input=full_input,
-                reasoning={"effort": "low"},
-                text={"verbosity": "high"},
-                max_output_tokens=7000
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=7000
             )
-            raw = response.output_text.strip()
+            raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
@@ -2544,17 +2540,16 @@ with tab2:
 
         # Call LLM for synthesis using new Responses API
         try:
-            system_msg = "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."
-            full_input = f"{system_msg}\n\n{synthesis_prompt}"
-
-            response = client.responses.create(
-                model="gpt-5-mini",
-                input=full_input,
-                reasoning={"effort": "low"},
-                text={"verbosity": "high"},
-                max_output_tokens=7000
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
+                    {"role": "user", "content": synthesis_prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=7000
             )
-            raw = response.output_text.strip()
+            raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
             return parsed
         except Exception as e:
@@ -2628,17 +2623,16 @@ with tab2:
                         else:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
-                                system_msg = "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."
-                                full_input = f"{system_msg}\n\n{full_text}"
-
-                                response = client.responses.create(
-                                    model="gpt-5-mini",
-                                    input=full_input,
-                                    reasoning={"effort": "minimal"},
-                                    text={"verbosity": "medium"},
-                                    max_output_tokens=1024
+                                response = client.chat.completions.create(
+                                    model="gpt-4o-mini",
+                                    messages=[
+                                        {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                                        {"role": "user", "content": full_text}
+                                    ],
+                                    max_tokens=1024,
+                                    temperature=0.01
                                 )
-                                llm_output = response.output_text.strip()
+                                llm_output = response.choices[0].message.content.strip()
                             except Exception as e:
                                 llm_output = f"[LLM ERROR: {e}]"
                         
@@ -2920,21 +2914,22 @@ with tab4:
                         # Fallback: use as much of the full document(s) as fits
                         context = "\n---\n".join(doc['text'][:12000] for doc in st.session_state['doc_chat_docs'])
 
-                        # Build conversation context
-                        system_msg = "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."
-                        doc_context = f"Texto del documento:\n{context}"
-                        history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state['doc_chat_history'][-5:]])
-                        full_input = f"{system_msg}\n\n{doc_context}\n\nConversación previa:\n{history_text}"
+                        # Build conversation messages
+                        messages = [
+                            {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                            {"role": "system", "content": f"Texto del documento:\n{context}"}
+                        ]
+                        for msg in st.session_state['doc_chat_history'][-5:]:
+                            messages.append(msg)
 
                         try:
-                            response = client.responses.create(
-                                model="gpt-5-mini",
-                                input=full_input,
-                                reasoning={"effort": "low"},
-                                text={"verbosity": "medium"},
-                                max_output_tokens=2048
+                            response = client.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=messages,
+                                max_tokens=2048,
+                                temperature=0.3
                             )
-                            answer = response.output_text.strip()
+                            answer = response.choices[0].message.content.strip()
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
@@ -2986,20 +2981,21 @@ with tab4:
                                     seen.add(chunk)
                             context = '\n---\n'.join(merged_chunks)
                             # 6. Send to LLM
-                            system_msg = "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado. Si la información no es explícita, infiere la respuesta usando pistas contextuales y tu capacidad de síntesis."
-                            doc_context = f"Fragmentos relevantes del documento:\n{context}"
-                            history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state['doc_chat_history'][-5:]])
-                            full_input = f"{system_msg}\n\n{doc_context}\n\nConversación previa:\n{history_text}"
+                            messages = [
+                                {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado. Si la información no es explícita, infiere la respuesta usando pistas contextuales y tu capacidad de síntesis."},
+                                {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
+                            ]
+                            for msg in st.session_state['doc_chat_history'][-5:]:
+                                messages.append(msg)
 
                             try:
-                                response = client.responses.create(
-                                    model="gpt-5-mini",
-                                    input=full_input,
-                                    reasoning={"effort": "low"},
-                                    text={"verbosity": "medium"},
-                                    max_output_tokens=2048
+                                response = client.chat.completions.create(
+                                    model="gpt-4o-mini",
+                                    messages=messages,
+                                    max_tokens=2048,
+                                    temperature=0.3
                                 )
-                                answer = response.output_text.strip()
+                                answer = response.choices[0].message.content.strip()
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
                             except Exception as e:
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
@@ -3585,17 +3581,16 @@ with tab3:
                         else:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
-                                system_msg = "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."
-                                full_input = f"{system_msg}\n\n{full_text}"
-
-                                response = client.responses.create(
-                                    model="gpt-5-mini",
-                                    input=full_input,
-                                    reasoning={"effort": "minimal"},
-                                    text={"verbosity": "medium"},
-                                    max_output_tokens=1024
+                                response = client.chat.completions.create(
+                                    model="gpt-4o-mini",
+                                    messages=[
+                                        {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+                                        {"role": "user", "content": full_text}
+                                    ],
+                                    max_tokens=1024,
+                                    temperature=0.01
                                 )
-                                llm_output = response.output_text.strip()
+                                llm_output = response.choices[0].message.content.strip()
                             except Exception as e:
                                 llm_output = f"[LLM ERROR: {e}]"
                         
@@ -3828,7 +3823,7 @@ with tab3:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 MAX_WORKERS = 48  # Reduced from 48 to avoid rate limits
-OPENAI_MODEL = "gpt-5-mini"  # GPT-5 mini model
+OPENAI_MODEL = "gpt-4o-mini"  # GPT-4o mini model
 
 @st.cache_data
 def load_appraisal_questions():
@@ -3969,23 +3964,27 @@ def analyze_question_with_llm(question, document_text):
 
         per_chunk_results = []
         for i, chunk in enumerate(chunks, start=1):
-            system_msg = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
                         {
                             "Respuesta": "Yes/No/Partial/Not Found",
                             "Razonamiento": "Brief explanation of your analysis (max 200 words)",
                             "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
                         }"""
-            user_msg = f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
-            full_input = f"{system_msg}\n\n{user_msg}"
-
-            resp = client.responses.create(
-                model="gpt-5-mini",
-                input=full_input,
-                reasoning={"effort": "low"},
-                text={"verbosity": "medium"},
-                max_output_tokens=800
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
+                    }
+                ],
+                max_tokens=800,
+                temperature=0.1
             )
-            content = resp.output_text.strip()
+            content = resp.choices[0].message.content.strip()
             try:
                 per_chunk_results.append(json.loads(content))
             except Exception:
