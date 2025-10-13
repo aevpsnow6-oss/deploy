@@ -1407,12 +1407,12 @@ def summarize_text(text, prompt_template):
     try:
         # Use new Responses API with GPT-5
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3
+            reasoning_effort="minimal"
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -1769,7 +1769,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #             check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
             
 #             response = openai.ChatCompletion.create(
-#                 model="gpt-4o-mini",  # Cheap model for filtering
+#                 model="gpt-5-mini",  # Cheap model for filtering
 #                 messages=[{"role": "user", "content": check_prompt}],
 #                 max_tokens=5,
 #                 temperature=0
@@ -2406,10 +2406,10 @@ with tab2:
             check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
 
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # Fast model for filtering
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": check_prompt}],
                 max_tokens=16,
-                temperature=0
+                reasoning_effort="minimal"
             )
 
             if "YES" in response.choices[0].message.content.upper():
@@ -2435,13 +2435,13 @@ with tab2:
     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "You are an expert document evaluator."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=1500,
-            temperature=0.1
+            reasoning_effort="minimal"
         )
 
         try:
@@ -2502,13 +2502,14 @@ with tab2:
         # Call LLM using new Responses API
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=7000
+                max_tokens=7000,
+                reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
             if not raw or not raw.strip():
@@ -2577,13 +2578,14 @@ with tab2:
         # Call LLM for synthesis using new Responses API
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=7000
+                max_tokens=7000,
+                reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
             if not raw or not raw.strip():
@@ -2674,13 +2676,13 @@ with tab2:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
                                 response = client.chat.completions.create(
-                                    model="gpt-4o-mini",
+                                    model="gpt-5-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
                                     max_tokens=1024,
-                                    temperature=0.01
+                                    reasoning_effort="minimal"
                                 )
                                 llm_output = response.choices[0].message.content.strip()
                             except Exception as e:
@@ -2977,10 +2979,10 @@ with tab4:
 
                         try:
                             response = client.chat.completions.create(
-                                model="gpt-4o-mini",
+                                model="gpt-5-mini",
                                 messages=messages,
                                 max_tokens=2048,
-                                temperature=0.3
+                                reasoning_effort="minimal"
                             )
                             answer = response.choices[0].message.content.strip()
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
@@ -3043,10 +3045,10 @@ with tab4:
 
                             try:
                                 response = client.chat.completions.create(
-                                    model="gpt-4o-mini",
+                                    model="gpt-5-mini",
                                     messages=messages,
                                     max_tokens=2048,
-                                    temperature=0.3
+                                    reasoning_effort="minimal"
                                 )
                                 answer = response.choices[0].message.content.strip()
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
@@ -3635,13 +3637,13 @@ with tab3:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
                                 response = client.chat.completions.create(
-                                    model="gpt-4o-mini",
+                                    model="gpt-5-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
                                     max_tokens=1024,
-                                    temperature=0.01
+                                    reasoning_effort="minimal"
                                 )
                                 llm_output = response.choices[0].message.content.strip()
                             except Exception as e:
@@ -3879,7 +3881,7 @@ with tab3:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 MAX_WORKERS = 48  # Reduced from 48 to avoid rate limits
-OPENAI_MODEL = "gpt-4o-mini"  # GPT-4o mini model
+OPENAI_MODEL = "gpt-5-mini"  # GPT-5 mini model with reasoning
 
 @st.cache_data
 def load_appraisal_questions():
@@ -4021,7 +4023,7 @@ def analyze_question_with_llm(question, document_text):
         per_chunk_results = []
         for i, chunk in enumerate(chunks, start=1):
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[
                     {
                         "role": "system",
@@ -4038,7 +4040,7 @@ def analyze_question_with_llm(question, document_text):
                     }
                 ],
                 max_tokens=800,
-                temperature=0.1
+                reasoning_effort="minimal"
             )
             content = resp.choices[0].message.content
             if not content or not content.strip():
