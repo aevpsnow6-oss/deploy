@@ -2735,13 +2735,16 @@ with tab2:
             crit, descriptions, dimension, rubric_name = args
             try:
                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                # Ensure result is a dictionary
+                if not isinstance(result, dict):
+                    result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
                 return {
                     'Criterio': crit,
                     'Dimensión': dimension,
                     'Score': result.get('score', 0),
-                    'Análisis': result.get('analysis', ''),
-                    'Evidencia': result.get('evidence', ''),
-                    'Error': result.get('error', '') if 'error' in result else '',
+                    'Análisis': str(result.get('analysis', '')),
+                    'Evidencia': str(result.get('evidence', '')),
+                    'Error': str(result.get('error', '')) if 'error' in result else '',
                     'Rúbrica': rubric_name
                 }
             except Exception as e:
@@ -3684,13 +3687,16 @@ with tab3:
             crit, descriptions, dimension, rubric_name = args
             try:
                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                # Ensure result is a dictionary
+                if not isinstance(result, dict):
+                    result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
                 return {
                     'Criterio': crit,
                     'Dimensión': dimension,
                     'Score': result.get('score', 0),
-                    'Análisis': result.get('analysis', ''),
-                    'Evidencia': result.get('evidence', ''),
-                    'Error': result.get('error', '') if 'error' in result else '',
+                    'Análisis': str(result.get('analysis', '')),
+                    'Evidencia': str(result.get('evidence', '')),
+                    'Error': str(result.get('error', '')) if 'error' in result else '',
                     'Rúbrica': rubric_name
                 }
             except Exception as e:
