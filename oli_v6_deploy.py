@@ -1988,7 +1988,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 #                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
 #                                             {"role": "user", "content": full_text}
 #                                         ],
-#                                         max_completion_tokens=2048,
+#                                         max_completion_tokens=4096,
 #                                         temperature=0.01,
 #                                     )
 #                                     llm_output = response["choices"][0]["message"]["content"].strip()
@@ -2408,7 +2408,7 @@ with tab2:
             response = client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[{"role": "user", "content": check_prompt}],
-                max_completion_tokens=16,
+                max_completion_tokens=100,
                 reasoning_effort="minimal"
             )
 
@@ -2440,7 +2440,7 @@ with tab2:
                 {"role": "system", "content": "You are an expert document evaluator."},
                 {"role": "user", "content": prompt}
             ],
-            max_completion_tokens=4096,
+            max_completion_tokens=8000,
             reasoning_effort="minimal"
         )
 
@@ -2508,7 +2508,7 @@ with tab2:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=4096,
+                max_completion_tokens=8000,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2584,7 +2584,7 @@ with tab2:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=4096,
+                max_completion_tokens=8000,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2681,7 +2681,7 @@ with tab2:
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
-                                    max_completion_tokens=2048,
+                                    max_completion_tokens=4096,
                                     reasoning_effort="minimal"
                                 )
                                 llm_output = response.choices[0].message.content.strip()
@@ -2981,7 +2981,7 @@ with tab4:
                             response = client.chat.completions.create(
                                 model="gpt-5-mini",
                                 messages=messages,
-                                max_completion_tokens=2048,
+                                max_completion_tokens=4096,
                                 reasoning_effort="minimal"
                             )
                             answer = response.choices[0].message.content.strip()
@@ -3047,7 +3047,7 @@ with tab4:
                                 response = client.chat.completions.create(
                                     model="gpt-5-mini",
                                     messages=messages,
-                                    max_completion_tokens=2048,
+                                    max_completion_tokens=4096,
                                     reasoning_effort="minimal"
                                 )
                                 answer = response.choices[0].message.content.strip()
@@ -3186,7 +3186,7 @@ with tab4:
 #                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
 #                                             {"role": "user", "content": full_text}
 #                                         ],
-#                                         max_completion_tokens=2048,
+#                                         max_completion_tokens=4096,
 #                                         temperature=0.01,
 #                                     )
 #                                     llm_output = response["choices"][0]["message"]["content"].strip()
@@ -3642,7 +3642,7 @@ with tab3:
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
-                                    max_completion_tokens=2048,
+                                    max_completion_tokens=4096,
                                     reasoning_effort="minimal"
                                 )
                                 llm_output = response.choices[0].message.content.strip()
@@ -4039,7 +4039,7 @@ def analyze_question_with_llm(question, document_text):
                         "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
                     }
                 ],
-                max_completion_tokens=4096,
+                max_completion_tokens=8000,
                 reasoning_effort="minimal"
             )
             content = resp.choices[0].message.content
