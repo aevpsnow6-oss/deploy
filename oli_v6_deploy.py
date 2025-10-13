@@ -2444,7 +2444,15 @@ with tab2:
             temperature=0.1
         )
 
-        return json.loads(response.choices[0].message.content)
+        try:
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, return a default structure
+            return {
+                "analysis": response.choices[0].message.content,
+                "score": 3,
+                "evidence": "Unable to parse structured response"
+            }
 
     # Function to evaluate a single text chunk
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
@@ -2488,8 +2496,10 @@ with tab2:
                 response_format={"type": "json_object"},
                 max_tokens=7000
             )
-            raw = response.choices[0].message.content.strip()
-            parsed = json.loads(raw)
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                return {'score': 0, 'analysis': 'Empty response from API', 'evidence': ''}
+            parsed = json.loads(raw.strip())
             return parsed
         except Exception as e:
             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
@@ -2549,8 +2559,10 @@ with tab2:
                 response_format={"type": "json_object"},
                 max_tokens=7000
             )
-            raw = response.choices[0].message.content.strip()
-            parsed = json.loads(raw)
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                raise ValueError("Empty response from API")
+            parsed = json.loads(raw.strip())
             return parsed
         except Exception as e:
             # If synthesis fails, combine results manually in a more limited way
@@ -3984,9 +3996,11 @@ def analyze_question_with_llm(question, document_text):
                 max_tokens=800,
                 temperature=0.1
             )
-            content = resp.choices[0].message.content.strip()
+            content = resp.choices[0].message.content
+            if not content or not content.strip():
+                continue
             try:
-                per_chunk_results.append(json.loads(content))
+                per_chunk_results.append(json.loads(content.strip()))
             except Exception:
                 # Skip invalid JSONs silently
                 continue
