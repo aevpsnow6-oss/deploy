@@ -2440,7 +2440,7 @@ with tab2:
                 {"role": "system", "content": "You are an expert document evaluator."},
                 {"role": "user", "content": prompt}
             ],
-            max_completion_tokens=1500,
+            max_completion_tokens=1000,
             reasoning_effort="minimal"
         )
 
@@ -2508,7 +2508,7 @@ with tab2:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=7000,
+                max_completion_tokens=2000,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2584,7 +2584,7 @@ with tab2:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=7000,
+                max_completion_tokens=2000,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
