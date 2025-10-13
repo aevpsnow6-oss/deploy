@@ -2425,14 +2425,14 @@ with tab2:
         
         # Now do the expensive analysis on focused content
         prompt = f"""Evaluate this document against: {criterion}
-    
+
     Scoring levels: {json.dumps(descriptions)}
-    
+
     Relevant document sections:
     {combined_text}
-    
+
     Provide JSON with:
-    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
+    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
