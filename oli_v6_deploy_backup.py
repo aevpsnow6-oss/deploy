@@ -33,9 +33,9 @@ def to_excel(df):
 # For local development - use .env file or set environment variables
 # For Streamlit Cloud - set these in the app settings
 openai_api_key = os.getenv("OPENAI_API_KEY")
-# Initialize OpenAI - use only the older API version
-import openai
-openai.api_key = openai_api_key
+# Initialize OpenAI with new SDK (v1.0.0+)
+from openai import OpenAI
+client = OpenAI(api_key=openai_api_key)
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
@@ -46,8 +46,8 @@ def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3
         return None
     for attempt in range(max_retries):
         try:
-            response = openai.Embedding.create(input=text, model=model)
-            return np.array(response['data'][0]['embedding'])
+            response = client.embeddings.create(input=text, model=model)
+            return np.array(response.data[0].embedding)
         except Exception as e:
             st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
             time.sleep(delay)
@@ -1405,15 +1405,16 @@ def summarize_text(text, prompt_template):
         
     prompt = prompt_template.format(text=text)
     try:
-        # Use only the older OpenAI SDK (<1.0.0)
-        response = openai.ChatCompletion.create(
-            model="gpt.5.1-mini",  # or whatever model you're using
+        # Use new Responses API with GPT-5
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0.3
         )
-        return response['choices'][0]['message']['content'].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"Error al llamar a la API de OpenAI: {e}")
         return None
@@ -1462,8 +1463,8 @@ def get_lessons_embedding_with_retry(text, model='text-embedding-3-large', max_r
         return None
     for attempt in range(max_retries):
         try:
-            response = openai.Embedding.create(input=text, model=model)
-            return np.array(response['data'][0]['embedding'])
+            response = client.embeddings.create(input=text, model=model)
+            return np.array(response.data[0].embedding)
         except Exception as e:
             st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
             time.sleep(delay)
@@ -2403,15 +2404,15 @@ with tab2:
         for chunk in chunks:
             # Quick relevance check with cheap model
             check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",  # Cheap model for filtering
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # Fast model for filtering
                 messages=[{"role": "user", "content": check_prompt}],
-                max_tokens=5,
+                max_tokens=16,
                 temperature=0
             )
-            
-            if "YES" in response["choices"][0]["message"]["content"].upper():
+
+            if "YES" in response.choices[0].message.content.upper():
                 relevant_chunks.append(chunk)
         
         # Stage 2: Deep analysis only on relevant chunks
@@ -2424,17 +2425,17 @@ with tab2:
         
         # Now do the expensive analysis on focused content
         prompt = f"""Evaluate this document against: {criterion}
-    
+
     Scoring levels: {json.dumps(descriptions)}
-    
+
     Relevant document sections:
     {combined_text}
-    
+
     Provide JSON with:
-    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
-    
-        response = openai.ChatCompletion.create(
-            model="gpt.5.1-mini",
+    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert document evaluator."},
                 {"role": "user", "content": prompt}
@@ -2442,8 +2443,30 @@ with tab2:
             max_tokens=1500,
             temperature=0.1
         )
-        
-        return json.loads(response["choices"][0]["message"]["content"])
+
+        try:
+            content = response.choices[0].message.content.strip()
+            # Remove markdown code fences if present
+            if content.startswith('```'):
+                # Remove opening fence (```json or ```)
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                # Remove closing fence
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            result = json.loads(content)
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(result.get('evidence'), list):
+                result['evidence'] = '\n'.join(result['evidence'])
+            return result
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, return a default structure
+            return {
+                "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
+                "score": 3,
+                "evidence": "Unable to parse structured response"
+            }
 
     # Function to evaluate a single text chunk
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
@@ -2476,10 +2499,10 @@ with tab2:
         Devuelve solo el objeto JSON, nada más.
         """
 
-        # Call LLM using OpenAI v0.28 syntax
+        # Call LLM using new Responses API
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt.5.1-mini",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
                     {"role": "user", "content": prompt}
@@ -2487,8 +2510,22 @@ with tab2:
                 response_format={"type": "json_object"},
                 max_tokens=7000
             )
-            raw = response["choices"][0]["message"]["content"].strip()
-            parsed = json.loads(raw)
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                return {'score': 0, 'analysis': 'Empty response from API', 'evidence': ''}
+
+            # Remove markdown code fences if present
+            content = raw.strip()
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            parsed = json.loads(content)
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(parsed.get('evidence'), list):
+                parsed['evidence'] = '\n'.join(parsed['evidence'])
             return parsed
         except Exception as e:
             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
@@ -2537,10 +2574,10 @@ with tab2:
         Devuelve solo el objeto JSON, nada más.
         """
 
-        # Call LLM for synthesis using OpenAI v0.28 syntax
+        # Call LLM for synthesis using new Responses API
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt.5.1-mini",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
                     {"role": "user", "content": synthesis_prompt}
@@ -2548,8 +2585,22 @@ with tab2:
                 response_format={"type": "json_object"},
                 max_tokens=7000
             )
-            raw = response["choices"][0]["message"]["content"].strip()
-            parsed = json.loads(raw)
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                raise ValueError("Empty response from API")
+
+            # Remove markdown code fences if present
+            content = raw.strip()
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            parsed = json.loads(content)
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(parsed.get('evidence'), list):
+                parsed['evidence'] = '\n'.join(parsed['evidence'])
             return parsed
         except Exception as e:
             # If synthesis fails, combine results manually in a more limited way
@@ -2622,16 +2673,16 @@ with tab2:
                         else:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
-                                response = openai.ChatCompletion.create(
-                                    model="gpt.5.1-mini",
+                                response = client.chat.completions.create(
+                                    model="gpt-4o-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
                                     max_tokens=1024,
-                                    temperature=0.01,
+                                    temperature=0.01
                                 )
-                                llm_output = response["choices"][0]["message"]["content"].strip()
+                                llm_output = response.choices[0].message.content.strip()
                             except Exception as e:
                                 llm_output = f"[LLM ERROR: {e}]"
                         
@@ -2712,13 +2763,16 @@ with tab2:
             crit, descriptions, dimension, rubric_name = args
             try:
                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                # Ensure result is a dictionary
+                if not isinstance(result, dict):
+                    result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
                 return {
                     'Criterio': crit,
                     'Dimensión': dimension,
                     'Score': result.get('score', 0),
-                    'Análisis': result.get('analysis', ''),
-                    'Evidencia': result.get('evidence', ''),
-                    'Error': result.get('error', '') if 'error' in result else '',
+                    'Análisis': str(result.get('analysis', '')),
+                    'Evidencia': str(result.get('evidence', '')),
+                    'Error': str(result.get('error', '')) if 'error' in result else '',
                     'Rúbrica': rubric_name
                 }
             except Exception as e:
@@ -2912,34 +2966,37 @@ with tab4:
                     if is_summary_query:
                         # Fallback: use as much of the full document(s) as fits
                         context = "\n---\n".join(doc['text'][:12000] for doc in st.session_state['doc_chat_docs'])
+
+                        # Build conversation messages
                         messages = [
                             {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
                             {"role": "system", "content": f"Texto del documento:\n{context}"}
                         ]
                         for msg in st.session_state['doc_chat_history'][-5:]:
                             messages.append(msg)
+
                         try:
-                            response = openai.ChatCompletion.create(
-                                model="gpt.5.1-mini",
+                            response = client.chat.completions.create(
+                                model="gpt-4o-mini",
                                 messages=messages,
                                 max_tokens=2048,
                                 temperature=0.3
                             )
-                            answer = response['choices'][0]['message']['content'].strip()
+                            answer = response.choices[0].message.content.strip()
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
                     else:
                         # 3. Get embeddings for all chunks (batch)
                         try:
-                            chunk_embs_resp = openai.Embedding.create(input=all_chunks, model=emb_model)
-                            chunk_embs = [item["embedding"] for item in chunk_embs_resp["data"]]
+                            chunk_embs_resp = client.embeddings.create(input=all_chunks, model=emb_model)
+                            chunk_embs = [item.embedding for item in chunk_embs_resp.data]
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embeddings de los fragmentos: {str(e)}]"})
                             chunk_embs = []
                         # 4. Embed user question
                         try:
-                            question_emb = openai.Embedding.create(input=question, model=emb_model)["data"][0]["embedding"]
+                            question_emb = client.embeddings.create(input=question, model=emb_model).data[0].embedding
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embedding de la pregunta: {str(e)}]"})
                             question_emb = None
@@ -2983,14 +3040,15 @@ with tab4:
                             ]
                             for msg in st.session_state['doc_chat_history'][-5:]:
                                 messages.append(msg)
+
                             try:
-                                response = openai.ChatCompletion.create(
-                                    model="gpt.5.1-mini",
+                                response = client.chat.completions.create(
+                                    model="gpt-4o-mini",
                                     messages=messages,
                                     max_tokens=2048,
                                     temperature=0.3
                                 )
-                                answer = response['choices'][0]['message']['content'].strip()
+                                answer = response.choices[0].message.content.strip()
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
                             except Exception as e:
                                 st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
@@ -3576,16 +3634,16 @@ with tab3:
                         else:
                             llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
                             try:
-                                response = openai.ChatCompletion.create(
-                                    model="gpt.5.1-mini",
+                                response = client.chat.completions.create(
+                                    model="gpt-4o-mini",
                                     messages=[
                                         {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
                                         {"role": "user", "content": full_text}
                                     ],
                                     max_tokens=1024,
-                                    temperature=0.01,
+                                    temperature=0.01
                                 )
-                                llm_output = response["choices"][0]["message"]["content"].strip()
+                                llm_output = response.choices[0].message.content.strip()
                             except Exception as e:
                                 llm_output = f"[LLM ERROR: {e}]"
                         
@@ -3657,13 +3715,16 @@ with tab3:
             crit, descriptions, dimension, rubric_name = args
             try:
                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                # Ensure result is a dictionary
+                if not isinstance(result, dict):
+                    result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
                 return {
                     'Criterio': crit,
                     'Dimensión': dimension,
                     'Score': result.get('score', 0),
-                    'Análisis': result.get('analysis', ''),
-                    'Evidencia': result.get('evidence', ''),
-                    'Error': result.get('error', '') if 'error' in result else '',
+                    'Análisis': str(result.get('analysis', '')),
+                    'Evidencia': str(result.get('evidence', '')),
+                    'Error': str(result.get('error', '')) if 'error' in result else '',
                     'Rúbrica': rubric_name
                 }
             except Exception as e:
@@ -3818,7 +3879,7 @@ with tab3:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 MAX_WORKERS = 48  # Reduced from 48 to avoid rate limits
-OPENAI_MODEL = "gpt.5.1-mini"  # Correct model name
+OPENAI_MODEL = "gpt-4o-mini"  # GPT-4o mini model
 
 @st.cache_data
 def load_appraisal_questions():
@@ -3959,11 +4020,11 @@ def analyze_question_with_llm(question, document_text):
 
         per_chunk_results = []
         for i, chunk in enumerate(chunks, start=1):
-            resp = openai.ChatCompletion.create(
-                model=OPENAI_MODEL,
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {
-                        "role": "system", 
+                        "role": "system",
                         "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
                         {
                             "Respuesta": "Yes/No/Partial/Not Found",
@@ -3972,16 +4033,18 @@ def analyze_question_with_llm(question, document_text):
                         }"""
                     },
                     {
-                        "role": "user", 
+                        "role": "user",
                         "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
                     }
                 ],
                 max_tokens=800,
-                temperature=0.1,
+                temperature=0.1
             )
-            content = resp["choices"][0]["message"]["content"].strip()
+            content = resp.choices[0].message.content
+            if not content or not content.strip():
+                continue
             try:
-                per_chunk_results.append(json.loads(content))
+                per_chunk_results.append(json.loads(content.strip()))
             except Exception:
                 # Skip invalid JSONs silently
                 continue
