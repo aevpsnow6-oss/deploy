@@ -4399,14 +4399,17 @@ with tab5:
                                               key='pais_viz')
 
         with col2:
-            # Year filter with slider
-            min_year = int(df['year'].min())
-            max_year = max(int(df['year'].max()), 2025)
-            selected_year_range_viz = st.slider('Rango de Años:',
-                                          min_value=min_year,
-                                          max_value=max_year,
-                                          value=(min_year, max_year),
-                                          key='rango_anos_viz')
+            # Year filter with slider (only if year column exists)
+            if 'year' in df.columns:
+                min_year = int(df['year'].min())
+                max_year = max(int(df['year'].max()), 2025)
+                selected_year_range_viz = st.slider('Rango de Años:',
+                                              min_value=min_year,
+                                              max_value=max_year,
+                                              value=(min_year, max_year),
+                                              key='rango_anos_viz')
+            else:
+                selected_year_range_viz = None
 
             # Evaluation theme filter
             evaltheme_options = ['Todas'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
@@ -4437,10 +4440,11 @@ with tab5:
     if 'Todas' not in selected_countries_viz and selected_countries_viz and 'country_col' in locals() and country_col:
         filtered_df = filtered_df[filtered_df[country_col].isin(selected_countries_viz)]
 
-    filtered_df = filtered_df[
-        (filtered_df['year'] >= selected_year_range_viz[0]) &
-        (filtered_df['year'] <= selected_year_range_viz[1])
-    ]
+    if selected_year_range_viz is not None and 'year' in filtered_df.columns:
+        filtered_df = filtered_df[
+            (filtered_df['year'] >= selected_year_range_viz[0]) &
+            (filtered_df['year'] <= selected_year_range_viz[1])
+        ]
 
     if 'Todas' not in selected_evaltheme_viz and selected_evaltheme_viz:
         filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme_viz)]
