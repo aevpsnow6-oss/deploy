@@ -2395,33 +2395,11 @@ with tab2:
     st.markdown("### Procesamiento y Evaluación")
 
     def evaluate_criterion_with_llm(document_text, criterion, descriptions):
-        """Analyze complete document efficiently using a two-stage approach"""
-        
-        # Stage 1: Extract relevant sections (cheap, fast model)
-        chunks = split_text_into_chunks(document_text, max_completion_tokens=7000)
-        
-        relevant_chunks = []
-        for chunk in chunks:
-            # Quick relevance check with cheap model
-            check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
+        """Analyze document against criterion"""
 
-            response = client.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[{"role": "user", "content": check_prompt}],
-                max_completion_tokens=100,
-                reasoning_effort="minimal"
-            )
-
-            if "YES" in response.choices[0].message.content.upper():
-                relevant_chunks.append(chunk)
-        
-        # Stage 2: Deep analysis only on relevant chunks
-        if not relevant_chunks:
-            # If nothing relevant found, use first and last chunks as context
-            relevant_chunks = [chunks[0], chunks[-1]] if len(chunks) > 1 else chunks
-        
-        # Combine relevant chunks (limit to ~10k chars)
-        combined_text = "\n\n---\n\n".join(relevant_chunks)[:10000]
+        # Limit document to first 15000 characters to avoid excessive tokens
+        # This is more than enough for most evaluation documents
+        combined_text = document_text[:15000]
         
         # Now do the expensive analysis on focused content
         prompt = f"""Evaluate this document against: {criterion}
