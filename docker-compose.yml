@@ -10,7 +10,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ./data:/app/data
+      - ./df_complete_all_full.xlsx:/app/df_complete_all_full.xlsx
+      - ./df_split_actions.xlsx:/app/df_split_actions.xlsx
+      - ./analyzed_recommendations_plans_v5.csv:/app/analyzed_recommendations_plans_v5.csv
       - ./Rubricas_6ago2025.xlsx:/app/Rubricas_6ago2025.xlsx
+      - ./PRODOC_rubric.xlsx:/app/PRODOC_rubric.xlsx
+      - ./APPRAISAL_rubric.xlsx:/app/APPRAISAL_rubric.xlsx
+      - ./emb_Recomm_rec_cl_4.pt:/app/emb_Recomm_rec_cl_4.pt
+      - ./Recommendation_RAG_Metadata.pt:/app/Recommendation_RAG_Metadata.pt
+      - ./emb_LL_ll_cl_4.pt:/app/emb_LL_ll_cl_4.pt
+      - ./lessons_metadata.pt:/app/lessons_metadata.pt
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
