@@ -2394,15 +2394,18 @@ with tab2:
     st.markdown("---")
     st.markdown("### Procesamiento y Evaluación")
 
-    def evaluate_criterion_with_llm(document_text, criterion, descriptions):
-        """Analyze document against criterion"""
+    def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
+        """Analyze document against criterion with retry logic"""
+        import time
 
-        # Limit document to first 15000 characters to avoid excessive tokens
-        # This is more than enough for most evaluation documents
-        combined_text = document_text[:15000]
-        
-        # Now do the expensive analysis on focused content
-        prompt = f"""Evaluate this document against: {criterion}
+        for attempt in range(max_retries):
+            try:
+                # Limit document to first 15000 characters to avoid excessive tokens
+                # This is more than enough for most evaluation documents
+                combined_text = document_text[:15000]
+
+                # Now do the expensive analysis on focused content
+                prompt = f"""Evaluate this document against: {criterion}
 
     Scoring levels: {json.dumps(descriptions)}
 
@@ -2412,39 +2415,65 @@ with tab2:
     Provide JSON with:
     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
-        response = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert document evaluator."},
-                {"role": "user", "content": prompt}
-            ],
-            max_completion_tokens=8000,
-            reasoning_effort="minimal"
-        )
+                response = client.chat.completions.create(
+                    model="gpt-5-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an expert document evaluator."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=8000,
+                    reasoning_effort="minimal",
+                    timeout=120  # 2 minute timeout per request
+                )
 
-        try:
-            content = response.choices[0].message.content.strip()
-            # Remove markdown code fences if present
-            if content.startswith('```'):
-                # Remove opening fence (```json or ```)
-                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
-                # Remove closing fence
-                if content.endswith('```'):
-                    content = content.rsplit('```', 1)[0]
-                content = content.strip()
+                content = response.choices[0].message.content.strip()
+                # Remove markdown code fences if present
+                if content.startswith('```'):
+                    # Remove opening fence (```json or ```)
+                    content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                    # Remove closing fence
+                    if content.endswith('```'):
+                        content = content.rsplit('```', 1)[0]
+                    content = content.strip()
 
-            result = json.loads(content)
-            # Normalize evidence field: convert array to string if needed
-            if isinstance(result.get('evidence'), list):
-                result['evidence'] = '\n'.join(result['evidence'])
-            return result
-        except json.JSONDecodeError as e:
-            # If JSON parsing fails, return a default structure
-            return {
-                "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
-                "score": 3,
-                "evidence": "Unable to parse structured response"
-            }
+                result = json.loads(content)
+                # Normalize evidence field: convert array to string if needed
+                if isinstance(result.get('evidence'), list):
+                    result['evidence'] = '\n'.join(result['evidence'])
+                return result
+
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, return a default structure
+                return {
+                    "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
+                    "score": 3,
+                    "evidence": "Unable to parse structured response",
+                    "error": f"JSON parsing error: {str(e)}"
+                }
+            except Exception as e:
+                # Check if it's a rate limit error
+                error_msg = str(e)
+                if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
+                        time.sleep(wait_time)
+                        continue
+
+                # If last attempt or non-rate-limit error, return error
+                return {
+                    "analysis": f"Error during evaluation: {error_msg}",
+                    "score": 0,
+                    "evidence": "",
+                    "error": f"API error (attempt {attempt + 1}/{max_retries}): {error_msg}"
+                }
+
+        # If we exhausted all retries
+        return {
+            "analysis": "Failed after multiple retry attempts",
+            "score": 0,
+            "evidence": "",
+            "error": f"Failed after {max_retries} attempts"
+        }
 
     # Function to evaluate a single text chunk
     def evaluate_single_chunk(text_chunk, criterion, descriptions):
@@ -2738,7 +2767,8 @@ with tab2:
         st.info("Iniciando evaluación de criterios...")
         rubric_results = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        MAX_WORKERS = 8
+        import time
+        MAX_WORKERS = 3  # Reduced to avoid rate limiting
         
         def eval_one_criterion(args):
             crit, descriptions, dimension, rubric_name = args
@@ -2777,15 +2807,18 @@ with tab2:
 
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 progress.progress(0.01, text=f"Enviando {n_criteria} criterios para evaluación paralela...")
-                futures = {
-                    executor.submit(eval_one_criterion, (
+                futures = {}
+                for idx, (crit, rubric_data) in enumerate(rubric_dict.items()):
+                    future = executor.submit(eval_one_criterion, (
                         crit,
                         rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
                         rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
                         rubric_name
-                    )): (crit, idx)
-                    for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
-                }
+                    ))
+                    futures[future] = (crit, idx)
+                    # Small delay to avoid overwhelming API at startup
+                    if idx > 0 and idx % MAX_WORKERS == 0:
+                        time.sleep(0.5)
 
                 progress.progress(0.05, text=f"Esperando resultados de evaluación...")
                 completed = 0
