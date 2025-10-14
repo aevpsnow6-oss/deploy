@@ -2400,9 +2400,9 @@ with tab2:
 
         for attempt in range(max_retries):
             try:
-                # Limit document to first 15000 characters to avoid excessive tokens
-                # This is more than enough for most evaluation documents
-                combined_text = document_text[:15000]
+                # Use first 100,000 characters to capture full document context
+                # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
+                combined_text = document_text[:100000]
 
                 # Now do the expensive analysis on focused content
                 prompt = f"""Evaluate this document against: {criterion}
