@@ -2400,9 +2400,9 @@ with tab2:
 
         for attempt in range(max_retries):
             try:
-                # Limit document to first 15000 characters to avoid excessive tokens
-                # This is more than enough for most evaluation documents
-                combined_text = document_text[:15000]
+                # Use first 100,000 characters to capture full document context
+                # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
+                combined_text = document_text[:100000]
 
                 # Now do the expensive analysis on focused content
                 prompt = f"""Evaluate this document against: {criterion}
@@ -2918,6 +2918,8 @@ with tab4:
         existing_filenames = sorted([doc['filename'] for doc in st.session_state['doc_chat_docs']]) if st.session_state['doc_chat_docs'] else []
         if uploaded_filenames != existing_filenames:
             st.session_state['doc_chat_docs'] = []
+
+            # Load documents
             for uploaded_file in uploaded_files:
                 try:
                     if uploaded_file.name.endswith(".docx"):
@@ -2932,6 +2934,49 @@ with tab4:
                     })
                 except Exception as e:
                     st.error(f"Error al procesar el documento '{uploaded_file.name}': {str(e)}")
+
+            # Calculate total document size for smart RAG decision
+            total_text = "\n\n".join([doc['text'] for doc in st.session_state['doc_chat_docs']])
+            total_chars = len(total_text)
+            st.session_state['doc_chat_total_text'] = total_text
+            st.session_state['doc_chat_total_chars'] = total_chars
+
+            # Pre-compute embeddings only if documents are large (> 100K chars)
+            # For small docs, we'll use full context directly (more efficient)
+            if total_chars > 100000:
+                with st.spinner("Procesando embeddings de documentos (solo se hace una vez)..."):
+                    # Chunk documents
+                    def chunk_text(text, chunk_size=2000, overlap=300):
+                        chunks = []
+                        start = 0
+                        while start < len(text):
+                            end = min(start + chunk_size, len(text))
+                            chunks.append(text[start:end])
+                            start += chunk_size - overlap
+                        return chunks
+
+                    all_chunks = []
+                    for doc in st.session_state['doc_chat_docs']:
+                        all_chunks.extend(chunk_text(doc['text']))
+
+                    # Embed all chunks once and cache
+                    try:
+                        emb_model = "text-embedding-3-large"
+                        chunk_embs_resp = client.embeddings.create(input=all_chunks, model=emb_model)
+                        chunk_embs = [item.embedding for item in chunk_embs_resp.data]
+
+                        # Cache in session state
+                        st.session_state['doc_chat_chunks'] = all_chunks
+                        st.session_state['doc_chat_embeddings'] = chunk_embs
+                        st.session_state['doc_chat_use_rag'] = True
+                        st.info(f"📚 Documentos grandes ({total_chars:,} chars) - usando RAG con {len(all_chunks)} fragmentos en caché")
+                    except Exception as e:
+                        st.error(f"Error al generar embeddings: {str(e)}")
+                        st.session_state['doc_chat_use_rag'] = False
+            else:
+                st.session_state['doc_chat_use_rag'] = False
+                st.info(f"📄 Documentos pequeños ({total_chars:,} chars) - usando contexto completo (más eficiente)")
+
             st.session_state['doc_chat_history'] = []  # Only reset chat when new files uploaded
             st.success(f"{len(st.session_state['doc_chat_docs'])} documento(s) cargado(s) y listo(s) para chatear.")
 
@@ -2952,85 +2997,75 @@ with tab4:
                 if 'doc_chat_history' not in st.session_state:
                     st.session_state['doc_chat_history'] = []
                 st.session_state['doc_chat_history'].append({"role": "user", "content": user_input.strip()})
-                # Chunking: combine all docs, split into 7000-character chunks for safety
-                import openai
-                import numpy as np
-                import faiss
-                # 1. Split all docs into larger, overlapping chunks (~1500 chars, 300 overlap)
-                def chunk_text(text, chunk_size=2000, overlap=300):
-                    chunks = []
-                    start = 0
-                    while start < len(text):
-                        end = min(start + chunk_size, len(text))
-                        chunks.append(text[start:end])
-                        start += chunk_size - overlap
-                    return chunks
-                all_chunks = []
-                for doc in st.session_state['doc_chat_docs']:
-                    all_chunks.extend(chunk_text(doc['text']))
-                if not all_chunks:
-                    st.session_state['doc_chat_history'].append({"role": "assistant", "content": "[No se encontraron fragmentos en los documentos.]"})
-                else:
-                    question = user_input.strip()
-                    # 2. Detect summary/broad queries
-                    summary_keywords = [
-                        "resumen", "conclusiones", "hallazgos", "principales", "summary", "conclusion"
+
+                question = user_input.strip()
+                use_rag = st.session_state.get('doc_chat_use_rag', False)
+
+                # Smart context selection: use full text for small docs, RAG for large docs
+                if not use_rag:
+                    # Small documents: use full context (up to 100K chars)
+                    # This is more efficient - no chunking, no embeddings, just direct LLM call
+                    context = st.session_state.get('doc_chat_total_text', '')[:100000]
+
+                    messages = [
+                        {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                        {"role": "system", "content": f"Texto del documento:\n{context}"}
                     ]
-                    is_summary_query = any(kw in question.lower() for kw in summary_keywords)
-                    emb_model = "text-embedding-3-large"
-                    if is_summary_query:
-                        # Fallback: use as much of the full document(s) as fits
-                        context = "\n---\n".join(doc['text'][:12000] for doc in st.session_state['doc_chat_docs'])
+                    for msg in st.session_state['doc_chat_history'][-5:]:
+                        messages.append(msg)
 
-                        # Build conversation messages
-                        messages = [
-                            {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
-                            {"role": "system", "content": f"Texto del documento:\n{context}"}
-                        ]
-                        for msg in st.session_state['doc_chat_history'][-5:]:
-                            messages.append(msg)
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-5-mini",
+                            messages=messages,
+                            max_completion_tokens=4096,
+                            reasoning_effort="minimal"
+                        )
+                        answer = response.choices[0].message.content.strip()
+                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                    except Exception as e:
+                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
 
-                        try:
-                            response = client.chat.completions.create(
-                                model="gpt-5-mini",
-                                messages=messages,
-                                max_completion_tokens=4096,
-                                reasoning_effort="minimal"
-                            )
-                            answer = response.choices[0].message.content.strip()
-                            st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
-                        except Exception as e:
-                            st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
+                else:
+                    # Large documents: use RAG with cached embeddings
+                    import numpy as np
+                    import faiss
+                    import re
+
+                    # Get cached chunks and embeddings
+                    all_chunks = st.session_state.get('doc_chat_chunks', [])
+                    chunk_embs = st.session_state.get('doc_chat_embeddings', [])
+
+                    if not all_chunks or not chunk_embs:
+                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": "[Error: No se encontraron fragmentos en caché.]"})
                     else:
-                        # 3. Get embeddings for all chunks (batch)
+                        # Embed user question (only embedding we need per query!)
                         try:
-                            chunk_embs_resp = client.embeddings.create(input=all_chunks, model=emb_model)
-                            chunk_embs = [item.embedding for item in chunk_embs_resp.data]
-                        except Exception as e:
-                            st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embeddings de los fragmentos: {str(e)}]"})
-                            chunk_embs = []
-                        # 4. Embed user question
-                        try:
+                            emb_model = "text-embedding-3-large"
                             question_emb = client.embeddings.create(input=question, model=emb_model).data[0].embedding
                         except Exception as e:
                             st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embedding de la pregunta: {str(e)}]"})
                             question_emb = None
-                        # 5. Use faiss to retrieve top N relevant chunks
-                        if chunk_embs and question_emb:
-                            import faiss
-                            import numpy as np
-                            import re
+
+                        # Retrieve relevant chunks using FAISS
+                        if question_emb:
                             dim = len(chunk_embs[0])
                             xb = np.array(chunk_embs).astype('float32')
                             index = faiss.IndexFlatIP(dim)
+
                             # Normalize for cosine similarity
                             faiss.normalize_L2(xb)
+                            index.add(xb)  # FIX: Actually add vectors to the index!
+
                             xq = np.array([question_emb]).astype('float32')
                             faiss.normalize_L2(xq)
-                            top_n = 50
+
+                            # Reduced from 50 to 15 for efficiency (15 chunks = ~30K chars)
+                            top_n = min(15, len(all_chunks))
                             D, I = index.search(xq, top_n)
                             selected_chunks = [all_chunks[i] for i in I[0] if i < len(all_chunks)]
-                            # Also retrieve all chunks with exact matches for key question terms
+
+                            # Also retrieve chunks with exact keyword matches
                             stopwords = set([
                                 'el','la','los','las','de','del','y','en','a','un','una','que','por','con','para','es','al','se','su','sus','o','u','como','más','menos','le','lo','su','the','and','of','in','to','for','is','on','at','by','an','or','as','be','are','was','were','from','it','this','that','with','but','not','can','may','do','does'
                             ])
@@ -3040,15 +3075,20 @@ with tab4:
                                 chunk_lc = chunk.lower()
                                 if any(qw in chunk_lc for qw in qwords):
                                     keyword_chunks.append(chunk)
-                            # Merge, deduplicate (embedding + keyword)
+                                    if len(keyword_chunks) >= 5:  # Limit keyword matches
+                                        break
+
+                            # Merge and deduplicate
                             seen = set()
                             merged_chunks = []
                             for chunk in selected_chunks + keyword_chunks:
                                 if chunk not in seen:
                                     merged_chunks.append(chunk)
                                     seen.add(chunk)
+
                             context = '\n---\n'.join(merged_chunks)
-                            # 6. Send to LLM
+
+                            # Send to LLM
                             messages = [
                                 {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado. Si la información no es explícita, infiere la respuesta usando pistas contextuales y tu capacidad de síntesis."},
                                 {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
@@ -4002,29 +4042,13 @@ def extract_document_content(uploaded_file):
 #         }
 
 def analyze_question_with_llm(question, document_text):
-    """Analyze a single question against the document using LLM by chunking the full text and aggregating."""
+    """Analyze a single question against the document using LLM with full context (up to 100K chars)."""
     try:
-        # Split entire document into manageable chunks and analyze each chunk
-        def chunk_text(text, max_chars=3500, overlap=200):
-            chunks = []
-            current = ""
-            for line in (text or "").split("\n"):
-                if len(current) + len(line) + 1 > max_chars:
-                    if current:
-                        chunks.append(current)
-                        carry = current[-overlap:] if overlap > 0 and len(current) > overlap else ""
-                        current = (carry + "\n" + line).strip()
-                    else:
-                        chunks.append(line[:max_chars])
-                        current = line[max_chars:]
-                else:
-                    current = (current + "\n" + line) if current else line
-            if current:
-                chunks.append(current)
-            return [c for c in chunks if c.strip()]
+        # Use first 100,000 characters to capture full document context
+        # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
+        combined_text = (document_text or "")[:100000]
 
-        chunks = chunk_text(document_text or "")
-        if not chunks:
+        if not combined_text.strip():
             return {
                 'Pregunta': question,
                 'Respuesta': 'Not Found',
@@ -4033,70 +4057,58 @@ def analyze_question_with_llm(question, document_text):
                 'Status': 'Success'
             }
 
-        per_chunk_results = []
-        for i, chunk in enumerate(chunks, start=1):
-            resp = client.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[
+        # Single API call per question - much more efficient than chunking
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
                     {
-                        "role": "system",
-                        "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
-                        {
-                            "Respuesta": "Yes/No/Partial/Not Found",
-                            "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                            "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-                        }"""
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
-                    }
-                ],
-                max_completion_tokens=8000,
-                reasoning_effort="minimal"
-            )
-            content = resp.choices[0].message.content
-            if not content or not content.strip():
-                continue
-            try:
-                per_chunk_results.append(json.loads(content.strip()))
-            except Exception:
-                # Skip invalid JSONs silently
-                continue
+                        "Respuesta": "Yes/No/Partial/Not Found",
+                        "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+                        "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+                    }"""
+                },
+                {
+                    "role": "user",
+                    "content": f"Question: {question}\n\nDocument Text: {combined_text}"
+                }
+            ],
+            max_completion_tokens=8000,
+            reasoning_effort="minimal"
+        )
 
-        if not per_chunk_results:
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
             return {
                 'Pregunta': question,
                 'Respuesta': 'Error',
-                'Razonamiento': 'No fue posible obtener un análisis válido de los fragmentos.',
+                'Razonamiento': 'No se recibió respuesta del modelo.',
                 'Evidencia': '',
                 'Status': 'Error'
             }
 
-        # Aggregate results: vote-based with priority fallback
-        priority = {"Yes": 3, "Partial": 2, "No": 1, "Not Found": 0}
-        votes = {}
-        razonamientos = []
-        evidencias = []
-        for r in per_chunk_results:
-            ans = r.get("Respuesta", "Not Found")
-            votes[ans] = votes.get(ans, 0) + 1
-            if r.get("Razonamiento"):
-                razonamientos.append(str(r["Razonamiento"]))
-            if r.get("Evidencia"):
-                evidencias.append(str(r["Evidencia"]))
+        # Parse JSON response
+        try:
+            result = json.loads(content.strip())
+            return {
+                'Pregunta': question,
+                'Respuesta': result.get('Respuesta', 'Not Found'),
+                'Razonamiento': result.get('Razonamiento', ''),
+                'Evidencia': result.get('Evidencia', ''),
+                'Status': 'Success'
+            }
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return error
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'Error al procesar la respuesta del modelo.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
 
-        best_answer = max(votes.items(), key=lambda kv: (kv[1], priority.get(kv[0], -1)))[0]
-        razonamiento_final = " \n\n".join(razonamientos)[:1500]
-        evidencia_final = "\n\n---\n\n".join(evidencias)[:2000]
-
-        return {
-            'Pregunta': question,
-            'Respuesta': best_answer,
-            'Razonamiento': razonamiento_final,
-            'Evidencia': evidencia_final,
-            'Status': 'Success'
-        }
     except Exception as e:
         return {
             'Pregunta': question,
