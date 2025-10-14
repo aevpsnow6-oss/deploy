@@ -4002,29 +4002,13 @@ def extract_document_content(uploaded_file):
 #         }
 
 def analyze_question_with_llm(question, document_text):
-    """Analyze a single question against the document using LLM by chunking the full text and aggregating."""
+    """Analyze a single question against the document using LLM with full context (up to 100K chars)."""
     try:
-        # Split entire document into manageable chunks and analyze each chunk
-        def chunk_text(text, max_chars=3500, overlap=200):
-            chunks = []
-            current = ""
-            for line in (text or "").split("\n"):
-                if len(current) + len(line) + 1 > max_chars:
-                    if current:
-                        chunks.append(current)
-                        carry = current[-overlap:] if overlap > 0 and len(current) > overlap else ""
-                        current = (carry + "\n" + line).strip()
-                    else:
-                        chunks.append(line[:max_chars])
-                        current = line[max_chars:]
-                else:
-                    current = (current + "\n" + line) if current else line
-            if current:
-                chunks.append(current)
-            return [c for c in chunks if c.strip()]
+        # Use first 100,000 characters to capture full document context
+        # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
+        combined_text = (document_text or "")[:100000]
 
-        chunks = chunk_text(document_text or "")
-        if not chunks:
+        if not combined_text.strip():
             return {
                 'Pregunta': question,
                 'Respuesta': 'Not Found',
@@ -4033,70 +4017,58 @@ def analyze_question_with_llm(question, document_text):
                 'Status': 'Success'
             }
 
-        per_chunk_results = []
-        for i, chunk in enumerate(chunks, start=1):
-            resp = client.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[
+        # Single API call per question - much more efficient than chunking
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
                     {
-                        "role": "system",
-                        "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
-                        {
-                            "Respuesta": "Yes/No/Partial/Not Found",
-                            "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                            "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-                        }"""
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Question: {question}\n\nDocument Text (chunk {i}/{len(chunks)}): {chunk}"
-                    }
-                ],
-                max_completion_tokens=8000,
-                reasoning_effort="minimal"
-            )
-            content = resp.choices[0].message.content
-            if not content or not content.strip():
-                continue
-            try:
-                per_chunk_results.append(json.loads(content.strip()))
-            except Exception:
-                # Skip invalid JSONs silently
-                continue
+                        "Respuesta": "Yes/No/Partial/Not Found",
+                        "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+                        "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+                    }"""
+                },
+                {
+                    "role": "user",
+                    "content": f"Question: {question}\n\nDocument Text: {combined_text}"
+                }
+            ],
+            max_completion_tokens=8000,
+            reasoning_effort="minimal"
+        )
 
-        if not per_chunk_results:
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
             return {
                 'Pregunta': question,
                 'Respuesta': 'Error',
-                'Razonamiento': 'No fue posible obtener un análisis válido de los fragmentos.',
+                'Razonamiento': 'No se recibió respuesta del modelo.',
                 'Evidencia': '',
                 'Status': 'Error'
             }
 
-        # Aggregate results: vote-based with priority fallback
-        priority = {"Yes": 3, "Partial": 2, "No": 1, "Not Found": 0}
-        votes = {}
-        razonamientos = []
-        evidencias = []
-        for r in per_chunk_results:
-            ans = r.get("Respuesta", "Not Found")
-            votes[ans] = votes.get(ans, 0) + 1
-            if r.get("Razonamiento"):
-                razonamientos.append(str(r["Razonamiento"]))
-            if r.get("Evidencia"):
-                evidencias.append(str(r["Evidencia"]))
+        # Parse JSON response
+        try:
+            result = json.loads(content.strip())
+            return {
+                'Pregunta': question,
+                'Respuesta': result.get('Respuesta', 'Not Found'),
+                'Razonamiento': result.get('Razonamiento', ''),
+                'Evidencia': result.get('Evidencia', ''),
+                'Status': 'Success'
+            }
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return error
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'Error al procesar la respuesta del modelo.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
 
-        best_answer = max(votes.items(), key=lambda kv: (kv[1], priority.get(kv[0], -1)))[0]
-        razonamiento_final = " \n\n".join(razonamientos)[:1500]
-        evidencia_final = "\n\n---\n\n".join(evidencias)[:2000]
-
-        return {
-            'Pregunta': question,
-            'Respuesta': best_answer,
-            'Razonamiento': razonamiento_final,
-            'Evidencia': evidencia_final,
-            'Status': 'Success'
-        }
     except Exception as e:
         return {
             'Pregunta': question,
