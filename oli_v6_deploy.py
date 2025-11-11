@@ -2310,11 +2310,11 @@ with tab2:
     # Show rubric status
     st.success(f"""
     **ESTADO DE RÚBRICAS:**
-    - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
-    - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
+    # - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
+    # - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
     - Metodologías con Enfoque Participativo: {len(parteval_rubric)} criterios
     - Enfoque de Género: {len(gender_rubric)} criterios
-    - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
+    # - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
 
@@ -2332,11 +2332,11 @@ with tab2:
     
     # All available rubrics
     all_rubrics = {
-        "Participación de Actores (durante el proyecto)": engagement_rubric,
-        "Desempeño del proyecto (según informe de evaluación)": performance_rubric,
+        # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
+        # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
         "Participación durante la evaluación (metodología)": parteval_rubric,
         "Enfoque de Género": gender_rubric,
-        "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,
+        # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
         "Transición Justa: Enfoque Moderno": tj_just_transition_rubric
     }
 
