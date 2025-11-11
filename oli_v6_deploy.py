@@ -24,7 +24,7 @@ import zipfile
 # --- Utility function for Excel export ---
 def to_excel(df):
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
         df.to_excel(writer, index=False, sheet_name='Datos Filtrados')
     processed_data = output.getvalue()
     return processed_data
@@ -530,7 +530,8 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                                     
                                     # Download button for the filtered document
                                     excel_data = BytesIO()
-                                    filtered_df.to_excel(excel_data, index=False)
+                                    with pd.ExcelWriter(excel_data, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                                        filtered_df.to_excel(writer, index=False)
                                     excel_data.seek(0)
                                     
                                     st.download_button(
@@ -2845,9 +2846,9 @@ with tab2:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False)
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8')
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv)
+                    zipf.writestr(arcname, csv.encode('utf-8'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4031,9 +4032,9 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False)
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8')
                     arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv)
+                    zipf.writestr(arcname, csv.encode('utf-8'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4243,8 +4244,8 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         # Add CSV file
-        csv_content = results_df.to_csv(index=False)
-        zipf.writestr(f"{filename_base}_results.csv", csv_content)
+        csv_content = results_df.to_csv(index=False, encoding='utf-8')
+        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('utf-8'))
         
         # Add summary report
         summary = f"""
