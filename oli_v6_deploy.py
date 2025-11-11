@@ -2423,7 +2423,6 @@ with tab2:
                     ],
                     max_completion_tokens=6500,
                     reasoning_effort="minimal",
-                    temperature=0.1,
                     timeout=120  # 2 minute timeout per request
                 )
 
@@ -2517,8 +2516,7 @@ with tab2:
                 ],
                 response_format={"type": "json_object"},
                 max_completion_tokens=6500,
-                reasoning_effort="minimal",
-                temperature=0.1
+                reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
             if not raw or not raw.strip():
@@ -2594,8 +2592,7 @@ with tab2:
                 ],
                 response_format={"type": "json_object"},
                 max_completion_tokens=6500,
-                reasoning_effort="minimal",
-                temperature=0.1
+                reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
             if not raw or not raw.strip():
@@ -3774,7 +3771,6 @@ with tab3:
                         ],
                         max_completion_tokens=6500,
                         reasoning_effort="minimal",
-                        temperature=0.1,
                         timeout=120  # 2 minute timeout per request
                     )
 
