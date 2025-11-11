@@ -2667,37 +2667,18 @@ with tab2:
                     df = extract_docx_structure(tmp_file.name)
                     progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
                     
-                    # Process with LLM
+                    # Extract sections directly (no LLM needed - text is already well-formatted)
                     header_1_values = df['header_1'].dropna().unique()
                     llm_summary_rows = []
-                    llm_progress = st.progress(0, text="Procesando secciones con LLM...")
-                    total_sections = len(header_1_values)
-                    
+                    progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
+
                     for idx, header in enumerate(header_1_values):
                         section_df = df[df['header_1'] == header].copy()
+                        # Extract text directly - already clean from extract_docx_structure
                         full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        
-                        if not full_text:
-                            llm_output = ""
-                        else:
-                            llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
-                            try:
-                                response = client.chat.completions.create(
-                                    model="gpt-5-mini",
-                                    messages=[
-                                        {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
-                                        {"role": "user", "content": full_text}
-                                    ],
-                                    max_completion_tokens=4096,
-                                    reasoning_effort="minimal"
-                                )
-                                llm_output = response.choices[0].message.content.strip()
-                            except Exception as e:
-                                llm_output = f"[LLM ERROR: {e}]"
-                        
-                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
-                    
-                    llm_progress.progress(1.0, text="LLM parsing completado.")
+                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
                     
                     # Create exploded dataframe
                     llm_summary_df = pd.DataFrame(llm_summary_rows)
@@ -3675,36 +3656,19 @@ with tab3:
                     df = extract_docx_structure(tmp_file.name)
                     
                     progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+
+                    # Extract sections directly (no LLM needed - text is already well-formatted)
                     header_1_values = df['header_1'].dropna().unique()
                     llm_summary_rows = []
-                    llm_progress = st.progress(0, text="Procesando secciones con LLM...")
-                    total_sections = len(header_1_values)
-                    
+                    progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
+
                     for idx, header in enumerate(header_1_values):
                         section_df = df[df['header_1'] == header].copy()
+                        # Extract text directly - already clean from extract_docx_structure
                         full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        
-                        if not full_text:
-                            llm_output = ""
-                        else:
-                            llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
-                            try:
-                                response = client.chat.completions.create(
-                                    model="gpt-5-mini",
-                                    messages=[
-                                        {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
-                                        {"role": "user", "content": full_text}
-                                    ],
-                                    max_completion_tokens=4096,
-                                    reasoning_effort="minimal"
-                                )
-                                llm_output = response.choices[0].message.content.strip()
-                            except Exception as e:
-                                llm_output = f"[LLM ERROR: {e}]"
-                        
-                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
-                    
-                    llm_progress.progress(1.0, text="LLM parsing completado.")
+                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
                     llm_summary_df = pd.DataFrame(llm_summary_rows)
                     llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
                     exploded_df = llm_summary_df.assign(
