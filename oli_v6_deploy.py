@@ -2413,13 +2413,15 @@ with tab2:
     Relevant document sections:
     {combined_text}
 
+    IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
+    
     Provide JSON with:
-    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+    {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
                 response = client.chat.completions.create(
                     model="gpt-5-mini",
                     messages=[
-                        {"role": "system", "content": "You are an expert document evaluator."},
+                        {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
                         {"role": "user", "content": prompt}
                     ],
                     max_completion_tokens=6500,
@@ -2846,9 +2848,9 @@ with tab2:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8')
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='latin-1')
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('utf-8'))
+                    zipf.writestr(arcname, csv.encode('latin-1'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -3761,13 +3763,15 @@ with tab3:
     Relevant document sections:
     {combined_text}
 
+    IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
+    
     Provide JSON with:
-    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+    {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
                     response = client.chat.completions.create(
                         model="gpt-5-mini",
                         messages=[
-                            {"role": "system", "content": "You are an expert document evaluator."},
+                            {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
                             {"role": "user", "content": prompt}
                         ],
                         max_completion_tokens=6500,
@@ -4032,9 +4036,9 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8')
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='latin-1')
                     arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('utf-8'))
+                    zipf.writestr(arcname, csv.encode('latin-1'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4244,8 +4248,8 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         # Add CSV file
-        csv_content = results_df.to_csv(index=False, encoding='utf-8')
-        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('utf-8'))
+        csv_content = results_df.to_csv(index=False, encoding='latin-1')
+        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('latin-1'))
         
         # Add summary report
         summary = f"""
