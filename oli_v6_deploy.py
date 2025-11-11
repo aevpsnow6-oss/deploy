@@ -3594,36 +3594,66 @@ with tab3:
     # Initialize session state for selections
     if 'selected_criteria_tab3' not in st.session_state:
         st.session_state['selected_criteria_tab3'] = []
+    if 'selected_dimensions_tab3' not in st.session_state:
+        st.session_state['selected_dimensions_tab3'] = []
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Criterios")
     
-    # Display the loaded rubric with selection
+    # Group criteria by dimension
+    criteria_by_dimension = {}
+    for criterion, data in prodoc_rubric.items():
+        dimension = data.get('dimension', 'No especificada')
+        if dimension not in criteria_by_dimension:
+            criteria_by_dimension[dimension] = []
+        criteria_by_dimension[dimension].append(criterion)
+    
+    # Display the loaded rubric with selection grouped by dimension
     with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
         st.subheader("Criterios de Evaluación PRODOC")
         
         # Select all checkbox
         select_all_tab3 = st.checkbox("Seleccionar todos los criterios", key='select_all_tab3')
         
-        # Show criteria checkboxes
         selected_criteria = []
-        for criterion, data in prodoc_rubric.items():
-            dimension = data.get('dimension', 'No especificada')
-            default_value = select_all_tab3 or criterion in st.session_state['selected_criteria_tab3']
+        
+        # Display criteria grouped by dimension
+        for dimension in sorted(criteria_by_dimension.keys()):
+            st.markdown(f"#### 📊 {dimension}")
             
-            is_selected = st.checkbox(
-                f"{criterion} (Dimensión: {dimension})",
-                value=default_value,
-                key=f"criterion_tab3_{criterion}"
+            # Checkbox to select entire dimension
+            dimension_key = f"dimension_tab3_{dimension}"
+            select_dimension = st.checkbox(
+                f"✅ Seleccionar toda la dimensión '{dimension}'",
+                value=select_all_tab3 or dimension in st.session_state.get('selected_dimensions_tab3', []),
+                key=dimension_key
             )
             
-            if is_selected:
-                selected_criteria.append(criterion)
+            # Show individual criteria within this dimension
+            with st.container():
+                for criterion in criteria_by_dimension[dimension]:
+                    # If dimension is selected, auto-select all its criteria
+                    default_value = select_all_tab3 or select_dimension or criterion in st.session_state['selected_criteria_tab3']
+                    
+                    is_selected = st.checkbox(
+                        f"  ↳ {criterion}",
+                        value=default_value,
+                        key=f"criterion_tab3_{criterion}",
+                        disabled=select_dimension  # Disable individual selection if dimension is selected
+                    )
+                    
+                    if is_selected or select_dimension:
+                        selected_criteria.append(criterion)
+            
+            st.markdown("---")  # Separator between dimensions
         
         # Update session state
         st.session_state['selected_criteria_tab3'] = selected_criteria
+        selected_dimensions = [dim for dim in criteria_by_dimension.keys() 
+                              if st.session_state.get(f"dimension_tab3_{dim}", False)]
+        st.session_state['selected_dimensions_tab3'] = selected_dimensions
         
-        st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(prodoc_rubric)}")
+        st.info(f"📌 Criterios seleccionados: {len(selected_criteria)}/{len(prodoc_rubric)} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
 
     # Document upload
     st.markdown("### Carga de Documento")
@@ -3710,6 +3740,88 @@ with tab3:
                     import traceback
                     st.error(traceback.format_exc())
                     st.stop()
+        
+        # Define the evaluation function for tab3 (same as tab1)
+        def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
+            """Analyze document against criterion with retry logic"""
+            import time
+
+            for attempt in range(max_retries):
+                try:
+                    # Use first 100,000 characters to capture full document context
+                    # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
+                    combined_text = document_text[:100000]
+
+                    # Now do the expensive analysis on focused content
+                    prompt = f"""Evaluate this document against: {criterion}
+
+    Scoring levels: {json.dumps(descriptions)}
+
+    Relevant document sections:
+    {combined_text}
+
+    Provide JSON with:
+    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+
+                    response = client.chat.completions.create(
+                        model="gpt-5-mini",
+                        messages=[
+                            {"role": "system", "content": "You are an expert document evaluator."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_completion_tokens=8000,
+                        reasoning_effort="minimal",
+                        timeout=120  # 2 minute timeout per request
+                    )
+
+                    content = response.choices[0].message.content.strip()
+                    # Remove markdown code fences if present
+                    if content.startswith('```'):
+                        # Remove opening fence (```json or ```)
+                        content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                        # Remove closing fence
+                        if content.endswith('```'):
+                            content = content.rsplit('```', 1)[0]
+                        content = content.strip()
+
+                    result = json.loads(content)
+                    # Normalize evidence field: convert array to string if needed
+                    if isinstance(result.get('evidence'), list):
+                        result['evidence'] = '\n'.join(result['evidence'])
+                    return result
+
+                except json.JSONDecodeError as e:
+                    # If JSON parsing fails, return a default structure
+                    return {
+                        "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
+                        "score": 3,
+                        "evidence": "Unable to parse structured response",
+                        "error": f"JSON parsing error: {str(e)}"
+                    }
+                except Exception as e:
+                    # Check if it's a rate limit error
+                    error_msg = str(e)
+                    if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
+                            time.sleep(wait_time)
+                            continue
+
+                    # If last attempt or non-rate-limit error, return error
+                    return {
+                        "analysis": f"Error during evaluation: {error_msg}",
+                        "score": 0,
+                        "evidence": "",
+                        "error": f"API error (attempt {attempt + 1}/{max_retries}): {error_msg}"
+                    }
+
+            # If we exhausted all retries
+            return {
+                "analysis": "Failed after multiple retry attempts",
+                "score": 0,
+                "evidence": "",
+                "error": f"Failed after {max_retries} attempts"
+            }
         
         # Evaluate with selected criteria
         document_text = st.session_state.get('prodoc_full_document_text_tab3', '')
@@ -3816,35 +3928,78 @@ with tab3:
                 for _, row in df.iterrows():
                     all_scores.append({
                         'Criterio': row['Criterio'],
+                        'Dimensión': row['Dimensión'],
                         'Puntuación': row['Score']
                     })
             
             scores_df = pd.DataFrame(all_scores)
             overall_avg = scores_df['Puntuación'].mean()
-            scores_df = scores_df.sort_values(by='Puntuación', ascending=False)
+            
+            # Visualization 1: Average Score by Dimension
+            st.markdown("#### 📊 Puntuación Promedio por Dimensión")
+            dimension_avg = scores_df.groupby('Dimensión')['Puntuación'].mean().reset_index()
+            dimension_avg = dimension_avg.sort_values(by='Puntuación', ascending=False)
+            
+            fig_dim = go.Figure()
+            fig_dim.add_trace(go.Bar(
+                x=dimension_avg['Dimensión'],
+                y=dimension_avg['Puntuación'],
+                text=dimension_avg['Puntuación'].round(2),
+                textposition='auto',
+                marker_color='#2ecc71',
+                name='Promedio por Dimensión'
+            ))
+            
+            fig_dim.add_trace(go.Scatter(
+                x=dimension_avg['Dimensión'],
+                y=[overall_avg] * len(dimension_avg),
+                mode='lines',
+                line=dict(color='red', width=2, dash='dash'),
+                name=f'Promedio General: {overall_avg:.2f}'
+            ))
+            
+            fig_dim.update_layout(
+                title='Puntuación Promedio por Dimensión',
+                xaxis_title='Dimensión',
+                yaxis_title='Puntuación Promedio',
+                yaxis=dict(range=[0, 5.5]),
+                height=500,
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                margin=dict(l=20, r=20, t=80, b=50),
+                hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+            )
+            
+            fig_dim.update_xaxes(tickangle=-45)
+            fig_dim.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+            
+            st.plotly_chart(fig_dim, use_container_width=True)
+            
+            # Visualization 2: Individual Criteria Scores
+            st.markdown("#### 📈 Puntuación por Criterio Individual")
+            scores_df_sorted = scores_df.sort_values(by='Puntuación', ascending=False)
             
             fig = go.Figure()
-            scores_df['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df))]
-            scores_df['Hover_Text'] = scores_df.apply(
-                lambda row: f"<b>{row['Criterio_ID']}</b><br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
+            scores_df_sorted['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df_sorted))]
+            scores_df_sorted['Hover_Text'] = scores_df_sorted.apply(
+                lambda row: f"<b>{row['Criterio_ID']}</b><br>Dimensión: {row['Dimensión']}<br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
                 axis=1
             )
             
             fig.add_trace(go.Bar(
-                y=scores_df['Criterio_ID'],
-                x=scores_df['Puntuación'],
-                text=scores_df['Puntuación'].round(2),
+                y=scores_df_sorted['Criterio_ID'],
+                x=scores_df_sorted['Puntuación'],
+                text=scores_df_sorted['Puntuación'].round(2),
                 textposition='auto',
                 marker_color='#3498db',
                 orientation='h',
                 name='Puntuación',
-                hovertext=scores_df['Hover_Text'],
+                hovertext=scores_df_sorted['Hover_Text'],
                 hoverinfo='text'
             ))
             
             fig.add_trace(go.Scatter(
-                y=scores_df['Criterio_ID'],
-                x=[overall_avg] * len(scores_df),
+                y=scores_df_sorted['Criterio_ID'],
+                x=[overall_avg] * len(scores_df_sorted),
                 mode='lines',
                 line=dict(color='red', width=2, dash='dash'),
                 name=f'Promedio General: {overall_avg:.2f}'
@@ -3855,7 +4010,7 @@ with tab3:
                 xaxis_title='Puntuación',
                 yaxis_title='',
                 xaxis=dict(range=[0, 5.5]),
-                height=max(400, len(scores_df) * 35),
+                height=max(400, len(scores_df_sorted) * 35),
                 width=800,
                 legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                 margin=dict(l=20, r=20, t=80, b=50),
