@@ -2848,9 +2848,9 @@ with tab2:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='latin-1')
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('latin-1'))
+                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4036,9 +4036,9 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='latin-1')
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
                     arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('latin-1'))
+                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4248,8 +4248,8 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         # Add CSV file
-        csv_content = results_df.to_csv(index=False, encoding='latin-1')
-        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('latin-1'))
+        csv_content = results_df.to_csv(index=False, encoding='utf-8-sig')
+        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('utf-8-sig'))
         
         # Add summary report
         summary = f"""
