@@ -3621,17 +3621,13 @@ with tab3:
     # Display the loaded rubric with selection grouped by dimension
     with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
         st.subheader("Criterios de Evaluación PRODOC")
-        st.text_area(
-            "Referencia rápida",
-            value=(
-                "Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que "
-                "favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, "
-                "bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, "
-                "transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para "
-                "ajustar estrategias y definir tempranamente el plan de sostenibilidad."
-            ),
-            key="prodoc_reference_text_tab3",
-            height=160
+        st.markdown(
+            """
+            <div class='reference-box'>
+            Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para ajustar estrategias y definir tempranamente el plan de sostenibilidad.
+            </div>
+            """,
+            unsafe_allow_html=True
         )
         
         # Select all checkbox
