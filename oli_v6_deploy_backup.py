@@ -24,7 +24,7 @@ import zipfile
 # --- Utility function for Excel export ---
 def to_excel(df):
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
         df.to_excel(writer, index=False, sheet_name='Datos Filtrados')
     processed_data = output.getvalue()
     return processed_data
@@ -530,7 +530,8 @@ def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
                                     
                                     # Download button for the filtered document
                                     excel_data = BytesIO()
-                                    filtered_df.to_excel(excel_data, index=False)
+                                    with pd.ExcelWriter(excel_data, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                                        filtered_df.to_excel(writer, index=False)
                                     excel_data.seek(0)
                                     
                                     st.download_button(
@@ -2156,11 +2157,19 @@ with tab2:
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Los criterios de Participación de Actores, Género y Transición Justa se aplican a un documento de proyecto. En cuanto a los criterios de "Desempeño del Proyecto" se deberán aplicar exclusivamente a informes de evaluación ya que se basan en la metodología de meta-análisis de la Oficina de Evaluación de la OIT. Finalmente, los criterios de Metodologías con Enfoque Participativo se aplican a informes de evaluación u otros tipos de documentos. 
-    
-    Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+    ¿Qué hace esta herramienta?:
+    Profundiza la Valoración Preliminar aplicando rúbricas OIT con niveles de desempeño (1–5) y evidencia trazable (citas y metadatos) sobre un documento .docx que subas. Extrae secciones clave, evalúa contra una matriz de criterios y genera un análisis narrativo por criterio.
+    Criterios disponibles y alcance
+    -	Metodologías con enfoque participativo → aplicar a informes de evaluación u otros documentos metodológicos.
 
-    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
+    -	Integración del enfoque de género → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.).
+
+    Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). Salida y descarga:  Puedes exportar a Excel: Criterio, Dimensión, Score (1-5), Análisis, Evidencia, Error, Rúbrica
+    Tras descargar los resultados, dejan de mostrarse en pantalla (¡Descárgalos antes de cambiar de pestaña!). 
+    Mensajes de error: Si faltan secciones, hay incoherencias o el criterio no corresponde al tipo de documento, se marcará en “Error” con una indicación para corregir.
+    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. 
+    Para qué usar este diagnóstico: revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
+
     """)
 
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2309,11 +2318,9 @@ with tab2:
     # Show rubric status
     st.success(f"""
     **ESTADO DE RÚBRICAS:**
-    - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
-    - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
-    - Metodologías con Enfoque Participativo: {len(parteval_rubric)} criterios
+    
+    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)”, 
     - Enfoque de Género: {len(gender_rubric)} criterios
-    - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
 
@@ -2331,11 +2338,11 @@ with tab2:
     
     # All available rubrics
     all_rubrics = {
-        "Participación de Actores (durante el proyecto)": engagement_rubric,
-        "Desempeño del proyecto (según informe de evaluación)": performance_rubric,
+        # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
+        # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
         "Participación durante la evaluación (metodología)": parteval_rubric,
         "Enfoque de Género": gender_rubric,
-        "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,
+        # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
         "Transición Justa: Enfoque Moderno": tj_just_transition_rubric
     }
 
@@ -2412,16 +2419,18 @@ with tab2:
     Relevant document sections:
     {combined_text}
 
+    IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
+    
     Provide JSON with:
-    {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+    {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
                 response = client.chat.completions.create(
                     model="gpt-5-mini",
                     messages=[
-                        {"role": "system", "content": "You are an expert document evaluator."},
+                        {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
                         {"role": "user", "content": prompt}
                     ],
-                    max_completion_tokens=8000,
+                    max_completion_tokens=6500,
                     reasoning_effort="minimal",
                     timeout=120  # 2 minute timeout per request
                 )
@@ -2515,7 +2524,7 @@ with tab2:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=8000,
+                max_completion_tokens=6500,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2591,7 +2600,7 @@ with tab2:
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=8000,
+                max_completion_tokens=6500,
                 reasoning_effort="minimal"
             )
             raw = response.choices[0].message.content
@@ -2845,9 +2854,9 @@ with tab2:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False)
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv)
+                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -3582,48 +3591,134 @@ with tab3:
     # Instrucciones generales
     st.info("""
     **Instrucciones:**
-    1. Seleccione la rúbrica y los criterios específicos que desea evaluar.
-    2. Seleccione las secciones adecuadas de evaluación según su documento (algunas secciones son relevantes a PRODOC y otras a documentos de evaluación).
-    3. Suba el archivo DOCX correspondiente.
-    4. Presione el botón de evaluación para analizar el documento.
-    5. Revise los resultados de cada rúbrica en las tablas interactivas.
-    6. Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
-    7. Descargue todos los resultados y evidencias en archivos ZIP.
+    1.	Seleccione la rúbrica y los criterios específicos que desea analizar.
+    2.	Seleccione las secciones adecuadas de diagnóstico según el documento cargado (algunos criterios son relevantes a Documentos de Proyecto y otras a informes de progreso).
+    3.	Suba el archivo en formato DOCX correspondiente.
+    4.	Presione el botón de Procesar y Analizar para analizar el documento.
+    5.	Revise los resultados de cada rúbrica en las tablas interactivas.
+    6.	Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
+    7.	Descargue todos los resultados y evidencias en archivos ZIP.
+
     """)
 
     # Initialize session state for selections
     if 'selected_criteria_tab3' not in st.session_state:
         st.session_state['selected_criteria_tab3'] = []
+    if 'selected_dimensions_tab3' not in st.session_state:
+        st.session_state['selected_dimensions_tab3'] = []
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Criterios")
     
-    # Display the loaded rubric with selection
+    # Group criteria by dimension
+    criteria_by_dimension = {}
+    for criterion, data in prodoc_rubric.items():
+        dimension = data.get('dimension', 'No especificada')
+        if dimension not in criteria_by_dimension:
+            criteria_by_dimension[dimension] = []
+        criteria_by_dimension[dimension].append(criterion)
+    
+    # Display the loaded rubric with selection grouped by dimension
     with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
         st.subheader("Criterios de Evaluación PRODOC")
+        st.markdown(
+            """
+            <div class='reference-box'>
+            Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para ajustar estrategias y definir tempranamente el plan de sostenibilidad.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         
         # Select all checkbox
         select_all_tab3 = st.checkbox("Seleccionar todos los criterios", key='select_all_tab3')
         
-        # Show criteria checkboxes
         selected_criteria = []
-        for criterion, data in prodoc_rubric.items():
-            dimension = data.get('dimension', 'No especificada')
-            default_value = select_all_tab3 or criterion in st.session_state['selected_criteria_tab3']
+        
+        # Display criteria grouped by dimension
+        dimension_descriptions = {
+            "Diseño": (
+                "Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que "
+                "favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, "
+                "bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, "
+                "transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para "
+                "ajustar estrategias y definir tempranamente el plan de sostenibilidad."
+            ),
+            "Implementación": (
+                "Contrasta avances reportados con los criterios de la Matriz de Criterios (capacidades desarrolladas, "
+                "alianzas, recursos movilizados, integración en políticas/planes, gestión del conocimiento, etc.) "
+                "para identificar riesgos, cuellos de botella y acciones de mitigación. Usa informes de progreso, actas, "
+                "convenios y otros documentos de ejecución; los resultados orientan ajustes y fortalecen la trazabilidad "
+                "de decisiones."
+            ),
+            "Evaluación": (
+                "Aplica una revisión ex post (idealmente en el último trimestre de un proyecto) para verificar qué "
+                "elementos efectivamente aseguran la continuidad de resultados y documentar lecciones. Si se aplica "
+                "antes del cierre, algunos puntajes serán referenciales (“lo esperado”); en todos los casos, el diagnóstico "
+                "alimenta el plan/estrategia de sostenibilidad y su seguimiento. Usa un informe de evaluación para "
+                "realizar este análisis."
+            )
+        }
+
+        st.markdown(
+            """
+            <style>
+            .reference-box {
+                border-left: 4px solid #4b8bf4;
+                background: linear-gradient(135deg, #f6f9ff, #eef3ff);
+                padding: 0.85rem 1rem;
+                border-radius: 8px;
+                font-size: 0.95rem;
+                color: #0f2138;
+                margin-bottom: 0.75rem;
+                box-shadow: 0 4px 14px rgba(15, 33, 56, 0.08);
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        for dimension in sorted(criteria_by_dimension.keys()):
+            st.markdown(f"#### 📊 {dimension}")
+            if dimension in dimension_descriptions:
+                st.markdown(
+                    f"<div class='reference-box'>{dimension_descriptions[dimension]}</div>",
+                    unsafe_allow_html=True
+                )
             
-            is_selected = st.checkbox(
-                f"{criterion} (Dimensión: {dimension})",
-                value=default_value,
-                key=f"criterion_tab3_{criterion}"
+            # Checkbox to select entire dimension
+            dimension_key = f"dimension_tab3_{dimension}"
+            select_dimension = st.checkbox(
+                f"✅ Seleccionar toda la dimensión '{dimension}'",
+                value=select_all_tab3 or dimension in st.session_state.get('selected_dimensions_tab3', []),
+                key=dimension_key
             )
             
-            if is_selected:
-                selected_criteria.append(criterion)
+            # Show individual criteria within this dimension
+            with st.container():
+                for criterion in criteria_by_dimension[dimension]:
+                    # If dimension is selected, auto-select all its criteria
+                    default_value = select_all_tab3 or select_dimension or criterion in st.session_state['selected_criteria_tab3']
+                    
+                    is_selected = st.checkbox(
+                        f"  ↳ {criterion}",
+                        value=default_value,
+                        key=f"criterion_tab3_{criterion}",
+                        disabled=select_dimension  # Disable individual selection if dimension is selected
+                    )
+                    
+                    if is_selected or select_dimension:
+                        selected_criteria.append(criterion)
+            
+            st.markdown("---")  # Separator between dimensions
         
         # Update session state
         st.session_state['selected_criteria_tab3'] = selected_criteria
+        selected_dimensions = [dim for dim in criteria_by_dimension.keys() 
+                              if st.session_state.get(f"dimension_tab3_{dim}", False)]
+        st.session_state['selected_dimensions_tab3'] = selected_dimensions
         
-        st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(prodoc_rubric)}")
+        st.info(f"📌 Criterios seleccionados: {len(selected_criteria)}/{len(prodoc_rubric)} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
 
     # Document upload
     st.markdown("### Carga de Documento")
@@ -3710,6 +3805,90 @@ with tab3:
                     import traceback
                     st.error(traceback.format_exc())
                     st.stop()
+        
+        # Define the evaluation function for tab3 (same as tab1)
+        def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
+            """Analyze document against criterion with retry logic"""
+            import time
+
+            for attempt in range(max_retries):
+                try:
+                    # Use first 100,000 characters to capture full document context
+                    # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
+                    combined_text = document_text[:100000]
+
+                    # Now do the expensive analysis on focused content
+                    prompt = f"""Evaluate this document against: {criterion}
+
+    Scoring levels: {json.dumps(descriptions)}
+
+    Relevant document sections:
+    {combined_text}
+
+    IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
+    
+    Provide JSON with:
+    {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+
+                    response = client.chat.completions.create(
+                        model="gpt-5-mini",
+                        messages=[
+                            {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_completion_tokens=6500,
+                        reasoning_effort="minimal",
+                        timeout=120  # 2 minute timeout per request
+                    )
+
+                    content = response.choices[0].message.content.strip()
+                    # Remove markdown code fences if present
+                    if content.startswith('```'):
+                        # Remove opening fence (```json or ```)
+                        content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                        # Remove closing fence
+                        if content.endswith('```'):
+                            content = content.rsplit('```', 1)[0]
+                        content = content.strip()
+
+                    result = json.loads(content)
+                    # Normalize evidence field: convert array to string if needed
+                    if isinstance(result.get('evidence'), list):
+                        result['evidence'] = '\n'.join(result['evidence'])
+                    return result
+
+                except json.JSONDecodeError as e:
+                    # If JSON parsing fails, return a default structure
+                    return {
+                        "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
+                        "score": 3,
+                        "evidence": "Unable to parse structured response",
+                        "error": f"JSON parsing error: {str(e)}"
+                    }
+                except Exception as e:
+                    # Check if it's a rate limit error
+                    error_msg = str(e)
+                    if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
+                            time.sleep(wait_time)
+                            continue
+
+                    # If last attempt or non-rate-limit error, return error
+                    return {
+                        "analysis": f"Error during evaluation: {error_msg}",
+                        "score": 0,
+                        "evidence": "",
+                        "error": f"API error (attempt {attempt + 1}/{max_retries}): {error_msg}"
+                    }
+
+            # If we exhausted all retries
+            return {
+                "analysis": "Failed after multiple retry attempts",
+                "score": 0,
+                "evidence": "",
+                "error": f"Failed after {max_retries} attempts"
+            }
         
         # Evaluate with selected criteria
         document_text = st.session_state.get('prodoc_full_document_text_tab3', '')
@@ -3816,35 +3995,78 @@ with tab3:
                 for _, row in df.iterrows():
                     all_scores.append({
                         'Criterio': row['Criterio'],
+                        'Dimensión': row['Dimensión'],
                         'Puntuación': row['Score']
                     })
             
             scores_df = pd.DataFrame(all_scores)
             overall_avg = scores_df['Puntuación'].mean()
-            scores_df = scores_df.sort_values(by='Puntuación', ascending=False)
+            
+            # Visualization 1: Average Score by Dimension
+            st.markdown("#### 📊 Puntuación Promedio por Dimensión")
+            dimension_avg = scores_df.groupby('Dimensión')['Puntuación'].mean().reset_index()
+            dimension_avg = dimension_avg.sort_values(by='Puntuación', ascending=False)
+            
+            fig_dim = go.Figure()
+            fig_dim.add_trace(go.Bar(
+                x=dimension_avg['Dimensión'],
+                y=dimension_avg['Puntuación'],
+                text=dimension_avg['Puntuación'].round(2),
+                textposition='auto',
+                marker_color='#2ecc71',
+                name='Promedio por Dimensión'
+            ))
+            
+            fig_dim.add_trace(go.Scatter(
+                x=dimension_avg['Dimensión'],
+                y=[overall_avg] * len(dimension_avg),
+                mode='lines',
+                line=dict(color='red', width=2, dash='dash'),
+                name=f'Promedio General: {overall_avg:.2f}'
+            ))
+            
+            fig_dim.update_layout(
+                title='Puntuación Promedio por Dimensión',
+                xaxis_title='Dimensión',
+                yaxis_title='Puntuación Promedio',
+                yaxis=dict(range=[0, 5.5]),
+                height=500,
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                margin=dict(l=20, r=20, t=80, b=50),
+                hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+            )
+            
+            fig_dim.update_xaxes(tickangle=-45)
+            fig_dim.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+            
+            st.plotly_chart(fig_dim, use_container_width=True)
+            
+            # Visualization 2: Individual Criteria Scores
+            st.markdown("#### 📈 Puntuación por Criterio Individual")
+            scores_df_sorted = scores_df.sort_values(by='Puntuación', ascending=False)
             
             fig = go.Figure()
-            scores_df['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df))]
-            scores_df['Hover_Text'] = scores_df.apply(
-                lambda row: f"<b>{row['Criterio_ID']}</b><br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
+            scores_df_sorted['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df_sorted))]
+            scores_df_sorted['Hover_Text'] = scores_df_sorted.apply(
+                lambda row: f"<b>{row['Criterio_ID']}</b><br>Dimensión: {row['Dimensión']}<br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
                 axis=1
             )
             
             fig.add_trace(go.Bar(
-                y=scores_df['Criterio_ID'],
-                x=scores_df['Puntuación'],
-                text=scores_df['Puntuación'].round(2),
+                y=scores_df_sorted['Criterio_ID'],
+                x=scores_df_sorted['Puntuación'],
+                text=scores_df_sorted['Puntuación'].round(2),
                 textposition='auto',
                 marker_color='#3498db',
                 orientation='h',
                 name='Puntuación',
-                hovertext=scores_df['Hover_Text'],
+                hovertext=scores_df_sorted['Hover_Text'],
                 hoverinfo='text'
             ))
             
             fig.add_trace(go.Scatter(
-                y=scores_df['Criterio_ID'],
-                x=[overall_avg] * len(scores_df),
+                y=scores_df_sorted['Criterio_ID'],
+                x=[overall_avg] * len(scores_df_sorted),
                 mode='lines',
                 line=dict(color='red', width=2, dash='dash'),
                 name=f'Promedio General: {overall_avg:.2f}'
@@ -3855,7 +4077,7 @@ with tab3:
                 xaxis_title='Puntuación',
                 yaxis_title='',
                 xaxis=dict(range=[0, 5.5]),
-                height=max(400, len(scores_df) * 35),
+                height=max(400, len(scores_df_sorted) * 35),
                 width=800,
                 legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                 margin=dict(l=20, r=20, t=80, b=50),
@@ -3876,9 +4098,9 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False)
+                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
                     arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv)
+                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4088,8 +4310,8 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         # Add CSV file
-        csv_content = results_df.to_csv(index=False)
-        zipf.writestr(f"{filename_base}_results.csv", csv_content)
+        csv_content = results_df.to_csv(index=False, encoding='utf-8-sig')
+        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('utf-8-sig'))
         
         # Add summary report
         summary = f"""
@@ -4132,7 +4354,7 @@ with tab1:
     st.markdown("""
     ### Instrucciones
     
-    1. **Subir documento**: Selecciona un archivo DOCX para el análisis de valoración preliminar de calidad
+    1. **Subir documento**: Selecciona un Documento de Diseño de Proyecto en archivo de formato DOCX para el análisis de valoración preliminar de calidad.
     2. **Procesar**: Haz clic en 'Analizar documento' para iniciar la evaluación
     3. **Revisar resultados**: Examina los resultados del análisis en la tabla interactiva
     4. **Descargar**: Obtén todos los resultados y las pruebas en un archivo ZIP
