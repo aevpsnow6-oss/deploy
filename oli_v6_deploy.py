@@ -3591,13 +3591,14 @@ with tab3:
     # Instrucciones generales
     st.info("""
     **Instrucciones:**
-    1. Seleccione la rúbrica y los criterios específicos que desea evaluar.
-    2. Seleccione las secciones adecuadas de evaluación según su documento (algunas secciones son relevantes a PRODOC y otras a documentos de evaluación).
-    3. Suba el archivo DOCX correspondiente.
-    4. Presione el botón de evaluación para analizar el documento.
-    5. Revise los resultados de cada rúbrica en las tablas interactivas.
-    6. Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
-    7. Descargue todos los resultados y evidencias en archivos ZIP.
+    1.	Seleccione la rúbrica y los criterios específicos que desea analizar.
+    2.	Seleccione las secciones adecuadas de diagnóstico según el documento cargado (algunos criterios son relevantes a Documentos de Proyecto y otras a informes de progreso).
+    3.	Suba el archivo en formato DOCX correspondiente.
+    4.	Presione el botón de Procesar y Analizar para analizar el documento.
+    5.	Revise los resultados de cada rúbrica en las tablas interactivas.
+    6.	Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
+    7.	Descargue todos los resultados y evidencias en archivos ZIP.
+
     """)
 
     # Initialize session state for selections
@@ -3620,6 +3621,18 @@ with tab3:
     # Display the loaded rubric with selection grouped by dimension
     with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
         st.subheader("Criterios de Evaluación PRODOC")
+        st.text_area(
+            "Referencia rápida",
+            value=(
+                "Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que "
+                "favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, "
+                "bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, "
+                "transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para "
+                "ajustar estrategias y definir tempranamente el plan de sostenibilidad."
+            ),
+            key="prodoc_reference_text_tab3",
+            height=160
+        )
         
         # Select all checkbox
         select_all_tab3 = st.checkbox("Seleccionar todos los criterios", key='select_all_tab3')
@@ -3627,8 +3640,39 @@ with tab3:
         selected_criteria = []
         
         # Display criteria grouped by dimension
+        dimension_descriptions = {
+            "Diseño": (
+                "Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que "
+                "favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, "
+                "bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, "
+                "transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para "
+                "ajustar estrategias y definir tempranamente el plan de sostenibilidad."
+            ),
+            "Implementación": (
+                "Contrasta avances reportados con los criterios de la Matriz de Criterios (capacidades desarrolladas, "
+                "alianzas, recursos movilizados, integración en políticas/planes, gestión del conocimiento, etc.) "
+                "para identificar riesgos, cuellos de botella y acciones de mitigación. Usa informes de progreso, actas, "
+                "convenios y otros documentos de ejecución; los resultados orientan ajustes y fortalecen la trazabilidad "
+                "de decisiones."
+            ),
+            "Evaluación": (
+                "Aplica una revisión ex post (idealmente en el último trimestre de un proyecto) para verificar qué "
+                "elementos efectivamente aseguran la continuidad de resultados y documentar lecciones. Si se aplica "
+                "antes del cierre, algunos puntajes serán referenciales (“lo esperado”); en todos los casos, el diagnóstico "
+                "alimenta el plan/estrategia de sostenibilidad y su seguimiento. Usa un informe de evaluación para "
+                "realizar este análisis."
+            )
+        }
+
         for dimension in sorted(criteria_by_dimension.keys()):
             st.markdown(f"#### 📊 {dimension}")
+            if dimension in dimension_descriptions:
+                st.text_area(
+                    f"Referencia para {dimension}",
+                    value=dimension_descriptions[dimension],
+                    key=f"dimension_description_{dimension}",
+                    height=120
+                )
             
             # Checkbox to select entire dimension
             dimension_key = f"dimension_tab3_{dimension}"
