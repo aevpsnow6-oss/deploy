@@ -2157,11 +2157,19 @@ with tab2:
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Los criterios de Participación de Actores, Género y Transición Justa se aplican a un documento de proyecto. En cuanto a los criterios de "Desempeño del Proyecto" se deberán aplicar exclusivamente a informes de evaluación ya que se basan en la metodología de meta-análisis de la Oficina de Evaluación de la OIT. Finalmente, los criterios de Metodologías con Enfoque Participativo se aplican a informes de evaluación u otros tipos de documentos. 
-    
-    Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+    ¿Qué hace esta herramienta?:
+    Profundiza la Valoración Preliminar aplicando rúbricas OIT con niveles de desempeño (1–5) y evidencia trazable (citas y metadatos) sobre un documento .docx que subas. Extrae secciones clave, evalúa contra una matriz de criterios y genera un análisis narrativo por criterio.
+    Criterios disponibles y alcance
+    -	Metodologías con enfoque participativo → aplicar a informes de evaluación u otros documentos metodológicos.
 
-    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
+    -	Integración del enfoque de género → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.).
+
+    Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). Salida y descarga:  Puedes exportar a Excel: Criterio, Dimensión, Score (1-5), Análisis, Evidencia, Error, Rúbrica
+    Tras descargar los resultados, dejan de mostrarse en pantalla (¡Descárgalos antes de cambiar de pestaña!). 
+    Mensajes de error: Si faltan secciones, hay incoherencias o el criterio no corresponde al tipo de documento, se marcará en “Error” con una indicación para corregir.
+    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. 
+    Para qué usar este diagnóstico: revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
+
     """)
 
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2311,7 +2319,7 @@ with tab2:
     st.success(f"""
     **ESTADO DE RÚBRICAS:**
     
-    - Metodologías con Enfoque Participativo: {len(parteval_rubric)} criterios
+    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)”, 
     - Enfoque de Género: {len(gender_rubric)} criterios
     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
@@ -4290,7 +4298,7 @@ with tab1:
     st.markdown("""
     ### Instrucciones
     
-    1. **Subir documento**: Selecciona un archivo DOCX para el análisis de valoración preliminar de calidad
+    1. **Subir documento**: Selecciona un Documento de Diseño de Proyecto en archivo de formato DOCX para el análisis de valoración preliminar de calidad.
     2. **Procesar**: Haz clic en 'Analizar documento' para iniciar la evaluación
     3. **Revisar resultados**: Examina los resultados del análisis en la tabla interactiva
     4. **Descargar**: Obtén todos los resultados y las pruebas en un archivo ZIP
