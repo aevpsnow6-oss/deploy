@@ -3664,14 +3664,30 @@ with tab3:
             )
         }
 
+        st.markdown(
+            """
+            <style>
+            .reference-box {
+                border-left: 4px solid #4b8bf4;
+                background: linear-gradient(135deg, #f6f9ff, #eef3ff);
+                padding: 0.85rem 1rem;
+                border-radius: 8px;
+                font-size: 0.95rem;
+                color: #0f2138;
+                margin-bottom: 0.75rem;
+                box-shadow: 0 4px 14px rgba(15, 33, 56, 0.08);
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
         for dimension in sorted(criteria_by_dimension.keys()):
             st.markdown(f"#### 📊 {dimension}")
             if dimension in dimension_descriptions:
-                st.text_area(
-                    f"Referencia para {dimension}",
-                    value=dimension_descriptions[dimension],
-                    key=f"dimension_description_{dimension}",
-                    height=120
+                st.markdown(
+                    f"<div class='reference-box'>{dimension_descriptions[dimension]}</div>",
+                    unsafe_allow_html=True
                 )
             
             # Checkbox to select entire dimension
