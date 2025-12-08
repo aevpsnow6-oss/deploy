@@ -5075,22 +5075,23 @@ with tab5:
                 # Dimension treemap
                 st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
     
-                # Clean and prepare dimension data
+                # Clean and prepare dimension data - use a copy to preserve filtered_df for KPI consistency
                 import numpy as np
-                filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({
+                treemap_df = filtered_df.copy()
+                treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.strip().str.lower().replace({
                     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
                 })
-                filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
-                filtered_df = filtered_df[filtered_df['dimension'].notna()]
-    
-                filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
+                treemap_df['dimension'] = treemap_df['dimension'].replace({'process': 'Process'})
+                treemap_df = treemap_df[treemap_df['dimension'].notna()]
+
+                treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
                     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
                 })
-                filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
-                filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
-    
+                treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
+                treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
+
                 # Count recommendations by dimension
-                dimension_counts = filtered_df.groupby('dimension').agg({
+                dimension_counts = treemap_df.groupby('dimension').agg({
                     'index_df': 'nunique'
                 }).reset_index()
     
@@ -5130,20 +5131,20 @@ with tab5:
                 )
                 st.plotly_chart(fig3, use_container_width=True)
     
-                # Subdimension treemap
+                # Subdimension treemap - use treemap_df which was already cleaned above
                 # Harmonize process/processes before plotting subdimensions
-                filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-    
+                treemap_df['dimension'] = treemap_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+
                 # Remove 'Sin Clasificar' from both dimension and subdimension
-                filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
-                filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
-    
+                treemap_df = treemap_df[treemap_df['dimension'].str.lower() != 'sin clasificar']
+                treemap_df = treemap_df[treemap_df['subdim'].str.lower() != 'sin clasificar']
+
                 # Capitalize dimension and subdimension labels
-                filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
-                filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
-    
+                treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.title()
+                treemap_df['subdim'] = treemap_df['subdim'].astype(str).str.title()
+
                 # Count by subdimension
-                subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
+                subdimension_counts = treemap_df.groupby(['dimension', 'subdim']).agg({
                     'index_df': 'nunique'
                 }).reset_index()
     
