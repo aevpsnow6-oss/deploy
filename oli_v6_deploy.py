@@ -3040,9 +3040,13 @@ with tab2:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
-                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
+                    # Export as XLSX instead of CSV
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
             zip_buffer.seek(0)
             
             st.download_button(
@@ -3788,12 +3792,12 @@ with tab3:
                 'sort_key': extract_sort_key(indicador)
             }
         
-        # Debug: show dimension breakdown
+        # Show dimension breakdown
         dim_counts = {}
         for ind, data in prodoc_rubric.items():
             dim = data.get('dimension', 'N/A')
             dim_counts[dim] = dim_counts.get(dim, 0) + 1
-        st.success(f"Rúbrica cargada correctamente: {len(prodoc_rubric)} indicadores. Desglose por dimensión: {dim_counts}")
+        st.success(f"Rúbrica cargada: {len(prodoc_rubric)} indicadores en {len(dim_counts)} dimensiones.")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
@@ -3840,11 +3844,6 @@ with tab3:
     for dimension in criteria_by_dimension:
         for criterio in criteria_by_dimension[dimension]:
             criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[2])
-    
-    # Debug: show grouped structure
-    st.write("**DEBUG - Estructura agrupada:**")
-    for dim, criterios in criteria_by_dimension.items():
-        st.write(f"- {dim}: {len(criterios)} criterios, {sum(len(inds) for inds in criterios.values())} indicadores")
     
     # Define dimension order
     dimension_order = ['Diseño', 'Implementación', 'Evaluación']
@@ -4155,31 +4154,40 @@ with tab3:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 8
         
-        def eval_one_criterion(args):
-            crit, descriptions, dimension, rubric_name = args
+        # Define dimension order for sorting
+        dimension_order_map = {'Diseño': 0, 'Implementación': 1, 'Evaluación': 2}
+        
+        def eval_one_criterion_tab3(args):
+            unique_key, descriptions, dimension, criterio_text, indicador_text, sort_key, rubric_name = args
             try:
-                result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                result = evaluate_criterion_with_llm(document_text, indicador_text, descriptions)
                 # Ensure result is a dictionary
                 if not isinstance(result, dict):
                     result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
                 return {
-                    'Criterio': crit,
                     'Dimensión': dimension,
+                    'Criterio': criterio_text,
+                    'Indicador': indicador_text,
                     'Score': result.get('score', 0),
                     'Análisis': str(result.get('analysis', '')),
                     'Evidencia': str(result.get('evidence', '')),
                     'Error': str(result.get('error', '')) if 'error' in result else '',
-                    'Rúbrica': rubric_name
+                    'Rúbrica': rubric_name,
+                    '_dim_order': dimension_order_map.get(dimension, 99),
+                    '_sort_key': sort_key
                 }
             except Exception as e:
                 return {
-                    'Criterio': crit,
                     'Dimensión': dimension,
+                    'Criterio': criterio_text,
+                    'Indicador': indicador_text,
                     'Score': 0,
                     'Análisis': '',
                     'Evidencia': '',
                     'Error': str(e),
-                    'Rúbrica': rubric_name
+                    'Rúbrica': rubric_name,
+                    '_dim_order': dimension_order_map.get(dimension, 99),
+                    '_sort_key': sort_key
                 }
         
         for rubric_name, rubric_dict in rubrics:
@@ -4190,13 +4198,16 @@ with tab3:
             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
-                        executor.submit(eval_one_criterion, (
-                            crit,
+                        executor.submit(eval_one_criterion_tab3, (
+                            unique_key,
                             rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
                             rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                            rubric_data.get('criterio', '') if isinstance(rubric_data, dict) else '',
+                            rubric_data.get('indicador', unique_key) if isinstance(rubric_data, dict) else unique_key,
+                            rubric_data.get('sort_key', (999, 999, 999)) if isinstance(rubric_data, dict) else (999, 999, 999),
                             rubric_name
-                        )): (crit, idx)
-                        for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+                        )): (unique_key, idx)
+                        for idx, (unique_key, rubric_data) in enumerate(rubric_dict.items())
                     }
                     
                     completed = 0
@@ -4204,10 +4215,15 @@ with tab3:
                         result = future.result()
                         rubric_analysis_data.append(result)
                         completed += 1
-                        crit, idx = futures[future]
-                        progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+                        unique_key, idx = futures[future]
+                        progress.progress(completed / n_criteria, text=f"Evaluando indicador...")
             
-            rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+            # Create DataFrame and sort by dimension order and sort_key
+            df_result = pd.DataFrame(rubric_analysis_data)
+            if not df_result.empty:
+                df_result = df_result.sort_values(by=['_dim_order', '_sort_key'])
+                df_result = df_result.drop(columns=['_dim_order', '_sort_key'], errors='ignore')
+            rubric_results.append((rubric_name, df_result))
         
         # Show and allow download of results
         if rubric_results:
@@ -4218,7 +4234,7 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = ''
 
                     cols = rubric_analysis_df.columns.tolist()
-                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    desired_order = ['Dimensión', 'Criterio', 'Indicador', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
                     new_order = [col for col in desired_order if col in cols]
                     remaining_cols = [col for col in cols if col not in desired_order]
                     final_order = new_order + remaining_cols
@@ -4240,7 +4256,8 @@ with tab3:
             for rubric_name, df in rubric_results:
                 for _, row in df.iterrows():
                     all_scores.append({
-                        'Criterio': row['Criterio'],
+                        'Indicador': row.get('Indicador', row.get('Criterio', '')),
+                        'Criterio': row.get('Criterio', ''),
                         'Dimensión': row['Dimensión'],
                         'Puntuación': row['Score']
                     })
@@ -4335,7 +4352,7 @@ with tab3:
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Download ZIP
+            # Download ZIP with XLSX files
             import io, zipfile
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zipf:
@@ -4344,9 +4361,13 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
-                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
+                    # Export as XLSX instead of CSV
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4555,9 +4576,12 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
     zip_buffer = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        # Add CSV file
-        csv_content = results_df.to_csv(index=False, encoding='utf-8-sig')
-        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('utf-8-sig'))
+        # Add XLSX file instead of CSV
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+            results_df.to_excel(writer, index=False, sheet_name='Resultados')
+        excel_buffer.seek(0)
+        zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
         
         # Add summary report
         summary = f"""
