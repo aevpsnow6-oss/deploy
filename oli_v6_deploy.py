@@ -3732,8 +3732,9 @@ with tab3:
     
     try:
         # Load rubric from PRODOC_rubric.xlsx
-        df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
-        
+        # df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', sheet_name='rubric')
+
         # Check if 'Indicador' column exists
         if 'Indicador' not in df_rubric_prodoc.columns:
             st.error("La columna 'Indicador' no existe en el archivo Excel.")
