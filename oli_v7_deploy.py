@@ -1737,7 +1737,7 @@ def load_lessons_embeddings():
     
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
-                                         "Acercamiento a Valoración de Calidad de Proyectos",
+                                         "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
                                          "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción"])
@@ -2337,25 +2337,26 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 
 # Tab 2: Revisión por criterios con trazabilidad
 with tab2:
-    st.header("Acercamiento a Valoración de Calidad de Proyectos")
+    st.header("Diagnóstico de Atributos Específicos")
 
     # Descriptive text box
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    ¿Qué hace esta herramienta?:
+    **¿Qué hace esta herramienta?:**
     Profundiza la Valoración Preliminar aplicando rúbricas OIT con niveles de desempeño (1–5) y evidencia trazable (citas y metadatos) sobre un documento .docx que subas. Extrae secciones clave, evalúa contra una matriz de criterios y genera un análisis narrativo por criterio.
     Criterios disponibles y alcance
     -	Metodologías con enfoque participativo → aplicar a informes de evaluación u otros documentos metodológicos.
 
     -	Integración del enfoque de género → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.).
 
-    Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). Salida y descarga:  Puedes exportar a Excel: Criterio, Dimensión, Score (1-5), Análisis, Evidencia, Error, Rúbrica
-    Tras descargar los resultados, dejan de mostrarse en pantalla (¡Descárgalos antes de cambiar de pestaña!). 
-    Mensajes de error: Si faltan secciones, hay incoherencias o el criterio no corresponde al tipo de documento, se marcará en “Error” con una indicación para corregir.
-    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. 
-    Para qué usar este diagnóstico: revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
-
+    -   Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). 
+   
+    Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste.
+    
+    **¿Para qué usar este diagnóstico?**
+    Este diagnóstico en formato EXCEL sirve para **revisar propuestas**, **verificar aspectos puntuales** de informes de evaluación o de ejecución, **comprobar coherencia** con P&B, DWCP y marcos UNSDCF, **elaborar notas técnicas con sustento** y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
 
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2505,10 +2506,24 @@ with tab2:
     st.success(f"""
     **ESTADO DE RÚBRICAS:**
     
-    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)”, 
-    - Enfoque de Género: {len(gender_rubric)} criterios
-    - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
+    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)", 
+    - Integración del Enfoque de Género: {len(gender_rubric)} criterios
+    - Integración del Enfoque de Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
+
+    # Download button for the rubric file
+    with st.expander("📥 Descargar archivo de rúbricas"):
+        try:
+            with open('./Rubricas_6ago2025.xlsx', 'rb') as f:
+                st.download_button(
+                    label="📥 Descargar archivo de rúbricas (Rubricas_6ago2025.xlsx)",
+                    data=f,
+                    file_name="Rubricas_6ago2025.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_rubricas_tab2"
+                )
+        except FileNotFoundError:
+            st.warning("Archivo de rúbricas no disponible para descarga.")
 
     # Document upload
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
@@ -2527,9 +2542,9 @@ with tab2:
         # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
         # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
         "Participación durante la evaluación (metodología)": parteval_rubric,
-        "Enfoque de Género": gender_rubric,
+        "Integración del Enfoque de Género": gender_rubric,
         # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
-        "Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
     }
 
     # Step 1: Select Rubrics
@@ -3798,6 +3813,20 @@ with tab3:
             dim = data.get('dimension', 'N/A')
             dim_counts[dim] = dim_counts.get(dim, 0) + 1
         st.success(f"Rúbrica cargada: {len(prodoc_rubric)} indicadores en {len(dim_counts)} dimensiones.")
+        
+        # Download button for the rubric file
+        with st.expander("📥 Descargar archivo de rúbrica de sostenibilidad"):
+            try:
+                with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
+                    st.download_button(
+                        label="📥 Descargar archivo de rúbrica (Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx)",
+                        data=f,
+                        file_name="Evaluacion_sostenibilidad_rubric.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_sostenibilidad_rubric"
+                    )
+            except FileNotFoundError:
+                st.warning("Archivo de rúbrica no disponible para descarga.")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
@@ -4617,6 +4646,20 @@ with tab1:
             st.subheader("Preguntas de la lista de verificación preliminar de calidad (Preguntas del APPRAISAL CHECKLIST) ")
             for _, row in df_appraisal.iterrows():
                 st.markdown(f"{row['Pregunta_Realizada']}")
+            
+            # Download button for the rubric file
+            st.markdown("---")
+            try:
+                with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
+                    st.download_button(
+                        label="📥 Descargar archivo de criterios (APPRAISAL_rubric.xlsx)",
+                        data=f,
+                        file_name="APPRAISAL_rubric.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_appraisal_rubric"
+                    )
+            except FileNotFoundError:
+                st.warning("Archivo de rúbrica no disponible para descarga.")
         else:
             st.warning("No se han cargado preguntas")
     
