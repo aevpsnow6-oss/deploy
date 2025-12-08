@@ -3735,31 +3735,41 @@ with tab3:
         # df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
         df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', sheet_name='rubric')
 
-        # Check if 'Indicador' column exists
-        if 'Indicador' not in df_rubric_prodoc.columns:
-            st.error("La columna 'Indicador' no existe en el archivo Excel.")
-            if len(df_rubric_prodoc.columns) > 0:
-                indicador_col = df_rubric_prodoc.columns[0]
-                st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
-                df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
-            else:
-                prodoc_rubric = {}
-                st.error("No se pudo encontrar una columna para los criterios.")
+        # Verify required columns exist
+        required_cols = ['Dimensión', 'Criterio', 'Indicador']
+        missing_cols = [col for col in required_cols if col not in df_rubric_prodoc.columns]
+        if missing_cols:
+            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")
+            st.info(f"Columnas disponibles: {list(df_rubric_prodoc.columns)}")
+        
+        # Helper function to extract numeric prefix for sorting (e.g., "1.1" -> (1, 1), "2.3" -> (2, 3))
+        def extract_sort_key(text):
+            import re
+            if pd.isna(text):
+                return (999, 999, 999)
+            text = str(text).strip()
+            # Match patterns like "1.", "1.1", "1.1.", "(3.1)", etc.
+            match = re.match(r'[\(]?(\d+)(?:\.(\d+))?(?:\.(\d+))?', text)
+            if match:
+                parts = [int(p) if p else 0 for p in match.groups()]
+                return tuple(parts)
+            return (999, 999, 999)
         
         # Process each row to extract criteria and values
         for idx, row in df_rubric_prodoc.iterrows():
-            indicador = row['Indicador']
+            indicador = row.get('Indicador', '')
+            criterio = row.get('Criterio', '')
+            dimension = row.get('Dimensión', 'No especificada')
             
             if pd.isna(indicador) or str(indicador).strip() == '':
                 continue
             
             indicador = str(indicador).strip()
+            criterio = str(criterio).strip() if not pd.isna(criterio) else ''
+            dimension = str(dimension).strip() if not pd.isna(dimension) else 'No especificada'
             
-            # Get dimension if exists
-            dimension = row.get('Dimensión', 'No especificada') if 'Dimensión' in df_rubric_prodoc.columns else 'No especificada'
-            
-            # Get level columns
-            level_cols = [col for col in df_rubric_prodoc.columns if col.startswith('Nivel')]
+            # Get level columns (Nivel 1, Nivel 2, etc.)
+            level_cols = sorted([col for col in df_rubric_prodoc.columns if col.startswith('Nivel')])
             
             valores = []
             for col in level_cols:
@@ -3767,9 +3777,15 @@ with tab3:
                 if not pd.isna(val) and str(val).strip() != '':
                     valores.append(str(val).strip())
             
-            prodoc_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+            # Store with indicador as key, including criterio and dimension info
+            prodoc_rubric[indicador] = {
+                'valores': valores, 
+                'dimension': dimension,
+                'criterio': criterio,
+                'sort_key': extract_sort_key(indicador)
+            }
         
-        st.success(f"Rúbrica cargada correctamente desde PRODOC_rubric.xlsx: {len(prodoc_rubric)} criterios cargados.")
+        st.success(f"Rúbrica cargada correctamente: {len(prodoc_rubric)} indicadores en {len(set(d['dimension'] for d in prodoc_rubric.values()))} dimensiones.")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
@@ -3797,13 +3813,33 @@ with tab3:
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Criterios")
     
-    # Group criteria by dimension
+    # Group indicadores by dimension and criterio, maintaining order
+    # Structure: {dimension: {criterio: [indicadores sorted by sort_key]}}
     criteria_by_dimension = {}
-    for criterion, data in prodoc_rubric.items():
+    for indicador, data in prodoc_rubric.items():
         dimension = data.get('dimension', 'No especificada')
+        criterio = data.get('criterio', 'Sin criterio')
+        sort_key = data.get('sort_key', (999, 999, 999))
+        
         if dimension not in criteria_by_dimension:
-            criteria_by_dimension[dimension] = []
-        criteria_by_dimension[dimension].append(criterion)
+            criteria_by_dimension[dimension] = {}
+        if criterio not in criteria_by_dimension[dimension]:
+            criteria_by_dimension[dimension][criterio] = []
+        criteria_by_dimension[dimension][criterio].append((indicador, sort_key))
+    
+    # Sort indicadores within each criterio by their numeric prefix
+    for dimension in criteria_by_dimension:
+        for criterio in criteria_by_dimension[dimension]:
+            criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[1])
+    
+    # Define dimension order
+    dimension_order = ['Diseño', 'Implementación', 'Evaluación']
+    
+    # Helper to extract criterio number for sorting (e.g., "1. Participación..." -> 1)
+    def get_criterio_order(criterio_name):
+        import re
+        match = re.match(r'(\d+)\.', criterio_name)
+        return int(match.group(1)) if match else 999
     
     # Display the loaded rubric with selection grouped by dimension
     with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
@@ -3849,7 +3885,13 @@ with tab3:
 
         # Note: .reference-box styles are defined in the global ILO styles section
 
-        for dimension in sorted(criteria_by_dimension.keys()):
+        # Sort dimensions according to defined order
+        sorted_dimensions = sorted(
+            criteria_by_dimension.keys(), 
+            key=lambda d: dimension_order.index(d) if d in dimension_order else 999
+        )
+        
+        for dimension in sorted_dimensions:
             st.markdown(f"#### 📊 {dimension}")
             if dimension in dimension_descriptions:
                 st.markdown(
@@ -3865,21 +3907,32 @@ with tab3:
                 key=dimension_key
             )
             
-            # Show individual criteria within this dimension
+            # Get criterios for this dimension, sorted by their number
+            criterios_in_dimension = criteria_by_dimension[dimension]
+            sorted_criterios = sorted(criterios_in_dimension.keys(), key=get_criterio_order)
+            
+            # Show criterios and their indicadores within this dimension
             with st.container():
-                for criterion in criteria_by_dimension[dimension]:
-                    # If dimension is selected, auto-select all its criteria
-                    default_value = select_all_tab3 or select_dimension or criterion in st.session_state['selected_criteria_tab3']
+                for criterio in sorted_criterios:
+                    # Display criterio header
+                    st.markdown(f"**{criterio}**")
                     
-                    is_selected = st.checkbox(
-                        f"  ↳ {criterion}",
-                        value=default_value,
-                        key=f"criterion_tab3_{criterion}",
-                        disabled=select_dimension  # Disable individual selection if dimension is selected
-                    )
+                    # Get sorted indicadores for this criterio
+                    indicadores = [ind[0] for ind in criterios_in_dimension[criterio]]
                     
-                    if is_selected or select_dimension:
-                        selected_criteria.append(criterion)
+                    for indicador in indicadores:
+                        # If dimension is selected, auto-select all its indicadores
+                        default_value = select_all_tab3 or select_dimension or indicador in st.session_state['selected_criteria_tab3']
+                        
+                        is_selected = st.checkbox(
+                            f"  ↳ {indicador}",
+                            value=default_value,
+                            key=f"criterion_tab3_{indicador}",
+                            disabled=select_dimension  # Disable individual selection if dimension is selected
+                        )
+                        
+                        if is_selected or select_dimension:
+                            selected_criteria.append(indicador)
             
             st.markdown("---")  # Separator between dimensions
         
@@ -3889,7 +3942,14 @@ with tab3:
                               if st.session_state.get(f"dimension_tab3_{dim}", False)]
         st.session_state['selected_dimensions_tab3'] = selected_dimensions
         
-        st.info(f"📌 Criterios seleccionados: {len(selected_criteria)}/{len(prodoc_rubric)} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
+        # Count total indicadores
+        total_indicadores = sum(
+            len(indicadores) 
+            for criterios in criteria_by_dimension.values() 
+            for indicadores in criterios.values()
+        )
+        
+        st.info(f"📌 Indicadores seleccionados: {len(selected_criteria)}/{total_indicadores} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
 
     # Document upload
     st.markdown("### Carga de Documento")
