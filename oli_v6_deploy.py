@@ -2356,7 +2356,7 @@ with tab2:
     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste.
     
     **¿Para qué usar este diagnóstico?**
-    Este diagnóstico en formato EXCEL sirve para revisar propuestas, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
+    Este diagnóstico en formato EXCEL sirve para **revisar propuestas**, **verificar aspectos puntuales** de informes de evaluación o de ejecución, **comprobar coherencia** con P&B, DWCP y marcos UNSDCF, **elaborar notas técnicas con sustento** y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
 
     # Read rubrics from Excel files as in megaparse_example.py
