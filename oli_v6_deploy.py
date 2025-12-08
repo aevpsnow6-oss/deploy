@@ -2343,7 +2343,7 @@ with tab2:
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    ¿Qué hace esta herramienta?:
+    **¿Qué hace esta herramienta?:**
     Profundiza la Valoración Preliminar aplicando rúbricas OIT con niveles de desempeño (1–5) y evidencia trazable (citas y metadatos) sobre un documento .docx que subas. Extrae secciones clave, evalúa contra una matriz de criterios y genera un análisis narrativo por criterio.
     Criterios disponibles y alcance
     -	Metodologías con enfoque participativo → aplicar a informes de evaluación u otros documentos metodológicos.
@@ -2355,7 +2355,7 @@ with tab2:
     Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste.
     
-    ¿Para qué usar este diagnóstico?
+    **¿Para qué usar este diagnóstico?**
     Este diagnóstico en formato EXCEL sirve para revisar propuestas, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
 
