@@ -3777,11 +3777,14 @@ with tab3:
                 if not pd.isna(val) and str(val).strip() != '':
                     valores.append(str(val).strip())
             
-            # Store with indicador as key, including criterio and dimension info
-            prodoc_rubric[indicador] = {
+            # Store with unique key (dimension + indicador) to avoid overwrites
+            # since same indicador text can appear in different dimensions
+            unique_key = f"{dimension}|{indicador}"
+            prodoc_rubric[unique_key] = {
                 'valores': valores, 
                 'dimension': dimension,
                 'criterio': criterio,
+                'indicador': indicador,  # Keep original indicador text for display
                 'sort_key': extract_sort_key(indicador)
             }
         
@@ -3819,23 +3822,24 @@ with tab3:
     st.markdown("### Selección de Criterios")
     
     # Group indicadores by dimension and criterio, maintaining order
-    # Structure: {dimension: {criterio: [indicadores sorted by sort_key]}}
+    # Structure: {dimension: {criterio: [(unique_key, indicador_text, sort_key)]}}
     criteria_by_dimension = {}
-    for indicador, data in prodoc_rubric.items():
+    for unique_key, data in prodoc_rubric.items():
         dimension = data.get('dimension', 'No especificada')
         criterio = data.get('criterio', 'Sin criterio')
+        indicador_text = data.get('indicador', unique_key)  # Use indicador text for display
         sort_key = data.get('sort_key', (999, 999, 999))
         
         if dimension not in criteria_by_dimension:
             criteria_by_dimension[dimension] = {}
         if criterio not in criteria_by_dimension[dimension]:
             criteria_by_dimension[dimension][criterio] = []
-        criteria_by_dimension[dimension][criterio].append((indicador, sort_key))
+        criteria_by_dimension[dimension][criterio].append((unique_key, indicador_text, sort_key))
     
-    # Sort indicadores within each criterio by their numeric prefix
+    # Sort indicadores within each criterio by their numeric prefix (sort_key is index 2)
     for dimension in criteria_by_dimension:
         for criterio in criteria_by_dimension[dimension]:
-            criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[1])
+            criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[2])
     
     # Debug: show grouped structure
     st.write("**DEBUG - Estructura agrupada:**")
@@ -3928,21 +3932,22 @@ with tab3:
                     st.markdown(f"**{criterio}**")
                     
                     # Get sorted indicadores for this criterio
-                    indicadores = [ind[0] for ind in criterios_in_dimension[criterio]]
+                    # Each item is (unique_key, indicador_text, sort_key)
+                    indicadores_data = criterios_in_dimension[criterio]
                     
-                    for indicador in indicadores:
+                    for unique_key, indicador_text, sort_key in indicadores_data:
                         # If dimension is selected, auto-select all its indicadores
-                        default_value = select_all_tab3 or select_dimension or indicador in st.session_state['selected_criteria_tab3']
+                        default_value = select_all_tab3 or select_dimension or unique_key in st.session_state['selected_criteria_tab3']
                         
                         is_selected = st.checkbox(
-                            f"  ↳ {indicador}",
+                            f"  ↳ {indicador_text}",
                             value=default_value,
-                            key=f"criterion_tab3_{indicador}",
+                            key=f"criterion_tab3_{unique_key}",
                             disabled=select_dimension  # Disable individual selection if dimension is selected
                         )
                         
                         if is_selected or select_dimension:
-                            selected_criteria.append(indicador)
+                            selected_criteria.append(unique_key)
             
             st.markdown("---")  # Separator between dimensions
         
