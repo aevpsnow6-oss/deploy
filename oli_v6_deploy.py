@@ -3794,7 +3794,7 @@ with tab3:
     # Instrucciones generales
     st.info("""
     **Instrucciones:**
-    1.	Seleccione la rúbrica y los criterios específicos que desea analizar.
+    1.	Seleccione la rúbrica y los criterios específicos que desea analiza.
     2.	Seleccione las secciones adecuadas de diagnóstico según el documento cargado (algunos criterios son relevantes a Documentos de Proyecto y otras a informes de progreso).
     3.	Suba el archivo en formato DOCX correspondiente.
     4.	Presione el botón de Procesar y Analizar para analizar el documento.
