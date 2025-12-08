@@ -2354,11 +2354,9 @@ with tab2:
    
     Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste.
-    Este diagnóstico en formato EXCEL sirve para revisar propuestas, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
     
     ¿Para qué usar este diagnóstico?
-    Revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
-
+    Este diagnóstico en formato EXCEL sirve para revisar propuestas, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
 
     # Read rubrics from Excel files as in megaparse_example.py
