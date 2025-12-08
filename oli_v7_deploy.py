@@ -2515,7 +2515,7 @@ with tab2:
     try:
         with open('./Rubricas_6ago2025.xlsx', 'rb') as f:
             st.download_button(
-                label="📥 Descargar archivo de rúbricas (Rubricas_6ago2025.xlsx)",
+                label="📥 Descargar archivo rúbrica de Atributos específicos",
                 data=f,
                 file_name="Rubricas_6ago2025.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2527,11 +2527,13 @@ with tab2:
     # Document upload
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
 
-    # Initialize session state for selections
+    # Initialize session state for selections and results persistence
     if 'selected_rubrics_tab2' not in st.session_state:
         st.session_state['selected_rubrics_tab2'] = []
     if 'selected_criteria_tab2' not in st.session_state:
         st.session_state['selected_criteria_tab2'] = {}
+    if 'tab2_results' not in st.session_state:
+        st.session_state['tab2_results'] = None
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Rúbricas y Criterios")
@@ -3021,6 +3023,9 @@ with tab2:
             
             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
         
+        # Store results in session state for persistence
+        st.session_state['tab2_results'] = rubric_results
+        
         # Display results
         if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
@@ -3072,7 +3077,65 @@ with tab2:
         else:
             st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
-        st.info("Suba un documento, seleccione rúbricas y criterios, luego presione 'Procesar y Evaluar'.")
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab2_results') is not None:
+            rubric_results = st.session_state['tab2_results']
+            
+            st.markdown("### 📊 Resultados guardados")
+            
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip",
+                key="tab2_download_persisted"
+            )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab2_results"):
+                st.session_state['tab2_results'] = None
+                st.rerun()
+        else:
+            st.info("Suba un documento, seleccione rúbricas y criterios, luego presione 'Procesar y Evaluar'.")
 
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
@@ -3817,7 +3880,7 @@ with tab3:
         try:
             with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
                 st.download_button(
-                    label="📥 Descargar archivo de rúbrica (Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx)",
+                    label="📥 Descargar archivo rúbrica de Sostenibilidad del proyecto",
                     data=f,
                     file_name="Evaluacion_sostenibilidad_rubric.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3843,11 +3906,13 @@ with tab3:
 
     """)
 
-    # Initialize session state for selections
+    # Initialize session state for selections and results persistence
     if 'selected_criteria_tab3' not in st.session_state:
         st.session_state['selected_criteria_tab3'] = []
     if 'selected_dimensions_tab3' not in st.session_state:
         st.session_state['selected_dimensions_tab3'] = []
+    if 'tab3_results' not in st.session_state:
+        st.session_state['tab3_results'] = None
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Criterios")
@@ -4252,6 +4317,9 @@ with tab3:
                 df_result = df_result.drop(columns=['_dim_order', '_sort_key'], errors='ignore')
             rubric_results.append((rubric_name, df_result))
         
+        # Store results in session state for persistence
+        st.session_state['tab3_results'] = rubric_results
+        
         # Show and allow download of results
         if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
@@ -4407,7 +4475,121 @@ with tab3:
         else:
             st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
-        st.info("Seleccione criterios, suba un documento y presione 'Procesar y Evaluar'.")
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab3_results') is not None:
+            rubric_results = st.session_state['tab3_results']
+            
+            st.markdown("### 📊 Resultados guardados")
+            
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Dimensión', 'Criterio', 'Indicador', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Create visualizations for the results
+            st.markdown("### Visualización de Resultados")
+            
+            all_scores = []
+            for rubric_name, df in rubric_results:
+                for _, row in df.iterrows():
+                    all_scores.append({
+                        'Indicador': row.get('Indicador', row.get('Criterio', '')),
+                        'Criterio': row.get('Criterio', ''),
+                        'Dimensión': row['Dimensión'],
+                        'Puntuación': row['Score']
+                    })
+            
+            if all_scores:
+                scores_df = pd.DataFrame(all_scores)
+                overall_avg = scores_df['Puntuación'].mean()
+                
+                # Visualization: Average Score by Dimension
+                st.markdown("#### 📊 Puntuación Promedio por Dimensión")
+                dimension_avg = scores_df.groupby('Dimensión')['Puntuación'].mean().reset_index()
+                dimension_avg = dimension_avg.sort_values(by='Puntuación', ascending=False)
+                
+                fig_dim = go.Figure()
+                fig_dim.add_trace(go.Bar(
+                    x=dimension_avg['Dimensión'],
+                    y=dimension_avg['Puntuación'],
+                    text=dimension_avg['Puntuación'].round(2),
+                    textposition='auto',
+                    marker_color='#002F6C',
+                    name='Promedio por Dimensión'
+                ))
+                
+                fig_dim.add_trace(go.Scatter(
+                    x=dimension_avg['Dimensión'],
+                    y=[overall_avg] * len(dimension_avg),
+                    mode='lines',
+                    line=dict(color='#C8102E', width=2, dash='dash'),
+                    name=f'Promedio General: {overall_avg:.2f}'
+                ))
+                
+                fig_dim.update_layout(
+                    title='Puntuación Promedio por Dimensión',
+                    xaxis_title='Dimensión',
+                    yaxis_title='Puntuación Promedio',
+                    yaxis=dict(range=[0, 5.5]),
+                    height=500,
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=20, r=20, t=80, b=50),
+                    hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+                )
+                
+                fig_dim.update_xaxes(tickangle=-45)
+                fig_dim.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+                
+                st.plotly_chart(fig_dim, use_container_width=True)
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_evaluacion_prodoc.zip",
+                mime="application/zip",
+                key="prodoc_download_button_tab3_persisted"
+            )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab3_results"):
+                st.session_state['tab3_results'] = None
+                st.rerun()
+        else:
+            st.info("Seleccione criterios, suba un documento y presione 'Procesar y Evaluar'.")
 
 # ================== TAB 7: APPRAISAL CHECKLIST (IMPROVED) =====================
 # Configuration
@@ -4642,7 +4824,7 @@ with tab1:
     try:
         with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
             st.download_button(
-                label="📥 Descargar archivo de criterios (APPRAISAL_rubric.xlsx)",
+                label="📥 Descargar archivo rúbrica de Valoración preliminar",
                 data=f,
                 file_name="APPRAISAL_rubric.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4664,6 +4846,12 @@ with tab1:
     """)
     
   
+    # Initialize session state for Tab 1 results persistence
+    if 'tab1_results_df' not in st.session_state:
+        st.session_state['tab1_results_df'] = None
+    if 'tab1_doc_stats' not in st.session_state:
+        st.session_state['tab1_doc_stats'] = None
+
   # Sección de carga y procesamiento de archivo
     st.subheader("📄 Carga de documento")
     uploaded_file = st.file_uploader(
@@ -4735,8 +4923,13 @@ with tab1:
                 progress_bar.progress(progress)
                 status_text.text(f"Analizadas {completed}/{len(questions)} preguntas")
         
-        # Create results DataFrame
+        # Create results DataFrame and store in session state
         results_df = pd.DataFrame(results)
+        st.session_state['tab1_results_df'] = results_df
+        st.session_state['tab1_doc_stats'] = {
+            'file_size': doc_result['file_size'],
+            'word_count': doc_result['word_count']
+        }
         
         # Display results
         st.markdown("### 📊 Resultados del análisis")
@@ -4800,10 +4993,85 @@ with tab1:
             st.warning("⚠️ No hay resultados para descargar.")
     
     else:
-        if uploaded_file:
-            st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la valoración preliminar de calidad.")
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab1_results_df') is not None:
+            results_df = st.session_state['tab1_results_df']
+            doc_stats = st.session_state.get('tab1_doc_stats', {})
+            
+            # Display persisted results
+            st.markdown("### 📊 Resultados del análisis (guardados)")
+            
+            if doc_stats:
+                st.info(f"""
+                **Resumen del documento analizado:**
+                - Tamaño del archivo: {doc_stats.get('file_size', 0)/1024:.2f} KB
+                - Número de palabras: {doc_stats.get('word_count', 0):,}
+                """)
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total de preguntas", len(results_df))
+            with col2:
+                success_count = len(results_df[results_df['Status'] == 'Success'])
+                st.metric("Exitosas", success_count)
+            with col3:
+                error_count = len(results_df[results_df['Status'] == 'Error'])
+                st.metric("Errores", error_count)
+            with col4:
+                if success_count > 0:
+                    yes_count = len(results_df[results_df['Respuesta'] == 'Yes'])
+                    st.metric("Respuestas 'Sí'", yes_count)
+            
+            # Results table
+            st.markdown("#### 📋 Resultados detallados")
+            
+            # Filter options
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                response_filter = st.selectbox(
+                    "Filtrar por respuesta:",
+                    ['Todas'] + results_df['Respuesta'].unique().tolist(),
+                    key="response_filter_persisted"
+                )
+            
+            # Apply filter
+            filtered_df = results_df.copy()
+            if response_filter != 'Todas':
+                filtered_df = filtered_df[filtered_df['Respuesta'] == response_filter]
+            
+            # Display filtered results
+            st.dataframe(
+                filtered_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia']], 
+                use_container_width=True,
+                height=400
+            )
+            
+            # Download section
+            st.markdown("### 📥 Descargar resultados")
+            
+            if len(results_df) > 0:
+                zip_buffer = create_results_download(results_df)
+                
+                st.download_button(
+                    label="📦 Descargar resultados en ZIP",
+                    data=zip_buffer,
+                    file_name="appraisal_checklist_results.zip",
+                    mime="application/zip",
+                    key="appraisal_download_button_persisted"
+                )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab1_results"):
+                st.session_state['tab1_results_df'] = None
+                st.session_state['tab1_doc_stats'] = None
+                st.rerun()
         else:
-            st.info("📁 Por favor sube un archivo DOCX para comenzar.")
+            if uploaded_file:
+                st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la valoración preliminar de calidad.")
+            else:
+                st.info("📁 Por favor sube un archivo DOCX para comenzar.")
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
@@ -5217,3 +5485,4 @@ with tab5:
                 st.warning("No hay datos disponibles para los filtros seleccionados.")
         else:
             st.warning("No hay datos disponibles para los filtros seleccionados.")
+
