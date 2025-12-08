@@ -2528,9 +2528,9 @@ with tab2:
         # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
         # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
         "Participación durante la evaluación (metodología)": parteval_rubric,
-        "Enfoque de Género": gender_rubric,
+        "Integración del Enfoque de Género": gender_rubric,
         # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
-        "Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
     }
 
     # Step 1: Select Rubrics
