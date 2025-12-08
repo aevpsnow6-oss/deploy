@@ -1737,7 +1737,7 @@ def load_lessons_embeddings():
     
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
-                                         "Acercamiento a Valoración de Calidad de Proyectos",
+                                         "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
                                          "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción"])
@@ -2337,7 +2337,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 
 # Tab 2: Revisión por criterios con trazabilidad
 with tab2:
-    st.header("Acercamiento a Valoración de Calidad de Proyectos")
+    st.header("Diagnóstico de Atributos Específicos")
 
     # Descriptive text box
     st.info("""
@@ -2350,11 +2350,12 @@ with tab2:
 
     -	Integración del enfoque de género → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.).
 
-    Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). Salida y descarga:  Puedes exportar a Excel: Criterio, Dimensión, Score (1-5), Análisis, Evidencia, Error, Rúbrica
-    Tras descargar los resultados, dejan de mostrarse en pantalla (¡Descárgalos antes de cambiar de pestaña!). 
-    Mensajes de error: Si faltan secciones, hay incoherencias o el criterio no corresponde al tipo de documento, se marcará en “Error” con una indicación para corregir.
-    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. 
-    Para qué usar este diagnóstico: revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
+    -   Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). 
+    -   Salida y descarga:  Puedes exportar a Excel: Criterio, Dimensión, Score (1-5), Análisis, Evidencia, Error, Rúbrica
+    -   Tras descargar los resultados, dejan de mostrarse en pantalla (¡Descárgalos antes de cambiar de pestaña!). 
+    -   Mensajes de error: Si faltan secciones, hay incoherencias o el criterio no corresponde al tipo de documento, se marcará en “Error” con una indicación para corregir.
+    -   Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. 
+    -   Para qué usar este diagnóstico: revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
 
     """)
 
