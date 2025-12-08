@@ -3785,7 +3785,12 @@ with tab3:
                 'sort_key': extract_sort_key(indicador)
             }
         
-        st.success(f"Rúbrica cargada correctamente: {len(prodoc_rubric)} indicadores en {len(set(d['dimension'] for d in prodoc_rubric.values()))} dimensiones.")
+        # Debug: show dimension breakdown
+        dim_counts = {}
+        for ind, data in prodoc_rubric.items():
+            dim = data.get('dimension', 'N/A')
+            dim_counts[dim] = dim_counts.get(dim, 0) + 1
+        st.success(f"Rúbrica cargada correctamente: {len(prodoc_rubric)} indicadores. Desglose por dimensión: {dim_counts}")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
@@ -3794,7 +3799,7 @@ with tab3:
     # Instrucciones generales
     st.info("""
     **Instrucciones:**
-    1.	Seleccione la rúbrica y los criterios específicos que desea analiza.
+    1.	Seleccione la rúbrica y los criterios específicos que desea analizar.
     2.	Seleccione las secciones adecuadas de diagnóstico según el documento cargado (algunos criterios son relevantes a Documentos de Proyecto y otras a informes de progreso).
     3.	Suba el archivo en formato DOCX correspondiente.
     4.	Presione el botón de Procesar y Analizar para analizar el documento.
@@ -3831,6 +3836,11 @@ with tab3:
     for dimension in criteria_by_dimension:
         for criterio in criteria_by_dimension[dimension]:
             criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[1])
+    
+    # Debug: show grouped structure
+    st.write("**DEBUG - Estructura agrupada:**")
+    for dim, criterios in criteria_by_dimension.items():
+        st.write(f"- {dim}: {len(criterios)} criterios, {sum(len(inds) for inds in criterios.values())} indicadores")
     
     # Define dimension order
     dimension_order = ['Diseño', 'Implementación', 'Evaluación']
