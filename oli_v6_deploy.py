@@ -3777,9 +3777,9 @@ with tab3:
                 if not pd.isna(val) and str(val).strip() != '':
                     valores.append(str(val).strip())
             
-            # Store with unique key (dimension + indicador) to avoid overwrites
-            # since same indicador text can appear in different dimensions
-            unique_key = f"{dimension}|{indicador}"
+            # Store with unique key (dimension + criterio + indicador) to avoid overwrites
+            # since same criterio and indicador text can appear in different dimensions
+            unique_key = f"{dimension}|{criterio}|{indicador}"
             prodoc_rubric[unique_key] = {
                 'valores': valores, 
                 'dimension': dimension,
