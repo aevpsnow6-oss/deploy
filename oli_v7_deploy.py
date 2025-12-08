@@ -2511,19 +2511,18 @@ with tab2:
     - Integración del Enfoque de Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
 
-    # Download button for the rubric file
-    with st.expander("📥 Descargar archivo de rúbricas"):
-        try:
-            with open('./Rubricas_6ago2025.xlsx', 'rb') as f:
-                st.download_button(
-                    label="📥 Descargar archivo de rúbricas (Rubricas_6ago2025.xlsx)",
-                    data=f,
-                    file_name="Rubricas_6ago2025.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_rubricas_tab2"
-                )
-        except FileNotFoundError:
-            st.warning("Archivo de rúbricas no disponible para descarga.")
+    # Download button for the rubric file (directly on page, no expander)
+    try:
+        with open('./Rubricas_6ago2025.xlsx', 'rb') as f:
+            st.download_button(
+                label="📥 Descargar archivo de rúbricas (Rubricas_6ago2025.xlsx)",
+                data=f,
+                file_name="Rubricas_6ago2025.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_rubricas_tab2"
+            )
+    except FileNotFoundError:
+        st.warning("Archivo de rúbricas no disponible para descarga.")
 
     # Document upload
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
@@ -3814,19 +3813,18 @@ with tab3:
             dim_counts[dim] = dim_counts.get(dim, 0) + 1
         st.success(f"Rúbrica cargada: {len(prodoc_rubric)} indicadores en {len(dim_counts)} dimensiones.")
         
-        # Download button for the rubric file
-        with st.expander("📥 Descargar archivo de rúbrica de sostenibilidad"):
-            try:
-                with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
-                    st.download_button(
-                        label="📥 Descargar archivo de rúbrica (Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx)",
-                        data=f,
-                        file_name="Evaluacion_sostenibilidad_rubric.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="download_sostenibilidad_rubric"
-                    )
-            except FileNotFoundError:
-                st.warning("Archivo de rúbrica no disponible para descarga.")
+        # Download button for the rubric file (directly on page, no expander)
+        try:
+            with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
+                st.download_button(
+                    label="📥 Descargar archivo de rúbrica (Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx)",
+                    data=f,
+                    file_name="Evaluacion_sostenibilidad_rubric.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_sostenibilidad_rubric"
+                )
+        except FileNotFoundError:
+            st.warning("Archivo de rúbrica no disponible para descarga.")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
@@ -4640,28 +4638,18 @@ with tab1:
         st.error(error_msg)
         st.stop()
     
-    # Display loaded questions
-    with st.expander("📝 Ver preguntas cargadas"):
-        if df_appraisal is not None:
-            st.subheader("Preguntas de la lista de verificación preliminar de calidad (Preguntas del APPRAISAL CHECKLIST) ")
-            for _, row in df_appraisal.iterrows():
-                st.markdown(f"{row['Pregunta_Realizada']}")
-            
-            # Download button for the rubric file
-            st.markdown("---")
-            try:
-                with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
-                    st.download_button(
-                        label="📥 Descargar archivo de criterios (APPRAISAL_rubric.xlsx)",
-                        data=f,
-                        file_name="APPRAISAL_rubric.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="download_appraisal_rubric"
-                    )
-            except FileNotFoundError:
-                st.warning("Archivo de rúbrica no disponible para descarga.")
-        else:
-            st.warning("No se han cargado preguntas")
+    # Download button for the rubric file (directly on page, no expander)
+    try:
+        with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
+            st.download_button(
+                label="📥 Descargar archivo de criterios (APPRAISAL_rubric.xlsx)",
+                data=f,
+                file_name="APPRAISAL_rubric.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_appraisal_rubric"
+            )
+    except FileNotFoundError:
+        st.warning("Archivo de rúbrica no disponible para descarga.")
     
     # Instrucciones
     st.markdown("""
