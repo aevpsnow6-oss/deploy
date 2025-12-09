@@ -5383,11 +5383,11 @@ with tab5:
                 treemap_df['dimension'] = treemap_df['dimension'].replace({'process': 'Process'})
                 treemap_df = treemap_df[treemap_df['dimension'].notna()]
 
-                treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
-                    'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-                })
-                treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
-                treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
+                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
+                #     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+                # })
+                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
+                # treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
 
                 # Count recommendations by dimension
                 dimension_counts = treemap_df.groupby('dimension').agg({
