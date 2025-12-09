@@ -5374,9 +5374,9 @@ with tab5:
                 # Dimension treemap
                 st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
     
-                # Clean and prepare dimension data - use a copy to preserve filtered_df for KPI consistency
+                # Clean and prepare dimension data - use the same unique rows used for KPIs
                 import numpy as np
-                treemap_df = filtered_df.copy()
+                treemap_df = filtered_df_unique.copy()
                 treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.strip().str.lower().replace({
                     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
                 })
