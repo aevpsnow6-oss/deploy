@@ -4786,6 +4786,12 @@ def extract_section_number(question_text):
     match = re.match(r'(\d+)\.', str(question_text).strip())
     return int(match.group(1)) if match else None
 
+def extract_subsection_number(question_text):
+    """Extract full section.subsection from question text (e.g., '1.1 ¿Pregunta?' -> '1.1', '2.3 ¿Pregunta?' -> '2.3')"""
+    import re
+    match = re.match(r'(\d+\.\d+)', str(question_text).strip())
+    return match.group(1) if match else None
+
 def synthesize_section_analysis(section_num, section_questions_df, document_text):
     """Synthesize section-level analysis from subsection questions and answers"""
     try:
@@ -4889,6 +4895,7 @@ def create_results_download_with_sections(results_df, section_analyses, filename
             
             # Extract unique sections from results
             results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
+            results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
             sections = sorted(results_df['_section'].dropna().unique())
             
             current_row = 0
@@ -4896,41 +4903,43 @@ def create_results_download_with_sections(results_df, section_analyses, filename
             for section_num in sections:
                 section_num = int(section_num)
                 section_df = results_df[results_df['_section'] == section_num].copy()
-                questions_in_section = section_df[['Pregunta', 'Respuesta', 'Razonamiento']].values.tolist()
+                questions_in_section = section_df[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento']].values.tolist()
                 
                 # Section header
                 sheet_sections.write(current_row, 0, f"Sección {section_num}", section_header_format)
-                sheet_sections.merge_range(current_row, 0, current_row, 3, f"Sección {section_num}", section_header_format)
+                sheet_sections.merge_range(current_row, 0, current_row, 4, f"Sección {section_num}", section_header_format)
                 current_row += 1
                 
                 # Column headers for this section
-                headers = ['Pregunta', 'Respuesta', 'Razonamiento']
+                headers = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento']
                 for col_num, header in enumerate(headers):
                     sheet_sections.write(current_row, col_num, header, header_format)
                 current_row += 1
                 
                 # Write subsection Q&A rows
-                for question, response, reasoning in questions_in_section:
-                    sheet_sections.write(current_row, 0, question, normal_format)
-                    sheet_sections.write(current_row, 1, response, normal_format)
-                    sheet_sections.write(current_row, 2, reasoning, normal_format)
+                for subsection, question, response, reasoning in questions_in_section:
+                    sheet_sections.write(current_row, 0, subsection if subsection else '', normal_format)
+                    sheet_sections.write(current_row, 1, question, normal_format)
+                    sheet_sections.write(current_row, 2, response, normal_format)
+                    sheet_sections.write(current_row, 3, reasoning, normal_format)
                     current_row += 1
                 
                 # Write section analysis (merged row)
                 section_analysis_text = section_analyses.get(section_num, "No se generó análisis")
                 sheet_sections.write(current_row, 0, "Análisis de Sección:", section_header_format)
                 sheet_sections.merge_range(
-                    current_row, 1, current_row, 3,
+                    current_row, 1, current_row, 4,
                     section_analysis_text,
                     merged_format
                 )
                 current_row += 2  # Space between sections
             
             # Set column widths for readability
-            sheet_sections.set_column('A:A', 20)  # Pregunta
-            sheet_sections.set_column('B:B', 15)  # Respuesta
-            sheet_sections.set_column('C:C', 40)  # Razonamiento
-            sheet_sections.set_column('D:D', 40)  # Analysis
+            sheet_sections.set_column('A:A', 12)  # Subsección
+            sheet_sections.set_column('B:B', 25)  # Pregunta
+            sheet_sections.set_column('C:C', 15)  # Respuesta
+            sheet_sections.set_column('D:D', 40)  # Razonamiento
+            sheet_sections.set_column('E:E', 50)  # Analysis (for merged cells)
             
             writer.sheets['Detallado'].set_column('A:A', 20)
             writer.sheets['Detallado'].set_column('B:B', 15)
