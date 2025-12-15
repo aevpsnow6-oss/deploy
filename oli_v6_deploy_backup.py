@@ -1424,10 +1424,196 @@ def summarize_text(text, prompt_template):
 
 # Set page config
 st.set_page_config(layout="wide")
+
+# ============= ILO GLOBAL STYLES =============
+# ILO Color Palette: Red (#C8102E), Blue (#002F6C), White (#FFFFFF)
+# Secondary: Light Blue (#0072CE), Light Gray (#F5F5F5)
 st.markdown("""
-    <h2 style='text-align:center; color:#3498db; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos</h3>
-    <h3 style='text-align:center; color:#3498db; margin-top:0;'>Usando Evidencia de las Evaluaciones</h3>
-    <hr style='border-top: 2px solid #3498db;'>
+<style>
+/* ===== ILO Color Variables ===== */
+:root {
+    --ilo-red: #C8102E;
+    --ilo-blue: #002F6C;
+    --ilo-light-blue: #0072CE;
+    --ilo-white: #FFFFFF;
+    --ilo-light-gray: #F5F5F5;
+    --ilo-dark-gray: #333333;
+}
+
+/* ===== Global Typography ===== */
+h1, h2, h3 {
+    color: var(--ilo-blue) !important;
+    font-weight: 600 !important;
+}
+
+h4, h5, h6 {
+    color: var(--ilo-dark-gray) !important;
+}
+
+/* ===== Primary Buttons ===== */
+.stButton > button {
+    background-color: var(--ilo-blue) !important;
+    color: var(--ilo-white) !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 1.25rem !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+
+.stButton > button:hover {
+    background-color: var(--ilo-light-blue) !important;
+    box-shadow: 0 4px 12px rgba(0, 47, 108, 0.25) !important;
+}
+
+/* ===== Download Buttons ===== */
+.stDownloadButton > button {
+    background-color: var(--ilo-red) !important;
+    color: var(--ilo-white) !important;
+    border: none !important;
+    border-radius: 6px !important;
+}
+
+.stDownloadButton > button:hover {
+    background-color: #A00D24 !important;
+    box-shadow: 0 4px 12px rgba(200, 16, 46, 0.3) !important;
+}
+
+/* ===== Tabs Styling ===== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    background-color: var(--ilo-light-gray);
+    padding: 0.5rem;
+    border-radius: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background-color: transparent !important;
+    color: var(--ilo-blue) !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 500 !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background-color: var(--ilo-blue) !important;
+    color: var(--ilo-white) !important;
+}
+
+/* ===== Expanders ===== */
+.streamlit-expanderHeader {
+    background-color: var(--ilo-light-gray) !important;
+    border-radius: 8px !important;
+    color: var(--ilo-blue) !important;
+    font-weight: 500 !important;
+}
+
+/* ===== Info/Warning/Success Boxes ===== */
+.stAlert > div[data-baseweb="notification"] {
+    border-radius: 8px !important;
+}
+
+div[data-testid="stNotificationContentInfo"] {
+    background-color: rgba(0, 114, 206, 0.1) !important;
+    border-left: 4px solid var(--ilo-light-blue) !important;
+}
+
+div[data-testid="stNotificationContentSuccess"] {
+    background-color: rgba(40, 167, 69, 0.1) !important;
+    border-left: 4px solid #28a745 !important;
+}
+
+div[data-testid="stNotificationContentWarning"] {
+    background-color: rgba(200, 16, 46, 0.08) !important;
+    border-left: 4px solid var(--ilo-red) !important;
+}
+
+/* ===== Checkboxes ===== */
+.stCheckbox > label > div[data-testid="stMarkdownContainer"] {
+    color: var(--ilo-dark-gray) !important;
+}
+
+/* ===== Sliders ===== */
+.stSlider > div > div > div > div {
+    background-color: var(--ilo-blue) !important;
+}
+
+/* ===== Select boxes ===== */
+.stSelectbox > div > div {
+    border-color: var(--ilo-blue) !important;
+}
+
+/* ===== DataFrames ===== */
+.stDataFrame {
+    border: 1px solid #e0e0e0 !important;
+    border-radius: 8px !important;
+}
+
+/* ===== Progress bars ===== */
+.stProgress > div > div > div > div {
+    background-color: var(--ilo-blue) !important;
+}
+
+/* ===== Metric cards ===== */
+[data-testid="stMetricValue"] {
+    color: var(--ilo-blue) !important;
+}
+
+/* ===== Reference boxes (custom) ===== */
+.reference-box {
+    border-left: 4px solid var(--ilo-blue) !important;
+    background: linear-gradient(135deg, #f0f4f8, #e8eef5) !important;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    color: var(--ilo-dark-gray);
+    margin-bottom: 0.75rem;
+    box-shadow: 0 4px 14px rgba(0, 47, 108, 0.08);
+}
+
+/* ===== Horizontal rule ===== */
+hr {
+    border-top: 2px solid var(--ilo-blue) !important;
+}
+
+/* ===== Sidebar ===== */
+[data-testid="stSidebar"] {
+    background-color: var(--ilo-light-gray) !important;
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: var(--ilo-blue) !important;
+}
+
+/* ===== File uploader ===== */
+.stFileUploader > div > div {
+    border: 2px dashed var(--ilo-blue) !important;
+    border-radius: 8px !important;
+}
+
+/* ===== Radio buttons ===== */
+.stRadio > div {
+    gap: 0.5rem;
+}
+
+/* ===== Multiselect ===== */
+.stMultiSelect > div > div {
+    border-color: var(--ilo-blue) !important;
+}
+
+/* ===== Spinner ===== */
+.stSpinner > div {
+    border-top-color: var(--ilo-blue) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos</h2>
+    <h3 style='text-align:center; color:#002F6C; margin-top:0;'>Usando Evidencia de las Evaluaciones</h3>
+    <hr style='border-top: 2px solid #002F6C;'>
 """, unsafe_allow_html=True)
 
 # Initialize data and embeddings - wrap in try/except for better error handling
@@ -1551,7 +1737,7 @@ def load_lessons_embeddings():
     
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
-                                         "Acercamiento a Valoración de Calidad de Proyectos",
+                                         "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
                                          "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción"])
@@ -2151,25 +2337,26 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
 
 # Tab 2: Revisión por criterios con trazabilidad
 with tab2:
-    st.header("Acercamiento a Valoración de Calidad de Proyectos")
+    st.header("Diagnóstico de Atributos Específicos")
 
     # Descriptive text box
     st.info("""
     **📋 Descripción de la herramienta:**
 
-    ¿Qué hace esta herramienta?:
+    **¿Qué hace esta herramienta?:**
     Profundiza la Valoración Preliminar aplicando rúbricas OIT con niveles de desempeño (1–5) y evidencia trazable (citas y metadatos) sobre un documento .docx que subas. Extrae secciones clave, evalúa contra una matriz de criterios y genera un análisis narrativo por criterio.
     Criterios disponibles y alcance
     -	Metodologías con enfoque participativo → aplicar a informes de evaluación u otros documentos metodológicos.
 
     -	Integración del enfoque de género → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.).
 
-    Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). Salida y descarga:  Puedes exportar a Excel: Criterio, Dimensión, Score (1-5), Análisis, Evidencia, Error, Rúbrica
-    Tras descargar los resultados, dejan de mostrarse en pantalla (¡Descárgalos antes de cambiar de pestaña!). 
-    Mensajes de error: Si faltan secciones, hay incoherencias o el criterio no corresponde al tipo de documento, se marcará en “Error” con una indicación para corregir.
-    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. 
-    Para qué usar este diagnóstico: revisar propuestas de proyecto antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o informes de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF; elaborar notas técnicas con evidencia trazable  y respaldar la rendición de cuentas.
-
+    -   Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). 
+   
+    Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste.
+    
+    **¿Para qué usar este diagnóstico?**
+    Este diagnóstico en formato EXCEL sirve para **revisar propuestas**, **verificar aspectos puntuales** de informes de evaluación o de ejecución, **comprobar coherencia** con P&B, DWCP y marcos UNSDCF, **elaborar notas técnicas con sustento** y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
 
     # Read rubrics from Excel files as in megaparse_example.py
@@ -2319,19 +2506,34 @@ with tab2:
     st.success(f"""
     **ESTADO DE RÚBRICAS:**
     
-    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)”, 
-    - Enfoque de Género: {len(gender_rubric)} criterios
-    - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
+    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)", 
+    - Integración del Enfoque de Género: {len(gender_rubric)} criterios
+    - Integración del Enfoque de Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
     """)
+
+    # Download button for the rubric file (directly on page, no expander)
+    try:
+        with open('./Rubricas_6ago2025.xlsx', 'rb') as f:
+            st.download_button(
+                label="📥 Descargar archivo rúbrica de Atributos específicos",
+                data=f,
+                file_name="Rubricas_6ago2025.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_rubricas_tab2"
+            )
+    except FileNotFoundError:
+        st.warning("Archivo de rúbricas no disponible para descarga.")
 
     # Document upload
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
 
-    # Initialize session state for selections
+    # Initialize session state for selections and results persistence
     if 'selected_rubrics_tab2' not in st.session_state:
         st.session_state['selected_rubrics_tab2'] = []
     if 'selected_criteria_tab2' not in st.session_state:
         st.session_state['selected_criteria_tab2'] = {}
+    if 'tab2_results' not in st.session_state:
+        st.session_state['tab2_results'] = None
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Rúbricas y Criterios")
@@ -2341,9 +2543,9 @@ with tab2:
         # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
         # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
         "Participación durante la evaluación (metodología)": parteval_rubric,
-        "Enfoque de Género": gender_rubric,
+        "Integración del Enfoque de Género": gender_rubric,
         # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
-        "Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
     }
 
     # Step 1: Select Rubrics
@@ -2821,6 +3023,9 @@ with tab2:
             
             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
         
+        # Store results in session state for persistence
+        st.session_state['tab2_results'] = rubric_results
+        
         # Display results
         if rubric_results:
             for rubric_name, rubric_analysis_df in rubric_results:
@@ -2854,9 +3059,13 @@ with tab2:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
-                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
+                    # Export as XLSX instead of CSV
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
             zip_buffer.seek(0)
             
             st.download_button(
@@ -2868,7 +3077,65 @@ with tab2:
         else:
             st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
-        st.info("Suba un documento, seleccione rúbricas y criterios, luego presione 'Procesar y Evaluar'.")
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab2_results') is not None:
+            rubric_results = st.session_state['tab2_results']
+            
+            st.markdown("### 📊 Resultados guardados")
+            
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip",
+                key="tab2_download_persisted"
+            )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab2_results"):
+                st.session_state['tab2_results'] = None
+                st.rerun()
+        else:
+            st.info("Suba un documento, seleccione rúbricas y criterios, luego presione 'Procesar y Evaluar'.")
 
 #===================######################=====================
 # ================== TAB 5: DOCUMENT CHAT =====================
@@ -3546,33 +3813,44 @@ with tab3:
     
     try:
         # Load rubric from PRODOC_rubric.xlsx
-        df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        # df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', sheet_name='rubric')
+
+        # Verify required columns exist
+        required_cols = ['Dimensión', 'Criterio', 'Indicador']
+        missing_cols = [col for col in required_cols if col not in df_rubric_prodoc.columns]
+        if missing_cols:
+            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")
+            st.info(f"Columnas disponibles: {list(df_rubric_prodoc.columns)}")
         
-        # Check if 'Indicador' column exists
-        if 'Indicador' not in df_rubric_prodoc.columns:
-            st.error("La columna 'Indicador' no existe en el archivo Excel.")
-            if len(df_rubric_prodoc.columns) > 0:
-                indicador_col = df_rubric_prodoc.columns[0]
-                st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
-                df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
-            else:
-                prodoc_rubric = {}
-                st.error("No se pudo encontrar una columna para los criterios.")
+        # Helper function to extract numeric prefix for sorting (e.g., "1.1" -> (1, 1), "2.3" -> (2, 3))
+        def extract_sort_key(text):
+            import re
+            if pd.isna(text):
+                return (999, 999, 999)
+            text = str(text).strip()
+            # Match patterns like "1.", "1.1", "1.1.", "(3.1)", etc.
+            match = re.match(r'[\(]?(\d+)(?:\.(\d+))?(?:\.(\d+))?', text)
+            if match:
+                parts = [int(p) if p else 0 for p in match.groups()]
+                return tuple(parts)
+            return (999, 999, 999)
         
         # Process each row to extract criteria and values
         for idx, row in df_rubric_prodoc.iterrows():
-            indicador = row['Indicador']
+            indicador = row.get('Indicador', '')
+            criterio = row.get('Criterio', '')
+            dimension = row.get('Dimensión', 'No especificada')
             
             if pd.isna(indicador) or str(indicador).strip() == '':
                 continue
             
             indicador = str(indicador).strip()
+            criterio = str(criterio).strip() if not pd.isna(criterio) else ''
+            dimension = str(dimension).strip() if not pd.isna(dimension) else 'No especificada'
             
-            # Get dimension if exists
-            dimension = row.get('Dimensión', 'No especificada') if 'Dimensión' in df_rubric_prodoc.columns else 'No especificada'
-            
-            # Get level columns
-            level_cols = [col for col in df_rubric_prodoc.columns if col.startswith('Nivel')]
+            # Get level columns (Nivel 1, Nivel 2, etc.)
+            level_cols = sorted([col for col in df_rubric_prodoc.columns if col.startswith('Nivel')])
             
             valores = []
             for col in level_cols:
@@ -3580,9 +3858,36 @@ with tab3:
                 if not pd.isna(val) and str(val).strip() != '':
                     valores.append(str(val).strip())
             
-            prodoc_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+            # Store with unique key (dimension + criterio + indicador) to avoid overwrites
+            # since same criterio and indicador text can appear in different dimensions
+            unique_key = f"{dimension}|{criterio}|{indicador}"
+            prodoc_rubric[unique_key] = {
+                'valores': valores, 
+                'dimension': dimension,
+                'criterio': criterio,
+                'indicador': indicador,  # Keep original indicador text for display
+                'sort_key': extract_sort_key(indicador)
+            }
         
-        st.success(f"Rúbrica cargada correctamente desde PRODOC_rubric.xlsx: {len(prodoc_rubric)} criterios cargados.")
+        # Show dimension breakdown
+        dim_counts = {}
+        for ind, data in prodoc_rubric.items():
+            dim = data.get('dimension', 'N/A')
+            dim_counts[dim] = dim_counts.get(dim, 0) + 1
+        st.success(f"Rúbrica cargada: {len(prodoc_rubric)} indicadores en {len(dim_counts)} dimensiones.")
+        
+        # Download button for the rubric file (directly on page, no expander)
+        try:
+            with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
+                st.download_button(
+                    label="📥 Descargar archivo rúbrica de Sostenibilidad del proyecto",
+                    data=f,
+                    file_name="Evaluacion_sostenibilidad_rubric.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_sostenibilidad_rubric"
+                )
+        except FileNotFoundError:
+            st.warning("Archivo de rúbrica no disponible para descarga.")
     except FileNotFoundError:
         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
     except Exception as e:
@@ -3601,22 +3906,45 @@ with tab3:
 
     """)
 
-    # Initialize session state for selections
+    # Initialize session state for selections and results persistence
     if 'selected_criteria_tab3' not in st.session_state:
         st.session_state['selected_criteria_tab3'] = []
     if 'selected_dimensions_tab3' not in st.session_state:
         st.session_state['selected_dimensions_tab3'] = []
+    if 'tab3_results' not in st.session_state:
+        st.session_state['tab3_results'] = None
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Criterios")
     
-    # Group criteria by dimension
+    # Group indicadores by dimension and criterio, maintaining order
+    # Structure: {dimension: {criterio: [(unique_key, indicador_text, sort_key)]}}
     criteria_by_dimension = {}
-    for criterion, data in prodoc_rubric.items():
+    for unique_key, data in prodoc_rubric.items():
         dimension = data.get('dimension', 'No especificada')
+        criterio = data.get('criterio', 'Sin criterio')
+        indicador_text = data.get('indicador', unique_key)  # Use indicador text for display
+        sort_key = data.get('sort_key', (999, 999, 999))
+        
         if dimension not in criteria_by_dimension:
-            criteria_by_dimension[dimension] = []
-        criteria_by_dimension[dimension].append(criterion)
+            criteria_by_dimension[dimension] = {}
+        if criterio not in criteria_by_dimension[dimension]:
+            criteria_by_dimension[dimension][criterio] = []
+        criteria_by_dimension[dimension][criterio].append((unique_key, indicador_text, sort_key))
+    
+    # Sort indicadores within each criterio by their numeric prefix (sort_key is index 2)
+    for dimension in criteria_by_dimension:
+        for criterio in criteria_by_dimension[dimension]:
+            criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[2])
+    
+    # Define dimension order
+    dimension_order = ['Diseño', 'Implementación', 'Evaluación']
+    
+    # Helper to extract criterio number for sorting (e.g., "1. Participación..." -> 1)
+    def get_criterio_order(criterio_name):
+        import re
+        match = re.match(r'(\d+)\.', criterio_name)
+        return int(match.group(1)) if match else 999
     
     # Display the loaded rubric with selection grouped by dimension
     with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
@@ -3660,25 +3988,15 @@ with tab3:
             )
         }
 
-        st.markdown(
-            """
-            <style>
-            .reference-box {
-                border-left: 4px solid #4b8bf4;
-                background: linear-gradient(135deg, #f6f9ff, #eef3ff);
-                padding: 0.85rem 1rem;
-                border-radius: 8px;
-                font-size: 0.95rem;
-                color: #0f2138;
-                margin-bottom: 0.75rem;
-                box-shadow: 0 4px 14px rgba(15, 33, 56, 0.08);
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+        # Note: .reference-box styles are defined in the global ILO styles section
 
-        for dimension in sorted(criteria_by_dimension.keys()):
+        # Sort dimensions according to defined order
+        sorted_dimensions = sorted(
+            criteria_by_dimension.keys(), 
+            key=lambda d: dimension_order.index(d) if d in dimension_order else 999
+        )
+        
+        for dimension in sorted_dimensions:
             st.markdown(f"#### 📊 {dimension}")
             if dimension in dimension_descriptions:
                 st.markdown(
@@ -3694,21 +4012,33 @@ with tab3:
                 key=dimension_key
             )
             
-            # Show individual criteria within this dimension
+            # Get criterios for this dimension, sorted by their number
+            criterios_in_dimension = criteria_by_dimension[dimension]
+            sorted_criterios = sorted(criterios_in_dimension.keys(), key=get_criterio_order)
+            
+            # Show criterios and their indicadores within this dimension
             with st.container():
-                for criterion in criteria_by_dimension[dimension]:
-                    # If dimension is selected, auto-select all its criteria
-                    default_value = select_all_tab3 or select_dimension or criterion in st.session_state['selected_criteria_tab3']
+                for criterio in sorted_criterios:
+                    # Display criterio header
+                    st.markdown(f"**{criterio}**")
                     
-                    is_selected = st.checkbox(
-                        f"  ↳ {criterion}",
-                        value=default_value,
-                        key=f"criterion_tab3_{criterion}",
-                        disabled=select_dimension  # Disable individual selection if dimension is selected
-                    )
+                    # Get sorted indicadores for this criterio
+                    # Each item is (unique_key, indicador_text, sort_key)
+                    indicadores_data = criterios_in_dimension[criterio]
                     
-                    if is_selected or select_dimension:
-                        selected_criteria.append(criterion)
+                    for unique_key, indicador_text, sort_key in indicadores_data:
+                        # If dimension is selected, auto-select all its indicadores
+                        default_value = select_all_tab3 or select_dimension or unique_key in st.session_state['selected_criteria_tab3']
+                        
+                        is_selected = st.checkbox(
+                            f"  ↳ {indicador_text}",
+                            value=default_value,
+                            key=f"criterion_tab3_{unique_key}",
+                            disabled=select_dimension  # Disable individual selection if dimension is selected
+                        )
+                        
+                        if is_selected or select_dimension:
+                            selected_criteria.append(unique_key)
             
             st.markdown("---")  # Separator between dimensions
         
@@ -3718,7 +4048,14 @@ with tab3:
                               if st.session_state.get(f"dimension_tab3_{dim}", False)]
         st.session_state['selected_dimensions_tab3'] = selected_dimensions
         
-        st.info(f"📌 Criterios seleccionados: {len(selected_criteria)}/{len(prodoc_rubric)} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
+        # Count total indicadores
+        total_indicadores = sum(
+            len(indicadores) 
+            for criterios in criteria_by_dimension.values() 
+            for indicadores in criterios.values()
+        )
+        
+        st.info(f"📌 Indicadores seleccionados: {len(selected_criteria)}/{total_indicadores} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
 
     # Document upload
     st.markdown("### Carga de Documento")
@@ -3909,31 +4246,40 @@ with tab3:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         MAX_WORKERS = 8
         
-        def eval_one_criterion(args):
-            crit, descriptions, dimension, rubric_name = args
+        # Define dimension order for sorting
+        dimension_order_map = {'Diseño': 0, 'Implementación': 1, 'Evaluación': 2}
+        
+        def eval_one_criterion_tab3(args):
+            unique_key, descriptions, dimension, criterio_text, indicador_text, sort_key, rubric_name = args
             try:
-                result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                result = evaluate_criterion_with_llm(document_text, indicador_text, descriptions)
                 # Ensure result is a dictionary
                 if not isinstance(result, dict):
                     result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
                 return {
-                    'Criterio': crit,
                     'Dimensión': dimension,
+                    'Criterio': criterio_text,
+                    'Indicador': indicador_text,
                     'Score': result.get('score', 0),
                     'Análisis': str(result.get('analysis', '')),
                     'Evidencia': str(result.get('evidence', '')),
                     'Error': str(result.get('error', '')) if 'error' in result else '',
-                    'Rúbrica': rubric_name
+                    'Rúbrica': rubric_name,
+                    '_dim_order': dimension_order_map.get(dimension, 99),
+                    '_sort_key': sort_key
                 }
             except Exception as e:
                 return {
-                    'Criterio': crit,
                     'Dimensión': dimension,
+                    'Criterio': criterio_text,
+                    'Indicador': indicador_text,
                     'Score': 0,
                     'Análisis': '',
                     'Evidencia': '',
                     'Error': str(e),
-                    'Rúbrica': rubric_name
+                    'Rúbrica': rubric_name,
+                    '_dim_order': dimension_order_map.get(dimension, 99),
+                    '_sort_key': sort_key
                 }
         
         for rubric_name, rubric_dict in rubrics:
@@ -3944,13 +4290,16 @@ with tab3:
             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
-                        executor.submit(eval_one_criterion, (
-                            crit,
+                        executor.submit(eval_one_criterion_tab3, (
+                            unique_key,
                             rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
                             rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                            rubric_data.get('criterio', '') if isinstance(rubric_data, dict) else '',
+                            rubric_data.get('indicador', unique_key) if isinstance(rubric_data, dict) else unique_key,
+                            rubric_data.get('sort_key', (999, 999, 999)) if isinstance(rubric_data, dict) else (999, 999, 999),
                             rubric_name
-                        )): (crit, idx)
-                        for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+                        )): (unique_key, idx)
+                        for idx, (unique_key, rubric_data) in enumerate(rubric_dict.items())
                     }
                     
                     completed = 0
@@ -3958,10 +4307,18 @@ with tab3:
                         result = future.result()
                         rubric_analysis_data.append(result)
                         completed += 1
-                        crit, idx = futures[future]
-                        progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+                        unique_key, idx = futures[future]
+                        progress.progress(completed / n_criteria, text=f"Evaluando indicador...")
             
-            rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+            # Create DataFrame and sort by dimension order and sort_key
+            df_result = pd.DataFrame(rubric_analysis_data)
+            if not df_result.empty:
+                df_result = df_result.sort_values(by=['_dim_order', '_sort_key'])
+                df_result = df_result.drop(columns=['_dim_order', '_sort_key'], errors='ignore')
+            rubric_results.append((rubric_name, df_result))
+        
+        # Store results in session state for persistence
+        st.session_state['tab3_results'] = rubric_results
         
         # Show and allow download of results
         if rubric_results:
@@ -3972,7 +4329,7 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = ''
 
                     cols = rubric_analysis_df.columns.tolist()
-                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    desired_order = ['Dimensión', 'Criterio', 'Indicador', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
                     new_order = [col for col in desired_order if col in cols]
                     remaining_cols = [col for col in cols if col not in desired_order]
                     final_order = new_order + remaining_cols
@@ -3994,7 +4351,8 @@ with tab3:
             for rubric_name, df in rubric_results:
                 for _, row in df.iterrows():
                     all_scores.append({
-                        'Criterio': row['Criterio'],
+                        'Indicador': row.get('Indicador', row.get('Criterio', '')),
+                        'Criterio': row.get('Criterio', ''),
                         'Dimensión': row['Dimensión'],
                         'Puntuación': row['Score']
                     })
@@ -4013,7 +4371,7 @@ with tab3:
                 y=dimension_avg['Puntuación'],
                 text=dimension_avg['Puntuación'].round(2),
                 textposition='auto',
-                marker_color='#2ecc71',
+                marker_color='#002F6C',
                 name='Promedio por Dimensión'
             ))
             
@@ -4021,7 +4379,7 @@ with tab3:
                 x=dimension_avg['Dimensión'],
                 y=[overall_avg] * len(dimension_avg),
                 mode='lines',
-                line=dict(color='red', width=2, dash='dash'),
+                line=dict(color='#C8102E', width=2, dash='dash'),
                 name=f'Promedio General: {overall_avg:.2f}'
             ))
             
@@ -4057,7 +4415,7 @@ with tab3:
                 x=scores_df_sorted['Puntuación'],
                 text=scores_df_sorted['Puntuación'].round(2),
                 textposition='auto',
-                marker_color='#3498db',
+                marker_color='#0072CE',
                 orientation='h',
                 name='Puntuación',
                 hovertext=scores_df_sorted['Hover_Text'],
@@ -4068,7 +4426,7 @@ with tab3:
                 y=scores_df_sorted['Criterio_ID'],
                 x=[overall_avg] * len(scores_df_sorted),
                 mode='lines',
-                line=dict(color='red', width=2, dash='dash'),
+                line=dict(color='#C8102E', width=2, dash='dash'),
                 name=f'Promedio General: {overall_avg:.2f}'
             ))
             
@@ -4089,7 +4447,7 @@ with tab3:
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Download ZIP
+            # Download ZIP with XLSX files
             import io, zipfile
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zipf:
@@ -4098,9 +4456,13 @@ with tab3:
                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
                         )
-                    csv = rubric_analysis_df.to_csv(index=False, encoding='utf-8-sig')
-                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
-                    zipf.writestr(arcname, csv.encode('utf-8-sig'))
+                    # Export as XLSX instead of CSV
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
             zip_buffer.seek(0)
             
             st.download_button(
@@ -4113,7 +4475,121 @@ with tab3:
         else:
             st.warning("No se generaron resultados para ninguna rúbrica.")
     else:
-        st.info("Seleccione criterios, suba un documento y presione 'Procesar y Evaluar'.")
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab3_results') is not None:
+            rubric_results = st.session_state['tab3_results']
+            
+            st.markdown("### 📊 Resultados guardados")
+            
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Dimensión', 'Criterio', 'Indicador', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Create visualizations for the results
+            st.markdown("### Visualización de Resultados")
+            
+            all_scores = []
+            for rubric_name, df in rubric_results:
+                for _, row in df.iterrows():
+                    all_scores.append({
+                        'Indicador': row.get('Indicador', row.get('Criterio', '')),
+                        'Criterio': row.get('Criterio', ''),
+                        'Dimensión': row['Dimensión'],
+                        'Puntuación': row['Score']
+                    })
+            
+            if all_scores:
+                scores_df = pd.DataFrame(all_scores)
+                overall_avg = scores_df['Puntuación'].mean()
+                
+                # Visualization: Average Score by Dimension
+                st.markdown("#### 📊 Puntuación Promedio por Dimensión")
+                dimension_avg = scores_df.groupby('Dimensión')['Puntuación'].mean().reset_index()
+                dimension_avg = dimension_avg.sort_values(by='Puntuación', ascending=False)
+                
+                fig_dim = go.Figure()
+                fig_dim.add_trace(go.Bar(
+                    x=dimension_avg['Dimensión'],
+                    y=dimension_avg['Puntuación'],
+                    text=dimension_avg['Puntuación'].round(2),
+                    textposition='auto',
+                    marker_color='#002F6C',
+                    name='Promedio por Dimensión'
+                ))
+                
+                fig_dim.add_trace(go.Scatter(
+                    x=dimension_avg['Dimensión'],
+                    y=[overall_avg] * len(dimension_avg),
+                    mode='lines',
+                    line=dict(color='#C8102E', width=2, dash='dash'),
+                    name=f'Promedio General: {overall_avg:.2f}'
+                ))
+                
+                fig_dim.update_layout(
+                    title='Puntuación Promedio por Dimensión',
+                    xaxis_title='Dimensión',
+                    yaxis_title='Puntuación Promedio',
+                    yaxis=dict(range=[0, 5.5]),
+                    height=500,
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=20, r=20, t=80, b=50),
+                    hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+                )
+                
+                fig_dim.update_xaxes(tickangle=-45)
+                fig_dim.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+                
+                st.plotly_chart(fig_dim, use_container_width=True)
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_evaluacion_prodoc.zip",
+                mime="application/zip",
+                key="prodoc_download_button_tab3_persisted"
+            )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab3_results"):
+                st.session_state['tab3_results'] = None
+                st.rerun()
+        else:
+            st.info("Seleccione criterios, suba un documento y presione 'Procesar y Evaluar'.")
 
 # ================== TAB 7: APPRAISAL CHECKLIST (IMPROVED) =====================
 # Configuration
@@ -4309,9 +4785,12 @@ def create_results_download(results_df, filename_base="appraisal_checklist"):
     zip_buffer = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        # Add CSV file
-        csv_content = results_df.to_csv(index=False, encoding='utf-8-sig')
-        zipf.writestr(f"{filename_base}_results.csv", csv_content.encode('utf-8-sig'))
+        # Add XLSX file instead of CSV
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+            results_df.to_excel(writer, index=False, sheet_name='Resultados')
+        excel_buffer.seek(0)
+        zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
         
         # Add summary report
         summary = f"""
@@ -4341,14 +4820,18 @@ with tab1:
         st.error(error_msg)
         st.stop()
     
-    # Display loaded questions
-    with st.expander("📝 Ver preguntas cargadas"):
-        if df_appraisal is not None:
-            st.subheader("Preguntas de la lista de verificación preliminar de calidad (Preguntas del APPRAISAL CHECKLIST) ")
-            for _, row in df_appraisal.iterrows():
-                st.markdown(f"{row['Pregunta_Realizada']}")
-        else:
-            st.warning("No se han cargado preguntas")
+    # Download button for the rubric file (directly on page, no expander)
+    try:
+        with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
+            st.download_button(
+                label="📥 Descargar archivo rúbrica de Valoración preliminar",
+                data=f,
+                file_name="APPRAISAL_rubric.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_appraisal_rubric"
+            )
+    except FileNotFoundError:
+        st.warning("Archivo de rúbrica no disponible para descarga.")
     
     # Instrucciones
     st.markdown("""
@@ -4363,6 +4846,12 @@ with tab1:
     """)
     
   
+    # Initialize session state for Tab 1 results persistence
+    if 'tab1_results_df' not in st.session_state:
+        st.session_state['tab1_results_df'] = None
+    if 'tab1_doc_stats' not in st.session_state:
+        st.session_state['tab1_doc_stats'] = None
+
   # Sección de carga y procesamiento de archivo
     st.subheader("📄 Carga de documento")
     uploaded_file = st.file_uploader(
@@ -4434,8 +4923,13 @@ with tab1:
                 progress_bar.progress(progress)
                 status_text.text(f"Analizadas {completed}/{len(questions)} preguntas")
         
-        # Create results DataFrame
+        # Create results DataFrame and store in session state
         results_df = pd.DataFrame(results)
+        st.session_state['tab1_results_df'] = results_df
+        st.session_state['tab1_doc_stats'] = {
+            'file_size': doc_result['file_size'],
+            'word_count': doc_result['word_count']
+        }
         
         # Display results
         st.markdown("### 📊 Resultados del análisis")
@@ -4499,10 +4993,85 @@ with tab1:
             st.warning("⚠️ No hay resultados para descargar.")
     
     else:
-        if uploaded_file:
-            st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la valoración preliminar de calidad.")
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab1_results_df') is not None:
+            results_df = st.session_state['tab1_results_df']
+            doc_stats = st.session_state.get('tab1_doc_stats', {})
+            
+            # Display persisted results
+            st.markdown("### 📊 Resultados del análisis (guardados)")
+            
+            if doc_stats:
+                st.info(f"""
+                **Resumen del documento analizado:**
+                - Tamaño del archivo: {doc_stats.get('file_size', 0)/1024:.2f} KB
+                - Número de palabras: {doc_stats.get('word_count', 0):,}
+                """)
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total de preguntas", len(results_df))
+            with col2:
+                success_count = len(results_df[results_df['Status'] == 'Success'])
+                st.metric("Exitosas", success_count)
+            with col3:
+                error_count = len(results_df[results_df['Status'] == 'Error'])
+                st.metric("Errores", error_count)
+            with col4:
+                if success_count > 0:
+                    yes_count = len(results_df[results_df['Respuesta'] == 'Yes'])
+                    st.metric("Respuestas 'Sí'", yes_count)
+            
+            # Results table
+            st.markdown("#### 📋 Resultados detallados")
+            
+            # Filter options
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                response_filter = st.selectbox(
+                    "Filtrar por respuesta:",
+                    ['Todas'] + results_df['Respuesta'].unique().tolist(),
+                    key="response_filter_persisted"
+                )
+            
+            # Apply filter
+            filtered_df = results_df.copy()
+            if response_filter != 'Todas':
+                filtered_df = filtered_df[filtered_df['Respuesta'] == response_filter]
+            
+            # Display filtered results
+            st.dataframe(
+                filtered_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia']], 
+                use_container_width=True,
+                height=400
+            )
+            
+            # Download section
+            st.markdown("### 📥 Descargar resultados")
+            
+            if len(results_df) > 0:
+                zip_buffer = create_results_download(results_df)
+                
+                st.download_button(
+                    label="📦 Descargar resultados en ZIP",
+                    data=zip_buffer,
+                    file_name="appraisal_checklist_results.zip",
+                    mime="application/zip",
+                    key="appraisal_download_button_persisted"
+                )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab1_results"):
+                st.session_state['tab1_results_df'] = None
+                st.session_state['tab1_doc_stats'] = None
+                st.rerun()
         else:
-            st.info("📁 Por favor sube un archivo DOCX para comenzar.")
+            if uploaded_file:
+                st.info("👆 Haz clic en 'Analizar documento' para iniciar la evaluación de la valoración preliminar de calidad.")
+            else:
+                st.info("📁 Por favor sube un archivo DOCX para comenzar.")
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
@@ -4697,7 +5266,7 @@ with tab5:
                 f"""
                 <div style='text-align:center;'>
                     <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-                    <span style='font-size:2.3em; font-weight:700; color:#3498db;'>{value}</span>
+                    <span style='font-size:2.3em; font-weight:700; color:#002F6C;'>{value}</span>
                 </div>
                 """
                 for label, value in zip(total_kpi_labels, total_kpi_values)
@@ -4740,7 +5309,7 @@ with tab5:
                 )
     
                 # Add CSS for dashboard styling
-                st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #3498db;}</style>', unsafe_allow_html=True)
+                st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #002F6C;}</style>', unsafe_allow_html=True)
     
                 # Create two columns for charts
                 row1_col1, row1_col2 = st.columns(2)
@@ -4755,7 +5324,7 @@ with tab5:
                             orientation='h',
                             text=country_counts.values.tolist(),
                             textposition='auto',
-                            marker_color='#3498db',
+                            marker_color='#002F6C',
                             hovertemplate='%{y}: %{x} recomendaciones'
                         ))
                     else:
@@ -4785,7 +5354,7 @@ with tab5:
                         y=year_counts.values.tolist(),
                         text=year_counts.values.tolist(),
                         textposition='auto',
-                        marker_color='#3498db',
+                        marker_color='#002F6C',
                         hovertemplate='Año %{x}: %{y} recomendaciones',
                         textfont=dict(size=22)
                     ))
@@ -4805,22 +5374,23 @@ with tab5:
                 # Dimension treemap
                 st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
     
-                # Clean and prepare dimension data
+                # Clean and prepare dimension data - use the same unique rows used for KPIs
                 import numpy as np
-                filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.strip().str.lower().replace({
+                treemap_df = filtered_df_unique.copy()
+                treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.strip().str.lower().replace({
                     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
                 })
-                filtered_df['dimension'] = filtered_df['dimension'].replace({'process': 'Process'})
-                filtered_df = filtered_df[filtered_df['dimension'].notna()]
-    
-                filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
-                    'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-                })
-                filtered_df['rec_intervention_approach'] = filtered_df['rec_intervention_approach'].replace({'process': 'Process'})
-                filtered_df = filtered_df[filtered_df['rec_intervention_approach'].notna()]
-    
+                treemap_df['dimension'] = treemap_df['dimension'].replace({'process': 'Process'})
+                treemap_df = treemap_df[treemap_df['dimension'].notna()]
+
+                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
+                #     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+                # })
+                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
+                # treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
+
                 # Count recommendations by dimension
-                dimension_counts = filtered_df.groupby('dimension').agg({
+                dimension_counts = treemap_df.groupby('dimension').agg({
                     'index_df': 'nunique'
                 }).reset_index()
     
@@ -4860,20 +5430,20 @@ with tab5:
                 )
                 st.plotly_chart(fig3, use_container_width=True)
     
-                # Subdimension treemap
+                # Subdimension treemap - use treemap_df which was already cleaned above
                 # Harmonize process/processes before plotting subdimensions
-                filtered_df['dimension'] = filtered_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-    
+                treemap_df['dimension'] = treemap_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+
                 # Remove 'Sin Clasificar' from both dimension and subdimension
-                filtered_df = filtered_df[filtered_df['dimension'].str.lower() != 'sin clasificar']
-                filtered_df = filtered_df[filtered_df['subdim'].str.lower() != 'sin clasificar']
-    
+                treemap_df = treemap_df[treemap_df['dimension'].str.lower() != 'sin clasificar']
+                treemap_df = treemap_df[treemap_df['subdim'].str.lower() != 'sin clasificar']
+
                 # Capitalize dimension and subdimension labels
-                filtered_df['dimension'] = filtered_df['dimension'].astype(str).str.title()
-                filtered_df['subdim'] = filtered_df['subdim'].astype(str).str.title()
-    
+                treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.title()
+                treemap_df['subdim'] = treemap_df['subdim'].astype(str).str.title()
+
                 # Count by subdimension
-                subdimension_counts = filtered_df.groupby(['dimension', 'subdim']).agg({
+                subdimension_counts = treemap_df.groupby(['dimension', 'subdim']).agg({
                     'index_df': 'nunique'
                 }).reset_index()
     
@@ -4915,3 +5485,4 @@ with tab5:
                 st.warning("No hay datos disponibles para los filtros seleccionados.")
         else:
             st.warning("No hay datos disponibles para los filtros seleccionados.")
+
