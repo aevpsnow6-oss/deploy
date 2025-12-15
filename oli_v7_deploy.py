@@ -4780,15 +4780,164 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
-def create_results_download(results_df, filename_base="appraisal_checklist"):
-    """Create ZIP file with results for download"""
+def extract_section_number(question_text):
+    """Extract section number from question text (e.g., '1.1 ¿Pregunta?' -> 1)"""
+    import re
+    match = re.match(r'(\d+)\.', str(question_text).strip())
+    return int(match.group(1)) if match else None
+
+def synthesize_section_analysis(section_num, section_questions_df, document_text):
+    """Synthesize section-level analysis from subsection questions and answers"""
+    try:
+        # Build context from subsection Q&A pairs
+        qa_context = "\n\n".join([
+            f"Pregunta {row['Pregunta']}:\nRespuesta: {row['Respuesta']}\nRazonamiento: {row['Razonamiento']}"
+            for _, row in section_questions_df.iterrows()
+        ])
+        
+        # Single efficient LLM call per section
+        prompt = f"""Based on the following subsection questions and answers from a document evaluation, 
+synthesize a comprehensive section-level analysis.
+
+Section {section_num} - Subsection Q&A:
+{qa_context}
+
+Provide a detailed section-level analysis (2-3 paragraphs) that:
+1. Integrates key findings across all subsections
+2. Identifies patterns and gaps
+3. Provides actionable insights for improvement
+
+Format as JSON with exactly this structure:
+{{"section_analysis": "your detailed analysis here (2-3 paragraphs)"}}
+
+Return ONLY the JSON, no other text."""
+
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert document analyst. Synthesize subsection findings into clear, actionable section-level insights. Always respond in Spanish."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_completion_tokens=2000,
+            reasoning_effort="minimal"
+        )
+        
+        content = response.choices[0].message.content.strip()
+        result = json.loads(content)
+        return result.get('section_analysis', 'Error en síntesis')
+    
+    except Exception as e:
+        return f"Error generando análisis de sección: {str(e)}"
+
+def create_results_download_with_sections(results_df, section_analyses, filename_base="appraisal_checklist"):
+    """Create ZIP file with results including section-level analysis sheets"""
     zip_buffer = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        # Add XLSX file instead of CSV
         excel_buffer = io.BytesIO()
+        
         with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
-            results_df.to_excel(writer, index=False, sheet_name='Resultados')
+            workbook = writer.book
+            
+            # Format definitions
+            header_format = workbook.add_format({
+                'bold': True,
+                'bg_color': '#002F6C',
+                'font_color': 'white',
+                'border': 1,
+                'valign': 'vcenter',
+                'text_wrap': True
+            })
+            section_header_format = workbook.add_format({
+                'bold': True,
+                'bg_color': '#0072CE',
+                'font_color': 'white',
+                'border': 1,
+                'valign': 'vcenter',
+                'text_wrap': True,
+                'font_size': 12
+            })
+            merged_format = workbook.add_format({
+                'border': 1,
+                'valign': 'top',
+                'text_wrap': True,
+                'bg_color': '#F5F5F5'
+            })
+            normal_format = workbook.add_format({
+                'border': 1,
+                'valign': 'top',
+                'text_wrap': True
+            })
+            
+            # Sheet 1: Detailed subsection results
+            sheet_detailed = writer.sheets['Detallado'] if 'Detallado' in writer.sheets else workbook.add_worksheet('Detallado')
+            results_copy = results_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
+            results_copy.to_excel(writer, index=False, sheet_name='Detallado', startrow=0)
+            
+            # Format headers in detailed sheet
+            for col_num, value in enumerate(results_copy.columns.values):
+                writer.sheets['Detallado'].write(0, col_num, value, header_format)
+            
+            # Sheet 2: Section-level analysis with merged cells
+            sheet_sections = workbook.add_worksheet('Análisis por Sección')
+            
+            # Extract unique sections from results
+            results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
+            sections = sorted(results_df['_section'].dropna().unique())
+            
+            current_row = 0
+            
+            for section_num in sections:
+                section_num = int(section_num)
+                section_df = results_df[results_df['_section'] == section_num].copy()
+                questions_in_section = section_df[['Pregunta', 'Respuesta', 'Razonamiento']].values.tolist()
+                
+                # Section header
+                sheet_sections.write(current_row, 0, f"Sección {section_num}", section_header_format)
+                sheet_sections.merge_range(current_row, 0, current_row, 3, f"Sección {section_num}", section_header_format)
+                current_row += 1
+                
+                # Column headers for this section
+                headers = ['Pregunta', 'Respuesta', 'Razonamiento']
+                for col_num, header in enumerate(headers):
+                    sheet_sections.write(current_row, col_num, header, header_format)
+                current_row += 1
+                
+                # Write subsection Q&A rows
+                for question, response, reasoning in questions_in_section:
+                    sheet_sections.write(current_row, 0, question, normal_format)
+                    sheet_sections.write(current_row, 1, response, normal_format)
+                    sheet_sections.write(current_row, 2, reasoning, normal_format)
+                    current_row += 1
+                
+                # Write section analysis (merged row)
+                section_analysis_text = section_analyses.get(section_num, "No se generó análisis")
+                sheet_sections.write(current_row, 0, "Análisis de Sección:", section_header_format)
+                sheet_sections.merge_range(
+                    current_row, 1, current_row, 3,
+                    section_analysis_text,
+                    merged_format
+                )
+                current_row += 2  # Space between sections
+            
+            # Set column widths for readability
+            sheet_sections.set_column('A:A', 20)  # Pregunta
+            sheet_sections.set_column('B:B', 15)  # Respuesta
+            sheet_sections.set_column('C:C', 40)  # Razonamiento
+            sheet_sections.set_column('D:D', 40)  # Analysis
+            
+            writer.sheets['Detallado'].set_column('A:A', 20)
+            writer.sheets['Detallado'].set_column('B:B', 15)
+            writer.sheets['Detallado'].set_column('C:C', 40)
+            writer.sheets['Detallado'].set_column('D:D', 40)
+            writer.sheets['Detallado'].set_column('E:E', 10)
+        
         excel_buffer.seek(0)
         zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
         
@@ -4800,6 +4949,8 @@ Resumen del Análisis de la Lista de la Valoración Preliminar de la Calidad
 Total de preguntas analizadas: {len(results_df)}
 Análisis exitosos: {len(results_df[results_df['Status'] == 'Success'])}
 Análisis fallidos: {len(results_df[results_df['Status'] == 'Error'])}
+
+Secciones analizadas: {len(section_analyses)}
 
 Distribución de respuestas:
 {results_df['Respuesta'].value_counts().to_string()}
@@ -4925,7 +5076,34 @@ with tab1:
         
         # Create results DataFrame and store in session state
         results_df = pd.DataFrame(results)
+        
+        # Extract section numbers and generate section-level analyses
+        results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
+        section_analyses = {}
+        
+        # Group by section and synthesize
+        st.markdown("### 📈 Síntesis por Sección")
+        st.info("Generando análisis a nivel de sección...")
+        
+        sections = sorted(results_df['_section_num'].dropna().unique())
+        section_progress = st.progress(0)
+        
+        for idx, section_num in enumerate(sections):
+            section_df = results_df[results_df['_section_num'] == section_num].copy()
+            
+            # Generate section analysis
+            section_analysis = synthesize_section_analysis(
+                int(section_num),
+                section_df[['Pregunta', 'Respuesta', 'Razonamiento']],
+                doc_result['text']
+            )
+            section_analyses[int(section_num)] = section_analysis
+            
+            section_progress.progress((idx + 1) / len(sections))
+        
+        # Store all results in session state
         st.session_state['tab1_results_df'] = results_df
+        st.session_state['tab1_section_analyses'] = section_analyses
         st.session_state['tab1_doc_stats'] = {
             'file_size': doc_result['file_size'],
             'word_count': doc_result['word_count']
@@ -4978,7 +5156,9 @@ with tab1:
         st.markdown("### 📥 Descargar resultados")
         
         if len(results_df) > 0:
-            zip_buffer = create_results_download(results_df)
+            # Get section analyses from session state
+            section_analyses = st.session_state.get('tab1_section_analyses', {})
+            zip_buffer = create_results_download_with_sections(results_df, section_analyses)
             
             st.download_button(
                 label="📦 Descargar resultados en ZIP",
@@ -5052,7 +5232,9 @@ with tab1:
             st.markdown("### 📥 Descargar resultados")
             
             if len(results_df) > 0:
-                zip_buffer = create_results_download(results_df)
+                # Get section analyses from session state
+                section_analyses = st.session_state.get('tab1_section_analyses', {})
+                zip_buffer = create_results_download_with_sections(results_df, section_analyses)
                 
                 st.download_button(
                     label="📦 Descargar resultados en ZIP",
@@ -5374,20 +5556,20 @@ with tab5:
                 # Dimension treemap
                 st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
     
-                # Clean and prepare dimension data - use a copy to preserve filtered_df for KPI consistency
+                # Clean and prepare dimension data - use the same unique rows used for KPIs
                 import numpy as np
-                treemap_df = filtered_df.copy()
+                treemap_df = filtered_df_unique.copy()
                 treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.strip().str.lower().replace({
                     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
                 })
                 treemap_df['dimension'] = treemap_df['dimension'].replace({'process': 'Process'})
                 treemap_df = treemap_df[treemap_df['dimension'].notna()]
 
-                treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
-                    'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-                })
-                treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
-                treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
+                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
+                #     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+                # })
+                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
+                # treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
 
                 # Count recommendations by dimension
                 dimension_counts = treemap_df.groupby('dimension').agg({
