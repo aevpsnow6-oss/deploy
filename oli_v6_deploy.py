@@ -4792,26 +4792,83 @@ def extract_subsection_number(question_text):
     match = re.match(r'(\d+\.\d+)', str(question_text).strip())
     return match.group(1) if match else None
 
-def synthesize_section_analysis(section_num, section_questions_df, document_text):
-    """Synthesize section-level analysis from subsection questions and answers"""
+def parse_subsection_for_sorting(subsection_str):
+    """Convert subsection string to tuple for proper sorting (e.g., '1.1' -> (1, 1), '2.10' -> (2, 10))"""
     try:
-        # Build context from subsection Q&A pairs
+        parts = str(subsection_str).split('.')
+        return (int(parts[0]), int(parts[1]))
+    except:
+        return (999, 999)
+
+def synthesize_subsection_analysis(subsection_id, subsection_questions_df):
+    """Synthesize subsection-level analysis from individual question answers within that subsection"""
+    try:
+        # Build context from individual question Q&A pairs
         qa_context = "\n\n".join([
             f"Pregunta {row['Pregunta']}:\nRespuesta: {row['Respuesta']}\nRazonamiento: {row['Razonamiento']}"
-            for _, row in section_questions_df.iterrows()
+            for _, row in subsection_questions_df.iterrows()
+        ])
+        
+        # Single efficient LLM call per subsection
+        prompt = f"""Based on the following individual question answers from subsection {subsection_id} of a document evaluation, 
+synthesize a comprehensive subsection-level analysis.
+
+Subsection {subsection_id} - Individual Q&A:
+{qa_context}
+
+Provide a concise subsection-level analysis (1-2 paragraphs) that:
+1. Integrates findings across all questions in this subsection
+2. Identifies key strengths and gaps
+3. Provides a clear assessment
+
+Format as JSON with exactly this structure:
+{{"subsection_analysis": "your analysis here (1-2 paragraphs)"}}
+
+Return ONLY the JSON, no other text."""
+
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert document analyst. Synthesize individual question findings into clear subsection-level insights. Always respond in Spanish."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_completion_tokens=1500,
+            reasoning_effort="minimal"
+        )
+        
+        content = response.choices[0].message.content.strip()
+        result = json.loads(content)
+        return result.get('subsection_analysis', 'Error en síntesis')
+    
+    except Exception as e:
+        return f"Error generando análisis de subsección: {str(e)}"
+
+def synthesize_section_analysis(section_num, subsection_analyses_dict):
+    """Synthesize section-level analysis from subsection analyses"""
+    try:
+        # Build context from subsection analyses
+        subsection_context = "\n\n".join([
+            f"Subsección {subsec_id}:\n{analysis}"
+            for subsec_id, analysis in sorted(subsection_analyses_dict.items(), key=lambda x: parse_subsection_for_sorting(x[0]))
         ])
         
         # Single efficient LLM call per section
-        prompt = f"""Based on the following subsection questions and answers from a document evaluation, 
+        prompt = f"""Based on the following subsection analyses from section {section_num} of a document evaluation, 
 synthesize a comprehensive section-level analysis.
 
-Section {section_num} - Subsection Q&A:
-{qa_context}
+Section {section_num} - Subsection Analyses:
+{subsection_context}
 
 Provide a detailed section-level analysis (2-3 paragraphs) that:
 1. Integrates key findings across all subsections
-2. Identifies patterns and gaps
-3. Provides actionable insights for improvement
+2. Identifies overarching patterns, strengths, and gaps
+3. Provides strategic, actionable insights for improvement
 
 Format as JSON with exactly this structure:
 {{"section_analysis": "your detailed analysis here (2-3 paragraphs)"}}
@@ -4841,8 +4898,8 @@ Return ONLY the JSON, no other text."""
     except Exception as e:
         return f"Error generando análisis de sección: {str(e)}"
 
-def create_results_download_with_sections(results_df, section_analyses, filename_base="appraisal_checklist"):
-    """Create ZIP file with results including section-level analysis sheets"""
+def create_results_download_with_sections(results_df, subsection_analyses, section_analyses, filename_base="appraisal_checklist"):
+    """Create ZIP file with results including subsection and section-level analysis sheets"""
     zip_buffer = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
@@ -4869,11 +4926,27 @@ def create_results_download_with_sections(results_df, section_analyses, filename
                 'text_wrap': True,
                 'font_size': 12
             })
+            subsection_header_format = workbook.add_format({
+                'bold': True,
+                'bg_color': '#4A90E2',
+                'font_color': 'white',
+                'border': 1,
+                'valign': 'vcenter',
+                'text_wrap': True,
+                'font_size': 11
+            })
             merged_format = workbook.add_format({
                 'border': 1,
                 'valign': 'top',
                 'text_wrap': True,
                 'bg_color': '#F5F5F5'
+            })
+            subsection_merged_format = workbook.add_format({
+                'border': 1,
+                'valign': 'top',
+                'text_wrap': True,
+                'bg_color': '#E8F4F8',
+                'italic': True
             })
             normal_format = workbook.add_format({
                 'border': 1,
@@ -4881,8 +4954,8 @@ def create_results_download_with_sections(results_df, section_analyses, filename
                 'text_wrap': True
             })
             
-            # Sheet 1: Detailed subsection results
-            sheet_detailed = writer.sheets['Detallado'] if 'Detallado' in writer.sheets else workbook.add_worksheet('Detallado')
+            # Sheet 1: Detailed results (sorted ascending)
+            sheet_detailed = workbook.add_worksheet('Detallado')
             results_copy = results_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
             results_copy.to_excel(writer, index=False, sheet_name='Detallado', startrow=0)
             
@@ -4890,10 +4963,10 @@ def create_results_download_with_sections(results_df, section_analyses, filename
             for col_num, value in enumerate(results_copy.columns.values):
                 writer.sheets['Detallado'].write(0, col_num, value, header_format)
             
-            # Sheet 2: Section-level analysis with merged cells
+            # Sheet 2: Three-level hierarchical analysis
             sheet_sections = workbook.add_worksheet('Análisis por Sección')
             
-            # Extract unique sections from results
+            # Extract sections and subsections (sorted ascending)
             results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
             results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
             sections = sorted(results_df['_section'].dropna().unique())
@@ -4903,10 +4976,14 @@ def create_results_download_with_sections(results_df, section_analyses, filename
             for section_num in sections:
                 section_num = int(section_num)
                 section_df = results_df[results_df['_section'] == section_num].copy()
-                questions_in_section = section_df[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento']].values.tolist()
+                
+                # Get subsections in this section (sorted ascending)
+                subsections_in_section = sorted(
+                    section_df['_subsection'].dropna().unique(),
+                    key=parse_subsection_for_sorting
+                )
                 
                 # Section header
-                sheet_sections.write(current_row, 0, f"Sección {section_num}", section_header_format)
                 sheet_sections.merge_range(current_row, 0, current_row, 4, f"Sección {section_num}", section_header_format)
                 current_row += 1
                 
@@ -4916,19 +4993,33 @@ def create_results_download_with_sections(results_df, section_analyses, filename
                     sheet_sections.write(current_row, col_num, header, header_format)
                 current_row += 1
                 
-                # Write subsection Q&A rows
-                for subsection, question, response, reasoning in questions_in_section:
-                    sheet_sections.write(current_row, 0, subsection if subsection else '', normal_format)
-                    sheet_sections.write(current_row, 1, question, normal_format)
-                    sheet_sections.write(current_row, 2, response, normal_format)
-                    sheet_sections.write(current_row, 3, reasoning, normal_format)
+                # Write each subsection with its questions
+                for subsection_id in subsections_in_section:
+                    subsection_df = section_df[section_df['_subsection'] == subsection_id].copy()
+                    
+                    # Write individual questions for this subsection
+                    for _, row in subsection_df.iterrows():
+                        sheet_sections.write(current_row, 0, subsection_id, normal_format)
+                        sheet_sections.write(current_row, 1, row['Pregunta'], normal_format)
+                        sheet_sections.write(current_row, 2, row['Respuesta'], normal_format)
+                        sheet_sections.write(current_row, 3, row['Razonamiento'], normal_format)
+                        current_row += 1
+                    
+                    # Write subsection analysis (merged row)
+                    subsection_analysis_text = subsection_analyses.get(subsection_id, "No se generó análisis")
+                    sheet_sections.write(current_row, 0, f"Análisis {subsection_id}:", subsection_header_format)
+                    sheet_sections.merge_range(
+                        current_row, 1, current_row, 3,
+                        subsection_analysis_text,
+                        subsection_merged_format
+                    )
                     current_row += 1
                 
                 # Write section analysis (merged row)
                 section_analysis_text = section_analyses.get(section_num, "No se generó análisis")
-                sheet_sections.write(current_row, 0, "Análisis de Sección:", section_header_format)
+                sheet_sections.write(current_row, 0, f"Análisis Sección {section_num}:", section_header_format)
                 sheet_sections.merge_range(
-                    current_row, 1, current_row, 4,
+                    current_row, 1, current_row, 3,
                     section_analysis_text,
                     merged_format
                 )
@@ -4936,10 +5027,9 @@ def create_results_download_with_sections(results_df, section_analyses, filename
             
             # Set column widths for readability
             sheet_sections.set_column('A:A', 12)  # Subsección
-            sheet_sections.set_column('B:B', 25)  # Pregunta
+            sheet_sections.set_column('B:B', 30)  # Pregunta
             sheet_sections.set_column('C:C', 15)  # Respuesta
-            sheet_sections.set_column('D:D', 40)  # Razonamiento
-            sheet_sections.set_column('E:E', 50)  # Analysis (for merged cells)
+            sheet_sections.set_column('D:D', 45)  # Razonamiento
             
             writer.sheets['Detallado'].set_column('A:A', 20)
             writer.sheets['Detallado'].set_column('B:B', 15)
@@ -4959,6 +5049,7 @@ Total de preguntas analizadas: {len(results_df)}
 Análisis exitosos: {len(results_df[results_df['Status'] == 'Success'])}
 Análisis fallidos: {len(results_df[results_df['Status'] == 'Error'])}
 
+Subsecciones analizadas: {len(subsection_analyses)}
 Secciones analizadas: {len(section_analyses)}
 
 Distribución de respuestas:
@@ -5083,35 +5174,63 @@ with tab1:
                 progress_bar.progress(progress)
                 status_text.text(f"Analizadas {completed}/{len(questions)} preguntas")
         
-        # Create results DataFrame and store in session state
+        # Create results DataFrame - sort by subsection for proper ordering
         results_df = pd.DataFrame(results)
-        
-        # Extract section numbers and generate section-level analyses
         results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
+        results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
+        results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
+        
+        # Sort results by section and subsection
+        results_df = results_df.sort_values(by=['_sort_key']).reset_index(drop=True)
+        
+        # THREE-LEVEL SYNTHESIS: Question -> Subsection -> Section
+        st.markdown("### 📈 Síntesis Multinivel")
+        
+        # Level 1: Subsection synthesis (grouping individual questions)
+        st.info("Generando análisis a nivel de subsección...")
+        subsections = sorted(results_df['_subsection'].dropna().unique(), key=parse_subsection_for_sorting)
+        subsection_analyses = {}
+        
+        subsection_progress = st.progress(0)
+        for idx, subsection_id in enumerate(subsections):
+            subsection_df = results_df[results_df['_subsection'] == subsection_id].copy()
+            
+            # Generate subsection analysis from individual questions
+            subsection_analysis = synthesize_subsection_analysis(
+                subsection_id,
+                subsection_df[['Pregunta', 'Respuesta', 'Razonamiento']]
+            )
+            subsection_analyses[subsection_id] = subsection_analysis
+            
+            subsection_progress.progress((idx + 1) / len(subsections))
+        
+        # Level 2: Section synthesis (grouping subsections)
+        st.info("Generando análisis a nivel de sección...")
+        sections = sorted(results_df['_section_num'].dropna().unique())
         section_analyses = {}
         
-        # Group by section and synthesize
-        st.markdown("### 📈 Síntesis por Sección")
-        st.info("Generando análisis a nivel de sección...")
-        
-        sections = sorted(results_df['_section_num'].dropna().unique())
         section_progress = st.progress(0)
-        
         for idx, section_num in enumerate(sections):
-            section_df = results_df[results_df['_section_num'] == section_num].copy()
+            section_num = int(section_num)
+            # Get all subsections for this section
+            section_subsections = {
+                subsec_id: subsection_analyses[subsec_id]
+                for subsec_id in subsections
+                if subsec_id.startswith(f"{section_num}.")
+            }
             
-            # Generate section analysis
+            # Generate section analysis from subsection analyses
             section_analysis = synthesize_section_analysis(
-                int(section_num),
-                section_df[['Pregunta', 'Respuesta', 'Razonamiento']],
-                doc_result['text']
+                section_num,
+                section_subsections
             )
-            section_analyses[int(section_num)] = section_analysis
+            section_analyses[section_num] = section_analysis
             
             section_progress.progress((idx + 1) / len(sections))
         
         # Store all results in session state
         st.session_state['tab1_results_df'] = results_df
+        st.session_state['tab1_subsection_analyses'] = subsection_analyses
         st.session_state['tab1_section_analyses'] = section_analyses
         st.session_state['tab1_doc_stats'] = {
             'file_size': doc_result['file_size'],
@@ -5165,9 +5284,10 @@ with tab1:
         st.markdown("### 📥 Descargar resultados")
         
         if len(results_df) > 0:
-            # Get section analyses from session state
+            # Get analyses from session state
+            subsection_analyses = st.session_state.get('tab1_subsection_analyses', {})
             section_analyses = st.session_state.get('tab1_section_analyses', {})
-            zip_buffer = create_results_download_with_sections(results_df, section_analyses)
+            zip_buffer = create_results_download_with_sections(results_df, subsection_analyses, section_analyses)
             
             st.download_button(
                 label="📦 Descargar resultados en ZIP",
@@ -5241,9 +5361,10 @@ with tab1:
             st.markdown("### 📥 Descargar resultados")
             
             if len(results_df) > 0:
-                # Get section analyses from session state
+                # Get analyses from session state
+                subsection_analyses = st.session_state.get('tab1_subsection_analyses', {})
                 section_analyses = st.session_state.get('tab1_section_analyses', {})
-                zip_buffer = create_results_download_with_sections(results_df, section_analyses)
+                zip_buffer = create_results_download_with_sections(results_df, subsection_analyses, section_analyses)
                 
                 st.download_button(
                     label="📦 Descargar resultados en ZIP",
