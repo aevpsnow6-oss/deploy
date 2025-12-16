@@ -4780,30 +4780,39 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
-def analyze_question_with_critical_opinion(question):
+def analyze_question_with_critical_opinion(question, answer, reasoning):
     """
-    Analyze a question from independent expert perspective WITHOUT document context.
-    Evaluates reasonableness and adequacy of the concern raised in the question itself.
+    Critically assess if the document's answer to a specific question is adequate and appropriate.
+    Evaluates whether the document's response truly addresses the concern raised in the question.
     """
     try:
-        # Single API call for critical evaluation - independent of document content
+        # Single API call for critical evaluation - focuses on answer adequacy
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an expert in project quality appraisal and international development (ILO standards). 
-                    Provide an independent critical assessment of the concern raised in the given question.
-                    Respond in Spanish with a brief (max 150 words) critical opinion about whether this concern is:
-                    - Valid and important from a development standards perspective
-                    - Adequately addressed by typical project designs
-                    - A genuine risk that projects often overlook
+                    "content": """You are an expert in project quality appraisal and international development (ILO standards).
+                    Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
                     
+                    Consider:
+                    - Does the answer fully address the concern raised in the question?
+                    - Is the proposed approach sufficient according to best practices?
+                    - Are there gaps, risks, or inadequacies in what the document claims?
+                    - Should the project have included additional measures or details?
+                    
+                    Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
                     Respond ONLY with the critical opinion text, no JSON, no formatting."""
                 },
                 {
                     "role": "user",
-                    "content": f"Question for critical evaluation: {question}\n\nProvide your independent expert assessment of this concern."
+                    "content": f"""Question: {question}
+
+Document's Answer: {answer}
+
+Document's Reasoning: {reasoning}
+
+Provide a critical assessment: Is this answer truly adequate from an expert perspective?"""
                 }
             ],
             max_completion_tokens=500,
@@ -5198,13 +5207,9 @@ with tab1:
         critical_opinions = {}
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all questions for BOTH document-based analysis AND critical evaluation
+            # Submit all questions for document-based analysis first
             future_to_question_doc = {
                 executor.submit(analyze_question_with_llm, q, doc_result['text']): q 
-                for q in questions
-            }
-            future_to_question_critical = {
-                executor.submit(analyze_question_with_critical_opinion, q): q 
                 for q in questions
             }
             
@@ -5220,19 +5225,33 @@ with tab1:
                 progress = completed / len(questions)
                 progress_bar.progress(progress * 0.5)  # First half of progress bar
                 status_text.text(f"Análisis documentales: {completed}/{len(questions)} preguntas")
-        
-        # Process critical evaluations
-        completed = 0
-        for future in as_completed(future_to_question_critical):
-            question = future_to_question_critical[future]
-            critical_opinion = future.result()
-            critical_opinions[question] = critical_opinion
-            completed += 1
             
-            # Update progress
-            progress = completed / len(questions)
-            progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
-            status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
+            # Create results DataFrame to get answers for critical evaluation
+            results_df_temp = pd.DataFrame(results)
+            
+            # Now submit critical evaluations with answer data
+            future_to_question_critical = {
+                executor.submit(
+                    analyze_question_with_critical_opinion,
+                    row['Pregunta'],
+                    row['Respuesta'],
+                    row['Razonamiento']
+                ): row['Pregunta']
+                for _, row in results_df_temp.iterrows()
+            }
+            
+            # Process critical evaluations
+            completed = 0
+            for future in as_completed(future_to_question_critical):
+                question = future_to_question_critical[future]
+                critical_opinion = future.result()
+                critical_opinions[question] = critical_opinion
+                completed += 1
+                
+                # Update progress
+                progress = completed / len(questions)
+                progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
+                status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
         
         # Create results DataFrame - sort by subsection for proper ordering
         results_df = pd.DataFrame(results)
