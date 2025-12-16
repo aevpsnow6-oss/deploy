@@ -4899,7 +4899,7 @@ Return ONLY the JSON, no other text."""
         return f"Error generando análisis de sección: {str(e)}"
 
 def create_results_download_with_sections(results_df, subsection_analyses, section_analyses, filename_base="appraisal_checklist"):
-    """Create ZIP file with results including subsection and section-level analysis sheets"""
+    """Create ZIP file with results including three separate sheets for questions, subsections, and sections"""
     zip_buffer = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
@@ -4954,88 +4954,84 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
                 'text_wrap': True
             })
             
-            # Sheet 1: Detailed results (sorted ascending)
-            sheet_detailed = workbook.add_worksheet('Detallado')
-            results_copy = results_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
-            results_copy.to_excel(writer, index=False, sheet_name='Detallado', startrow=0)
+            # Extract and ensure sorting columns exist
+            if '_section' not in results_df.columns:
+                results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
+            if '_subsection' not in results_df.columns:
+                results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
+            if '_sort_key' not in results_df.columns:
+                results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
             
-            # Format headers in detailed sheet
-            for col_num, value in enumerate(results_copy.columns.values):
-                writer.sheets['Detallado'].write(0, col_num, value, header_format)
+            # Sort the entire dataframe by sort_key to ensure consistent ordering
+            results_df_sorted = results_df.sort_values(by='_sort_key').reset_index(drop=True)
             
-            # Sheet 2: Three-level hierarchical analysis
-            sheet_sections = workbook.add_worksheet('Análisis por Sección')
+            # ===== SHEET 1: Questions (Preguntas) =====
+            sheet_questions = workbook.add_worksheet('1. Preguntas')
+            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
+            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']
+            questions_data.to_excel(writer, index=False, sheet_name='1. Preguntas', startrow=0)
             
-            # Extract sections and subsections (sorted ascending)
-            results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
-            results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
-            sections = sorted(results_df['_section'].dropna().unique())
+            # Format headers
+            for col_num, value in enumerate(questions_data.columns.values):
+                writer.sheets['1. Preguntas'].write(0, col_num, value, header_format)
             
-            current_row = 0
+            # Set column widths
+            writer.sheets['1. Preguntas'].set_column('A:A', 12)  # Subsección
+            writer.sheets['1. Preguntas'].set_column('B:B', 35)  # Pregunta
+            writer.sheets['1. Preguntas'].set_column('C:C', 12)  # Respuesta
+            writer.sheets['1. Preguntas'].set_column('D:D', 50)  # Razonamiento
+            writer.sheets['1. Preguntas'].set_column('E:E', 40)  # Evidencia
+            writer.sheets['1. Preguntas'].set_column('F:F', 10)  # Status
             
-            for section_num in sections:
+            # ===== SHEET 2: Subsection Analysis (Análisis por Subsección) =====
+            sheet_subsections = workbook.add_worksheet('2. Análisis Subsecciones')
+            
+            # Get unique subsections in sorted order
+            subsections_sorted = sorted(results_df_sorted['_subsection'].dropna().unique(), key=parse_subsection_for_sorting)
+            
+            # Write headers
+            subsec_headers = ['Subsección', 'Sección', 'Análisis de Subsección']
+            for col_num, header in enumerate(subsec_headers):
+                sheet_subsections.write(0, col_num, header, header_format)
+            
+            current_row = 1
+            for subsection_id in subsections_sorted:
+                section_num = extract_section_number(subsection_id)
+                analysis_text = subsection_analyses.get(subsection_id, "No se generó análisis")
+                
+                sheet_subsections.write(current_row, 0, subsection_id, normal_format)
+                sheet_subsections.write(current_row, 1, f"Sección {section_num}", normal_format)
+                sheet_subsections.write(current_row, 2, analysis_text, subsection_merged_format)
+                current_row += 1
+            
+            # Set column widths
+            sheet_subsections.set_column('A:A', 12)  # Subsección
+            sheet_subsections.set_column('B:B', 15)  # Sección
+            sheet_subsections.set_column('C:C', 80)  # Análisis
+            
+            # ===== SHEET 3: Section Analysis (Análisis por Sección) =====
+            sheet_sections = workbook.add_worksheet('3. Análisis Secciones')
+            
+            # Get unique sections in sorted order
+            sections_sorted = sorted(results_df_sorted['_section'].dropna().unique())
+            
+            # Write headers
+            section_headers = ['Sección', 'Análisis de Sección']
+            for col_num, header in enumerate(section_headers):
+                sheet_sections.write(0, col_num, header, header_format)
+            
+            current_row = 1
+            for section_num in sections_sorted:
                 section_num = int(section_num)
-                section_df = results_df[results_df['_section'] == section_num].copy()
+                analysis_text = section_analyses.get(section_num, "No se generó análisis")
                 
-                # Get subsections in this section (sorted ascending)
-                subsections_in_section = sorted(
-                    section_df['_subsection'].dropna().unique(),
-                    key=parse_subsection_for_sorting
-                )
-                
-                # Section header
-                sheet_sections.merge_range(current_row, 0, current_row, 4, f"Sección {section_num}", section_header_format)
+                sheet_sections.write(current_row, 0, f"Sección {section_num}", section_header_format)
+                sheet_sections.write(current_row, 1, analysis_text, merged_format)
                 current_row += 1
-                
-                # Column headers for this section
-                headers = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento']
-                for col_num, header in enumerate(headers):
-                    sheet_sections.write(current_row, col_num, header, header_format)
-                current_row += 1
-                
-                # Write each subsection with its questions
-                for subsection_id in subsections_in_section:
-                    subsection_df = section_df[section_df['_subsection'] == subsection_id].copy()
-                    
-                    # Write individual questions for this subsection
-                    for _, row in subsection_df.iterrows():
-                        sheet_sections.write(current_row, 0, subsection_id, normal_format)
-                        sheet_sections.write(current_row, 1, row['Pregunta'], normal_format)
-                        sheet_sections.write(current_row, 2, row['Respuesta'], normal_format)
-                        sheet_sections.write(current_row, 3, row['Razonamiento'], normal_format)
-                        current_row += 1
-                    
-                    # Write subsection analysis (merged row)
-                    subsection_analysis_text = subsection_analyses.get(subsection_id, "No se generó análisis")
-                    sheet_sections.write(current_row, 0, f"Análisis {subsection_id}:", subsection_header_format)
-                    sheet_sections.merge_range(
-                        current_row, 1, current_row, 3,
-                        subsection_analysis_text,
-                        subsection_merged_format
-                    )
-                    current_row += 1
-                
-                # Write section analysis (merged row)
-                section_analysis_text = section_analyses.get(section_num, "No se generó análisis")
-                sheet_sections.write(current_row, 0, f"Análisis Sección {section_num}:", section_header_format)
-                sheet_sections.merge_range(
-                    current_row, 1, current_row, 3,
-                    section_analysis_text,
-                    merged_format
-                )
-                current_row += 2  # Space between sections
             
-            # Set column widths for readability
-            sheet_sections.set_column('A:A', 12)  # Subsección
-            sheet_sections.set_column('B:B', 30)  # Pregunta
-            sheet_sections.set_column('C:C', 15)  # Respuesta
-            sheet_sections.set_column('D:D', 45)  # Razonamiento
-            
-            writer.sheets['Detallado'].set_column('A:A', 20)
-            writer.sheets['Detallado'].set_column('B:B', 15)
-            writer.sheets['Detallado'].set_column('C:C', 40)
-            writer.sheets['Detallado'].set_column('D:D', 40)
-            writer.sheets['Detallado'].set_column('E:E', 10)
+            # Set column widths
+            sheet_sections.set_column('A:A', 15)  # Sección
+            sheet_sections.set_column('B:B', 90)  # Análisis
         
         excel_buffer.seek(0)
         zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
@@ -5044,6 +5040,11 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
         summary = f"""
 Resumen del Análisis de la Lista de la Valoración Preliminar de la Calidad
 ===========================================================
+
+Archivo Excel generado con 3 hojas:
+  1. Preguntas: Análisis individual de cada pregunta (ordenado por subsección)
+  2. Análisis Subsecciones: Síntesis de preguntas agrupadas por subsección
+  3. Análisis Secciones: Síntesis ejecutiva por sección
 
 Total de preguntas analizadas: {len(results_df)}
 Análisis exitosos: {len(results_df[results_df['Status'] == 'Success'])}
