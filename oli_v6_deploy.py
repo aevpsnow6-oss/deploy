@@ -4780,6 +4780,45 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
+def analyze_question_with_critical_opinion(question):
+    """
+    Analyze a question from independent expert perspective WITHOUT document context.
+    Evaluates reasonableness and adequacy of the concern raised in the question itself.
+    """
+    try:
+        # Single API call for critical evaluation - independent of document content
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert in project quality appraisal and international development (ILO standards). 
+                    Provide an independent critical assessment of the concern raised in the given question.
+                    Respond in Spanish with a brief (max 150 words) critical opinion about whether this concern is:
+                    - Valid and important from a development standards perspective
+                    - Adequately addressed by typical project designs
+                    - A genuine risk that projects often overlook
+                    
+                    Respond ONLY with the critical opinion text, no JSON, no formatting."""
+                },
+                {
+                    "role": "user",
+                    "content": f"Question for critical evaluation: {question}\n\nProvide your independent expert assessment of this concern."
+                }
+            ],
+            max_completion_tokens=500,
+            reasoning_effort="minimal"
+        )
+
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
+            return "No se generó evaluación crítica."
+
+        return content.strip()
+
+    except Exception as e:
+        return f"Error en evaluación crítica: {str(e)}"
+
 def extract_section_number(question_text):
     """Extract section number from question text (e.g., '1.1 ¿Pregunta?' -> 1)"""
     import re
@@ -4967,8 +5006,8 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
             
             # ===== SHEET 1: Questions (Preguntas) =====
             sheet_questions = workbook.add_worksheet('1. Preguntas')
-            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
-            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']
+            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Evaluación Crítica', 'Status']].copy()
+            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Evaluación Crítica', 'Status']
             questions_data.to_excel(writer, index=False, sheet_name='1. Preguntas', startrow=0)
             
             # Format headers
@@ -4981,7 +5020,8 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
             writer.sheets['1. Preguntas'].set_column('C:C', 12)  # Respuesta
             writer.sheets['1. Preguntas'].set_column('D:D', 50)  # Razonamiento
             writer.sheets['1. Preguntas'].set_column('E:E', 40)  # Evidencia
-            writer.sheets['1. Preguntas'].set_column('F:F', 10)  # Status
+            writer.sheets['1. Preguntas'].set_column('F:F', 45)  # Evaluación Crítica
+            writer.sheets['1. Preguntas'].set_column('G:G', 10)  # Status
             
             # ===== SHEET 2: Subsection Analysis (Análisis por Subsección) =====
             sheet_subsections = workbook.add_worksheet('2. Análisis Subsecciones')
@@ -5155,28 +5195,50 @@ with tab1:
         status_text = st.empty()
         
         results = []
+        critical_opinions = {}
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all questions for analysis
-            future_to_question = {
+            # Submit all questions for BOTH document-based analysis AND critical evaluation
+            future_to_question_doc = {
                 executor.submit(analyze_question_with_llm, q, doc_result['text']): q 
                 for q in questions
             }
+            future_to_question_critical = {
+                executor.submit(analyze_question_with_critical_opinion, q): q 
+                for q in questions
+            }
             
-            # Process completed analyses
+            # Process document-based analyses
             completed = 0
-            for future in as_completed(future_to_question):
+            for future in as_completed(future_to_question_doc):
+                question = future_to_question_doc[future]
                 result = future.result()
                 results.append(result)
                 completed += 1
                 
                 # Update progress
                 progress = completed / len(questions)
-                progress_bar.progress(progress)
-                status_text.text(f"Analizadas {completed}/{len(questions)} preguntas")
+                progress_bar.progress(progress * 0.5)  # First half of progress bar
+                status_text.text(f"Análisis documentales: {completed}/{len(questions)} preguntas")
+        
+        # Process critical evaluations
+        completed = 0
+        for future in as_completed(future_to_question_critical):
+            question = future_to_question_critical[future]
+            critical_opinion = future.result()
+            critical_opinions[question] = critical_opinion
+            completed += 1
+            
+            # Update progress
+            progress = completed / len(questions)
+            progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
+            status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
         
         # Create results DataFrame - sort by subsection for proper ordering
         results_df = pd.DataFrame(results)
+        
+        # Add critical opinions to dataframe
+        results_df['Evaluación Crítica'] = results_df['Pregunta'].map(critical_opinions).fillna("No disponible")
         results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
         results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
         results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
