@@ -4780,10 +4780,11 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
-def analyze_question_with_critical_opinion(question, answer, reasoning):
+def analyze_question_with_critical_opinion(question, answer, reasoning, evidence):
     """
     Critically assess if the document's answer to a specific question is adequate and appropriate.
     Evaluates whether the document's response truly addresses the concern raised in the question.
+    Uses answer, reasoning, AND evidence to provide comprehensive critical assessment.
     """
     try:
         # Single API call for critical evaluation - focuses on answer adequacy
@@ -4795,11 +4796,13 @@ def analyze_question_with_critical_opinion(question, answer, reasoning):
                     "content": """You are an expert in project quality appraisal and international development (ILO standards).
                     Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
                     
-                    Consider:
+                    Review the answer, reasoning, and evidence together to evaluate:
                     - Does the answer fully address the concern raised in the question?
+                    - Is the evidence substantive enough to support the answer?
                     - Is the proposed approach sufficient according to best practices?
                     - Are there gaps, risks, or inadequacies in what the document claims?
                     - Should the project have included additional measures or details?
+                    - Is the reasoning robust or superficial?
                     
                     Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
                     Respond ONLY with the critical opinion text, no JSON, no formatting."""
@@ -4812,7 +4815,9 @@ Document's Answer: {answer}
 
 Document's Reasoning: {reasoning}
 
-Provide a critical assessment: Is this answer truly adequate from an expert perspective?"""
+Document's Evidence: {evidence}
+
+Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning and evidence provided?"""
                 }
             ],
             max_completion_tokens=500,
@@ -4946,7 +4951,107 @@ Return ONLY the JSON, no other text."""
     except Exception as e:
         return f"Error generando análisis de sección: {str(e)}"
 
-def create_results_download_with_sections(results_df, subsection_analyses, section_analyses, filename_base="appraisal_checklist"):
+def synthesize_critical_evaluation_subsection(subsection_id, critical_opinions_df):
+    """Synthesize critical evaluations at subsection level from individual question critical opinions"""
+    try:
+        # Build context from individual critical opinions
+        critical_context = "\n\n".join([
+            f"Pregunta {row['Pregunta']}:\nEvaluación Crítica: {row['Evaluación Crítica']}"
+            for _, row in critical_opinions_df.iterrows()
+        ])
+        
+        # Single efficient LLM call per subsection
+        prompt = f"""Based on the following individual critical evaluations from subsection {subsection_id}, 
+synthesize a comprehensive subsection-level critical assessment.
+
+Subsection {subsection_id} - Individual Critical Evaluations:
+{critical_context}
+
+Provide a concise subsection-level critical assessment (1-2 paragraphs) that:
+1. Integrates critical findings across all questions in this subsection
+2. Identifies major gaps, risks, and inadequacies
+3. Highlights patterns in insufficient responses
+4. Provides clear recommendations for improvement
+
+Format as JSON with exactly this structure:
+{{"critical_evaluation": "your critical assessment here (1-2 paragraphs)"}}
+
+Return ONLY the JSON, no other text."""
+
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert critic of project quality. Synthesize individual critical opinions into clear subsection-level critical assessment. Be direct about inadequacies. Always respond in Spanish."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_completion_tokens=1500,
+            reasoning_effort="minimal"
+        )
+        
+        content = response.choices[0].message.content.strip()
+        result = json.loads(content)
+        return result.get('critical_evaluation', 'Error en síntesis crítica')
+    
+    except Exception as e:
+        return f"Error generando evaluación crítica de subsección: {str(e)}"
+
+def synthesize_critical_evaluation_section(section_num, critical_subsection_dict):
+    """Synthesize critical evaluations at section level from subsection critical assessments"""
+    try:
+        # Build context from subsection critical evaluations
+        critical_context = "\n\n".join([
+            f"Subsección {subsec_id}:\n{evaluation}"
+            for subsec_id, evaluation in sorted(critical_subsection_dict.items(), key=lambda x: parse_subsection_for_sorting(x[0]))
+        ])
+        
+        # Single efficient LLM call per section
+        prompt = f"""Based on the following subsection critical evaluations from section {section_num}, 
+synthesize a comprehensive section-level critical assessment.
+
+Section {section_num} - Subsection Critical Evaluations:
+{critical_context}
+
+Provide a detailed section-level critical assessment (2-3 paragraphs) that:
+1. Integrates critical findings across all subsections
+2. Identifies overarching gaps, risks, and systemic inadequacies
+3. Highlights critical patterns of insufficient responses
+4. Provides strategic recommendations for improving the overall section
+
+Format as JSON with exactly this structure:
+{{"critical_evaluation": "your critical assessment here (2-3 paragraphs)"}}
+
+Return ONLY the JSON, no other text."""
+
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert critic of project quality. Synthesize subsection critical findings into clear, actionable section-level critical assessment. Be direct and strategic. Always respond in Spanish."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_completion_tokens=2000,
+            reasoning_effort="minimal"
+        )
+        
+        content = response.choices[0].message.content.strip()
+        result = json.loads(content)
+        return result.get('critical_evaluation', 'Error en síntesis crítica')
+    
+    except Exception as e:
+        return f"Error generando evaluación crítica de sección: {str(e)}"
+
+def create_results_download_with_sections(results_df, subsection_analyses, subsection_critical_evaluations, section_analyses, section_critical_evaluations, filename_base="appraisal_checklist"):
     """Create ZIP file with results including three separate sheets for questions, subsections, and sections"""
     zip_buffer = io.BytesIO()
     
@@ -5047,16 +5152,19 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
             for subsection_id in subsections_sorted:
                 section_num = extract_section_number(subsection_id)
                 analysis_text = subsection_analyses.get(subsection_id, "No se generó análisis")
+                critical_text = subsection_critical_evaluations.get(subsection_id, "No se generó evaluación crítica")
                 
                 sheet_subsections.write(current_row, 0, subsection_id, normal_format)
                 sheet_subsections.write(current_row, 1, f"Sección {section_num}", normal_format)
                 sheet_subsections.write(current_row, 2, analysis_text, subsection_merged_format)
+                sheet_subsections.write(current_row, 3, critical_text, subsection_merged_format)
                 current_row += 1
             
             # Set column widths
             sheet_subsections.set_column('A:A', 12)  # Subsección
             sheet_subsections.set_column('B:B', 15)  # Sección
             sheet_subsections.set_column('C:C', 80)  # Análisis
+            sheet_subsections.set_column('D:D', 80)  # Evaluación Crítica
             
             # ===== SHEET 3: Section Analysis (Análisis por Sección) =====
             sheet_sections = workbook.add_worksheet('3. Análisis Secciones')
@@ -5065,7 +5173,7 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
             sections_sorted = sorted(results_df_sorted['_section'].dropna().unique())
             
             # Write headers
-            section_headers = ['Sección', 'Análisis de Sección']
+            section_headers = ['Sección', 'Análisis de Sección', 'Evaluación Crítica']
             for col_num, header in enumerate(section_headers):
                 sheet_sections.write(0, col_num, header, header_format)
             
@@ -5073,14 +5181,17 @@ def create_results_download_with_sections(results_df, subsection_analyses, secti
             for section_num in sections_sorted:
                 section_num = int(section_num)
                 analysis_text = section_analyses.get(section_num, "No se generó análisis")
+                critical_text = section_critical_evaluations.get(section_num, "No se generó evaluación crítica")
                 
                 sheet_sections.write(current_row, 0, f"Sección {section_num}", section_header_format)
                 sheet_sections.write(current_row, 1, analysis_text, merged_format)
+                sheet_sections.write(current_row, 2, critical_text, merged_format)
                 current_row += 1
             
             # Set column widths
             sheet_sections.set_column('A:A', 15)  # Sección
             sheet_sections.set_column('B:B', 90)  # Análisis
+            sheet_sections.set_column('C:C', 90)  # Evaluación Crítica
         
         excel_buffer.seek(0)
         zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
@@ -5162,6 +5273,42 @@ with tab1:
         help="Selecciona un documento de Word (.docx) para el análisis de valoración preliminar de calidad"
     )
     
+    # Filter section - added after file uploader
+    st.subheader("🔍 Filtros de análisis (opcional)")
+    st.info("Selecciona secciones y subsecciones específicas para un análisis enfocado. Deja en blanco para analizar todas.")
+    
+    # Get unique sections and subsections from questions
+    df_with_sections = df_appraisal.copy()
+    df_with_sections['_section'] = df_with_sections['Pregunta_Realizada'].apply(extract_section_number)
+    df_with_sections['_subsection'] = df_with_sections['Pregunta_Realizada'].apply(extract_subsection_number)
+    
+    all_sections = sorted(df_with_sections['_section'].dropna().unique())
+    all_subsections = sorted(df_with_sections['_subsection'].dropna().unique(), 
+                            key=lambda x: parse_subsection_for_sorting(x) if pd.notna(x) else (999, 999))
+    
+    # Create two columns for filters
+    col_filter1, col_filter2 = st.columns(2)
+    
+    with col_filter1:
+        selected_sections = st.multiselect(
+            "Selecciona Secciones:",
+            options=[f"Sección {int(s)}" for s in all_sections],
+            key="filter_sections",
+            help="Selecciona una o más secciones para analizar"
+        )
+    
+    with col_filter2:
+        selected_subsections = st.multiselect(
+            "Selecciona Subsecciones:",
+            options=[f"Subsección {s}" for s in all_subsections],
+            key="filter_subsections",
+            help="Selecciona una o más subsecciones para analizar"
+        )
+    
+    # Extract section numbers from filter selections
+    filtered_section_nums = [int(s.split()[-1]) for s in selected_sections] if selected_sections else None
+    filtered_subsection_ids = [s.split()[-1] for s in selected_subsections] if selected_subsections else None
+    
     # Processing button
     if st.button('🔍 Analizar documento', key="appraisal_process_button", type="primary"):
         if uploaded_file is None:
@@ -5194,8 +5341,33 @@ with tab1:
         # Get questions for analysis
         questions = df_appraisal['Pregunta_Realizada'].dropna().unique().tolist()
         
+        # Apply filters if selected
+        if filtered_section_nums or filtered_subsection_ids:
+            questions_df_temp = df_appraisal[df_appraisal['Pregunta_Realizada'].isin(questions)].copy()
+            questions_df_temp['_section'] = questions_df_temp['Pregunta_Realizada'].apply(extract_section_number)
+            questions_df_temp['_subsection'] = questions_df_temp['Pregunta_Realizada'].apply(extract_subsection_number)
+            
+            # Filter by selected sections and/or subsections
+            if filtered_section_nums and filtered_subsection_ids:
+                # Both filters selected - apply AND logic
+                filtered_questions = questions_df_temp[
+                    (questions_df_temp['_section'].isin(filtered_section_nums)) |
+                    (questions_df_temp['_subsection'].isin(filtered_subsection_ids))
+                ]
+            elif filtered_section_nums:
+                # Only sections selected
+                filtered_questions = questions_df_temp[questions_df_temp['_section'].isin(filtered_section_nums)]
+            else:
+                # Only subsections selected
+                filtered_questions = questions_df_temp[questions_df_temp['_subsection'].isin(filtered_subsection_ids)]
+            
+            questions = filtered_questions['Pregunta_Realizada'].dropna().unique().tolist()
+            
+            # Show filter info
+            st.info(f"📌 Análisis filtrado: {len(questions)} preguntas seleccionadas de {len(df_appraisal)}")
+        
         if not questions:
-            st.error("❌ No se encontraron preguntas para el análisis.")
+            st.error("❌ No se encontraron preguntas para el análisis con los filtros aplicados.")
             st.stop()
         
         # Analyze questions
@@ -5229,13 +5401,14 @@ with tab1:
             # Create results DataFrame to get answers for critical evaluation
             results_df_temp = pd.DataFrame(results)
             
-            # Now submit critical evaluations with answer data
+            # Now submit critical evaluations with answer, reasoning, and evidence data
             future_to_question_critical = {
                 executor.submit(
                     analyze_question_with_critical_opinion,
                     row['Pregunta'],
                     row['Respuesta'],
-                    row['Razonamiento']
+                    row['Razonamiento'],
+                    row['Evidencia']
                 ): row['Pregunta']
                 for _, row in results_df_temp.iterrows()
             }
@@ -5286,7 +5459,24 @@ with tab1:
             
             subsection_progress.progress((idx + 1) / len(subsections))
         
-        # Level 2: Section synthesis (grouping subsections)
+        # Level 2: Critical evaluation synthesis at subsection level
+        st.info("Generando evaluaciones críticas a nivel de subsección...")
+        subsection_critical_evaluations = {}
+        
+        critical_subsection_progress = st.progress(0)
+        for idx, subsection_id in enumerate(subsections):
+            subsection_df = results_df[results_df['_subsection'] == subsection_id].copy()
+            
+            # Generate critical evaluation synthesis from individual critical opinions
+            critical_evaluation = synthesize_critical_evaluation_subsection(
+                subsection_id,
+                subsection_df[['Pregunta', 'Evaluación Crítica']]
+            )
+            subsection_critical_evaluations[subsection_id] = critical_evaluation
+            
+            critical_subsection_progress.progress((idx + 1) / len(subsections))
+        
+        # Level 3: Section synthesis (grouping subsections)
         st.info("Generando análisis a nivel de sección...")
         sections = sorted(results_df['_section_num'].dropna().unique())
         section_analyses = {}
@@ -5310,10 +5500,35 @@ with tab1:
             
             section_progress.progress((idx + 1) / len(sections))
         
+        # Level 4: Critical evaluation synthesis at section level
+        st.info("Generando evaluaciones críticas a nivel de sección...")
+        section_critical_evaluations = {}
+        
+        critical_section_progress = st.progress(0)
+        for idx, section_num in enumerate(sections):
+            section_num = int(section_num)
+            # Get all critical subsection evaluations for this section
+            section_critical_subsections = {
+                subsec_id: subsection_critical_evaluations[subsec_id]
+                for subsec_id in subsections
+                if subsec_id.startswith(f"{section_num}.")
+            }
+            
+            # Generate critical evaluation from critical subsection evaluations
+            critical_evaluation = synthesize_critical_evaluation_section(
+                section_num,
+                section_critical_subsections
+            )
+            section_critical_evaluations[section_num] = critical_evaluation
+            
+            critical_section_progress.progress((idx + 1) / len(sections))
+        
         # Store all results in session state
         st.session_state['tab1_results_df'] = results_df
         st.session_state['tab1_subsection_analyses'] = subsection_analyses
+        st.session_state['tab1_subsection_critical_evaluations'] = subsection_critical_evaluations
         st.session_state['tab1_section_analyses'] = section_analyses
+        st.session_state['tab1_section_critical_evaluations'] = section_critical_evaluations
         st.session_state['tab1_doc_stats'] = {
             'file_size': doc_result['file_size'],
             'word_count': doc_result['word_count']
@@ -5368,8 +5583,10 @@ with tab1:
         if len(results_df) > 0:
             # Get analyses from session state
             subsection_analyses = st.session_state.get('tab1_subsection_analyses', {})
+            subsection_critical_evaluations = st.session_state.get('tab1_subsection_critical_evaluations', {})
             section_analyses = st.session_state.get('tab1_section_analyses', {})
-            zip_buffer = create_results_download_with_sections(results_df, subsection_analyses, section_analyses)
+            section_critical_evaluations = st.session_state.get('tab1_section_critical_evaluations', {})
+            zip_buffer = create_results_download_with_sections(results_df, subsection_analyses, subsection_critical_evaluations, section_analyses, section_critical_evaluations)
             
             st.download_button(
                 label="📦 Descargar resultados en ZIP",
@@ -5445,8 +5662,10 @@ with tab1:
             if len(results_df) > 0:
                 # Get analyses from session state
                 subsection_analyses = st.session_state.get('tab1_subsection_analyses', {})
+                subsection_critical_evaluations = st.session_state.get('tab1_subsection_critical_evaluations', {})
                 section_analyses = st.session_state.get('tab1_section_analyses', {})
-                zip_buffer = create_results_download_with_sections(results_df, subsection_analyses, section_analyses)
+                section_critical_evaluations = st.session_state.get('tab1_section_critical_evaluations', {})
+                zip_buffer = create_results_download_with_sections(results_df, subsection_analyses, subsection_critical_evaluations, section_analyses, section_critical_evaluations)
                 
                 st.download_button(
                     label="📦 Descargar resultados en ZIP",
