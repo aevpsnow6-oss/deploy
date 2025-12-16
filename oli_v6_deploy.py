@@ -4780,13 +4780,18 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
-def analyze_question_with_critical_opinion(question, answer, reasoning, evidence):
+def analyze_question_with_critical_opinion(question, answer, reasoning, evidence, document_text=""):
     """
     Critically assess if the document's answer to a specific question is adequate and appropriate.
     Evaluates whether the document's response truly addresses the concern raised in the question.
-    Uses answer, reasoning, AND evidence to provide comprehensive critical assessment.
+    Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
+    Uses full 100K chars (≈25K tokens) for complete document understanding - cost effective within token budget.
     """
     try:
+        # Use first 100,000 characters to capture full document context
+        # 100K chars ≈ 25K tokens, well within gpt-5-mini's context window (cost effective)
+        doc_context = (document_text or "")[:100000]
+        
         # Single API call for critical evaluation - focuses on answer adequacy
         resp = client.chat.completions.create(
             model="gpt-5-mini",
@@ -4796,13 +4801,15 @@ def analyze_question_with_critical_opinion(question, answer, reasoning, evidence
                     "content": """You are an expert in project quality appraisal and international development (ILO standards).
                     Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
                     
-                    Review the answer, reasoning, and evidence together to evaluate:
+                    Review the answer, reasoning, evidence, AND full document context together to evaluate:
                     - Does the answer fully address the concern raised in the question?
                     - Is the evidence substantive enough to support the answer?
+                    - Does the full document context confirm or contradict the claimed answer?
                     - Is the proposed approach sufficient according to best practices?
                     - Are there gaps, risks, or inadequacies in what the document claims?
                     - Should the project have included additional measures or details?
                     - Is the reasoning robust or superficial?
+                    - What is NOT mentioned that should be?
                     
                     Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
                     Respond ONLY with the critical opinion text, no JSON, no formatting."""
@@ -4817,7 +4824,10 @@ Document's Reasoning: {reasoning}
 
 Document's Evidence: {evidence}
 
-Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning and evidence provided?"""
+Full Document Context (complete):
+{doc_context}
+
+Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
                 }
             ],
             max_completion_tokens=500,
@@ -5401,14 +5411,15 @@ with tab1:
             # Create results DataFrame to get answers for critical evaluation
             results_df_temp = pd.DataFrame(results)
             
-            # Now submit critical evaluations with answer, reasoning, and evidence data
+            # Now submit critical evaluations with answer, reasoning, evidence AND document context
             future_to_question_critical = {
                 executor.submit(
                     analyze_question_with_critical_opinion,
                     row['Pregunta'],
                     row['Respuesta'],
                     row['Razonamiento'],
-                    row['Evidencia']
+                    row['Evidencia'],
+                    doc_result['text']  # Pass complete document text for context
                 ): row['Pregunta']
                 for _, row in results_df_temp.iterrows()
             }
