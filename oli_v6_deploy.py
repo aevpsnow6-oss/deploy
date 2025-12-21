@@ -39,6 +39,50 @@ client = OpenAI(api_key=openai_api_key)
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+# Import tiktoken for accurate token counting
+try:
+    import tiktoken
+    # Use cl100k_base encoding (standard for GPT-4 and GPT-5 models)
+    encoding = tiktoken.get_encoding("cl100k_base")
+except ImportError:
+    encoding = None
+    # Warning will be shown when function is first called if needed
+
+# Helper function to truncate text to a token limit
+def truncate_to_token_limit(text, max_tokens=110000, encoding_obj=None):
+    """
+    Truncate text to a maximum number of tokens.
+    
+    Args:
+        text: The text to truncate
+        max_tokens: Maximum number of tokens (default 110K for GPT-5-mini's 128K context window)
+        encoding_obj: tiktoken encoding object (if None, falls back to character estimation)
+    
+    Returns:
+        Truncated text that fits within the token limit
+    """
+    if not text:
+        return text
+    
+    if encoding_obj is None:
+        # Fallback: use character-based estimation (4 chars per token for Spanish)
+        # 110K tokens * 4 = 440K characters
+        max_chars = max_tokens * 4
+        return text[:max_chars]
+    
+    # Count tokens
+    tokens = encoding_obj.encode(text)
+    
+    # If within limit, return full text
+    if len(tokens) <= max_tokens:
+        return text
+    
+    # Truncate to max_tokens
+    truncated_tokens = tokens[:max_tokens]
+    truncated_text = encoding_obj.decode(truncated_tokens)
+    
+    return truncated_text
+
 # Function to get embeddings from OpenAI
 def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
     if not openai_api_key:
@@ -2406,6 +2450,270 @@ with tab2:
                 })
         return pd.DataFrame(rows)
     
+    # Enhanced extraction function with multi-method header detection, tables, and validation
+    def extract_docx_structure_enhanced(docx_path):
+        """
+        Enhanced document extraction with:
+        - Multi-method header detection (style, formatting, pattern)
+        - Table extraction
+        - List extraction
+        - Page estimation
+        - Quality metrics
+        """
+        from docx import Document
+        from docx.shared import Pt
+        import re
+        
+        doc = Document(docx_path)
+        filename = os.path.basename(docx_path)
+        rows = []
+        tables_data = []
+        current_headers = {i: '' for i in range(1, 7)}
+        para_counter = 0
+        page_estimate = 1
+        words_per_page = 500  # Estimate for page calculation
+        
+        # Track statistics
+        stats = {
+            'total_paragraphs': 0,
+            'total_tables': 0,
+            'headers_detected': 0,
+            'headers_by_style': 0,
+            'headers_by_formatting': 0,
+            'headers_by_pattern': 0,
+            'orphaned_paragraphs': 0,
+            'empty_sections': 0
+        }
+        
+        def get_header_level_by_style(style_name):
+            """Method 1: Style-based detection (original method)"""
+            for i in range(1, 7):
+                if style_name.lower().startswith(f'heading {i}'.lower()):
+                    return i
+            return None
+        
+        def get_header_level_by_formatting(para):
+            """Method 2: Formatting-based detection"""
+            # Check if paragraph is bold and larger than normal text
+            if para.runs:
+                first_run = para.runs[0]
+                is_bold = first_run.bold
+                font_size = first_run.font.size
+                
+                # If bold and larger font, likely a header
+                if is_bold and font_size:
+                    if font_size >= Pt(14):  # Larger than normal (11-12pt)
+                        # Estimate level based on size
+                        if font_size >= Pt(18):
+                            return 1
+                        elif font_size >= Pt(16):
+                            return 2
+                        elif font_size >= Pt(14):
+                            return 3
+                elif is_bold and len(para.text.strip()) < 100:  # Short bold text
+                    return 2  # Likely a subheader
+            return None
+        
+        def get_header_level_by_pattern(para_text):
+            """Method 3: Pattern-based detection (numbered headings)"""
+            text = para_text.strip()
+            # Patterns like "1.", "1.1", "1.1.1", "I.", "A.", etc.
+            patterns = [
+                (r'^\d+\.\s+\w', 1),  # "1. Title"
+                (r'^\d+\.\d+\s+\w', 2),  # "1.1 Title"
+                (r'^\d+\.\d+\.\d+\s+\w', 3),  # "1.1.1 Title"
+                (r'^[IVX]+\.\s+\w', 1),  # "I. Title"
+                (r'^[A-Z]\.\s+\w', 2),  # "A. Title"
+            ]
+            for pattern, level in patterns:
+                if re.match(pattern, text):
+                    return level
+            return None
+        
+        def detect_header_level(para):
+            """Try all methods to detect header level"""
+            # Method 1: Style-based
+            level = get_header_level_by_style(para.style.name)
+            if level:
+                stats['headers_by_style'] += 1
+                return level
+            
+            # Method 2: Formatting-based
+            level = get_header_level_by_formatting(para)
+            if level:
+                stats['headers_by_formatting'] += 1
+                return level
+            
+            # Method 3: Pattern-based
+            level = get_header_level_by_pattern(para.text)
+            if level:
+                stats['headers_by_pattern'] += 1
+                return level
+            
+            return None
+        
+        def header_dict():
+            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+        
+        def get_full_header_path():
+            """Get full hierarchical path of headers"""
+            path_parts = []
+            for i in range(1, 7):
+                if current_headers[i]:
+                    path_parts.append(current_headers[i])
+            return ' > '.join(path_parts) if path_parts else 'Sin sección'
+        
+        # Extract paragraphs and headers
+        for para in doc.paragraphs:
+            para_counter += 1
+            stats['total_paragraphs'] += 1
+            
+            level = detect_header_level(para)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                # Clear lower level headers
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                
+                stats['headers_detected'] += 1
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'header_path': get_full_header_path(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_estimate': page_estimate,
+                    'detection_method': 'style' if get_header_level_by_style(para.style.name) else ('formatting' if get_header_level_by_formatting(para) else 'pattern')
+                })
+            elif para.text.strip():
+                # Estimate page number based on word count
+                word_count = len(para.text.split())
+                if word_count > 0:
+                    page_estimate = max(1, int(stats['total_paragraphs'] * 0.02))  # Rough estimate
+                
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'header_path': get_full_header_path(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_estimate': page_estimate,
+                    'detection_method': None
+                })
+        
+        # Extract tables
+        for table_idx, table in enumerate(doc.tables):
+            stats['total_tables'] += 1
+            table_data = []
+            for row in table.rows:
+                row_data = [cell.text.strip() for cell in row.cells]
+                table_data.append(row_data)
+            
+            # Find which section this table belongs to
+            current_section = get_full_header_path()
+            
+            tables_data.append({
+                'filename': filename,
+                'table_number': table_idx + 1,
+                'section': current_section,
+                'header_path': current_section,
+                'data': table_data,
+                'row_count': len(table_data),
+                'col_count': len(table_data[0]) if table_data else 0
+            })
+            
+            # Add table as content row
+            table_text = '\n'.join([' | '.join(row) for row in table_data])
+            rows.append({
+                'filename': filename,
+                **header_dict(),
+                'header_path': current_section,
+                'content': f"[TABLA {table_idx + 1}]\n{table_text}",
+                'source_type': 'table',
+                'paragraph_number': para_counter + table_idx,
+                'page_estimate': page_estimate,
+                'detection_method': None
+            })
+        
+        # Calculate quality metrics
+        df = pd.DataFrame(rows)
+        
+        # Count orphaned paragraphs (no header_1)
+        stats['orphaned_paragraphs'] = len(df[(df['source_type'] == 'paragraph') & (df['header_1'].isna() | (df['header_1'] == ''))])
+        
+        # Count empty sections
+        if 'header_1' in df.columns:
+            sections = df[df['header_1'].notna() & (df['header_1'] != '')]['header_1'].unique()
+            for section in sections:
+                section_df = df[df['header_1'] == section]
+                if len(section_df[section_df['source_type'] == 'paragraph']) == 0:
+                    stats['empty_sections'] += 1
+        
+        return df, tables_data, stats
+    
+    # Validation function
+    def validate_extraction(df, tables_data, stats):
+        """
+        Validate extraction quality and return metrics, warnings, and recommendations
+        """
+        warnings = []
+        recommendations = []
+        quality_score = 100
+        
+        # Check header detection rate
+        if stats['total_paragraphs'] > 0:
+            header_rate = (stats['headers_detected'] / stats['total_paragraphs']) * 100
+            if header_rate < 2:  # Less than 2% headers might indicate poor detection
+                warnings.append(f"⚠️ Tasa de detección de encabezados baja: {header_rate:.1f}%")
+                quality_score -= 10
+                recommendations.append("Verificar si los encabezados usan estilos estándar de Word")
+        
+        # Check for orphaned paragraphs
+        if stats['orphaned_paragraphs'] > 0:
+            orphan_rate = (stats['orphaned_paragraphs'] / stats['total_paragraphs']) * 100
+            if orphan_rate > 10:  # More than 10% orphaned
+                warnings.append(f"⚠️ {stats['orphaned_paragraphs']} párrafos sin sección asignada ({orphan_rate:.1f}%)")
+                quality_score -= 15
+                recommendations.append("Revisar párrafos huérfanos y asignarlos manualmente a secciones")
+        
+        # Check for empty sections
+        if stats['empty_sections'] > 0:
+            warnings.append(f"⚠️ {stats['empty_sections']} secciones sin contenido")
+            quality_score -= 5 * min(stats['empty_sections'], 5)  # Max -25 points
+            recommendations.append("Revisar secciones vacías - pueden ser encabezados mal detectados")
+        
+        # Check table extraction
+        if stats['total_tables'] > 0:
+            if len(tables_data) < stats['total_tables']:
+                warnings.append(f"⚠️ No se extrajeron todas las tablas ({len(tables_data)}/{stats['total_tables']})")
+                quality_score -= 10
+        
+        # Check hierarchy integrity
+        if 'header_1' in df.columns and 'header_2' in df.columns:
+            # Check for level jumps (H1 -> H3, skipping H2)
+            h1_sections = df[df['header_1'].notna() & (df['header_1'] != '')]
+            for idx, row in h1_sections.iterrows():
+                # Find next header after this one
+                next_rows = df.iloc[idx+1:idx+10]  # Check next 10 rows
+                next_headers = next_rows[next_rows['source_type'] == 'heading']
+                if not next_headers.empty:
+                    next_header = next_rows.iloc[0]
+                    # Check if there's a level jump
+                    if next_header.get('header_3') and not next_header.get('header_2'):
+                        warnings.append(f"⚠️ Salto de nivel detectado: {row.get('header_1', '')} → {next_header.get('header_3', '')}")
+                        quality_score -= 5
+        
+        quality_score = max(0, quality_score)  # Don't go below 0
+        
+        return {
+            'quality_score': quality_score,
+            'warnings': warnings,
+            'recommendations': recommendations,
+            'stats': stats
+        }
+    
     # Function to split text into chunks respecting the token limit
     def split_text_into_chunks(text, max_completion_tokens=7000):
         import re
@@ -2609,9 +2917,13 @@ with tab2:
 
         for attempt in range(max_retries):
             try:
-                # Use first 100,000 characters to capture full document context
-                # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
-                combined_text = document_text[:100000]
+                # Truncate to ~110K tokens to maximize context while leaving room for:
+                # - System prompt (~50 tokens)
+                # - User prompt template + criterion + scoring levels (~500-2000 tokens)
+                # - Response tokens (6500 tokens)
+                # - Safety buffer (~5000 tokens)
+                # Total: 128K - 50 - 2000 - 6500 - 5000 = ~110K tokens for document
+                combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
 
                 # Now do the expensive analysis on focused content
                 prompt = f"""Evaluate this document against: {criterion}
@@ -2874,26 +3186,39 @@ with tab2:
                     progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
                     doc_result = docx2python(tmp_file.name)
                     
-                    # Extract structure
-                    df = extract_docx_structure(tmp_file.name)
-                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Validando extracción...")
                     
-                    # Extract sections directly (no LLM needed - text is already well-formatted)
+                    # Validate extraction
+                    validation_results = validate_extraction(df, tables_data, extraction_stats)
+                    progress_bar.progress(0.3, text="Extracción validada. Procesando secciones...")
+                    
+                    # Extract sections
                     header_1_values = df['header_1'].dropna().unique()
                     llm_summary_rows = []
-                    progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
-
+                    
                     for idx, header in enumerate(header_1_values):
                         section_df = df[df['header_1'] == header].copy()
-                        # Extract text directly - already clean from extract_docx_structure
+                        # Extract text directly - already clean from extract_docx_structure_enhanced
                         full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
+                        # Calculate section stats
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
 
                     progress_bar.progress(0.5, text="Secciones extraídas.")
                     
                     # Create exploded dataframe
                     llm_summary_df = pd.DataFrame(llm_summary_rows)
-                    llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
                     exploded_df = llm_summary_df.assign(
                         llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
                     ).explode('llm_paragraph')
@@ -2915,6 +3240,12 @@ with tab2:
                         'n_paragraphs': n_paragraphs
                     }
                     st.session_state['exploded_df_tab2'] = exploded_df
+                    st.session_state['extraction_df_tab2'] = df
+                    st.session_state['tables_data_tab2'] = tables_data
+                    st.session_state['extraction_stats_tab2'] = extraction_stats
+                    st.session_state['validation_results_tab2'] = validation_results
+                    st.session_state['sections_df_tab2'] = llm_summary_df
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)  # Select all by default
                     st.session_state['last_file_hash_tab2'] = file_hash
                     
                     try:
@@ -2924,9 +3255,127 @@ with tab2:
                     
                     progress_bar.progress(1.0, text="Procesamiento completo.")
                     
+                    # Display extraction results and validation
+                    st.success("✅ Documento procesado con éxito")
+                    
+                    # Show validation results
+                    with st.expander("📊 Resultados de Extracción y Validación", expanded=True):
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Puntuación de Calidad", f"{validation_results['quality_score']}/100")
+                        with col2:
+                            st.metric("Encabezados Detectados", extraction_stats['headers_detected'])
+                        with col3:
+                            st.metric("Tablas Extraídas", len(tables_data))
+                        with col4:
+                            st.metric("Secciones", len(header_1_values))
+                        
+                        # Quality score indicator
+                        if validation_results['quality_score'] >= 80:
+                            st.success(f"✅ Calidad de extracción: Excelente ({validation_results['quality_score']}/100)")
+                        elif validation_results['quality_score'] >= 60:
+                            st.warning(f"⚠️ Calidad de extracción: Buena ({validation_results['quality_score']}/100)")
+                        else:
+                            st.error(f"❌ Calidad de extracción: Requiere revisión ({validation_results['quality_score']}/100)")
+                        
+                        # Show warnings
+                        if validation_results['warnings']:
+                            st.warning("**Advertencias:**")
+                            for warning in validation_results['warnings']:
+                                st.write(f"- {warning}")
+                        
+                        # Show recommendations
+                        if validation_results['recommendations']:
+                            st.info("**Recomendaciones:**")
+                            for rec in validation_results['recommendations']:
+                                st.write(f"- {rec}")
+                        
+                        # Show detection method breakdown
+                        st.markdown("**Métodos de detección de encabezados:**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write(f"Por estilo: {extraction_stats['headers_by_style']}")
+                        with col2:
+                            st.write(f"Por formato: {extraction_stats['headers_by_formatting']}")
+                        with col3:
+                            st.write(f"Por patrón: {extraction_stats['headers_by_pattern']}")
+                    
+                    # Show document structure preview
+                    with st.expander("📋 Vista Previa de Estructura del Documento", expanded=False):
+                        st.markdown("**Secciones detectadas:**")
+                        sections_preview = llm_summary_df[['header_1', 'n_words', 'n_paragraphs', 'n_tables']].copy()
+                        sections_preview.columns = ['Sección', 'Palabras', 'Párrafos', 'Tablas']
+                        st.dataframe(sections_preview, use_container_width=True, hide_index=True)
+                    
+                    # Section selector
+                    st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                    st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                    
+                    # Initialize selected sections if not exists or if document changed
+                    if 'selected_sections_tab2' not in st.session_state or st.session_state.get('last_file_hash_tab2') != file_hash:
+                        st.session_state['selected_sections_tab2'] = list(header_1_values)
+                    
+                    # Section selection interface
+                    selected_sections = st.session_state.get('selected_sections_tab2', list(header_1_values)).copy()
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col2:
+                        if st.button("✅ Seleccionar Todas", key="select_all_sections_tab2"):
+                            st.session_state['selected_sections_tab2'] = list(header_1_values)
+                            st.rerun()
+                        
+                        if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab2"):
+                            st.session_state['selected_sections_tab2'] = []
+                            st.rerun()
+                    
+                    with col1:
+                        st.markdown("**Secciones disponibles:**")
+                        for section in header_1_values:
+                            section_info = llm_summary_df[llm_summary_df['header_1'] == section].iloc[0]
+                            is_selected = section in selected_sections
+                            
+                            checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos"
+                            if section_info['n_tables'] > 0:
+                                checkbox_label += f", {section_info['n_tables']} tablas"
+                            checkbox_label += ")"
+                            
+                            checkbox_key = f"section_checkbox_{section}_tab2"
+                            new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                            
+                            if new_selection and section not in selected_sections:
+                                selected_sections.append(section)
+                            elif not new_selection and section in selected_sections:
+                                selected_sections.remove(section)
+                    
+                    # Update session state
+                    st.session_state['selected_sections_tab2'] = selected_sections
+                    
+                    # Show selection summary
+                    if selected_sections:
+                        selected_df = llm_summary_df[llm_summary_df['header_1'].isin(selected_sections)]
+                        total_selected_words = selected_df['n_words'].sum()
+                        total_selected_paras = selected_df['n_paragraphs'].sum()
+                        
+                        # Estimate tokens
+                        if encoding:
+                            selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                            estimated_tokens = len(encoding.encode(selected_text))
+                        else:
+                            estimated_tokens = total_selected_words * 1.2  # Rough estimate
+                        
+                        st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                                  f"{total_selected_words:,} palabras | "
+                                  f"~{estimated_tokens:,} tokens estimados")
+                        
+                        if estimated_tokens > 110000:
+                            st.warning(f"⚠️ El contenido seleccionado excede el límite de tokens (~{estimated_tokens:,} > 110,000). "
+                                      f"Se truncará automáticamente durante la evaluación.")
+                    else:
+                        st.warning("⚠️ No hay secciones seleccionadas. Por favor selecciona al menos una sección.")
+                    
                     st.info(f"**Resumen del documento:**\n\n" + 
                             f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                            f"- Número de palabras: {n_words}\n" + 
+                            f"- Número de palabras: {n_words:,}\n" + 
                             f"- Número de párrafos: {n_paragraphs}")
                     
                 except Exception as e:
@@ -2936,7 +3385,21 @@ with tab2:
                     st.stop()
         
         # Evaluate with selected rubrics and criteria
-        document_text = st.session_state.get('full_document_text_tab2', '')
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab2', [])
+        sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
+        
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab2', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
         if not document_text:
             st.error("No se pudo recuperar el texto del documento.")
             st.stop()
@@ -3260,9 +3723,13 @@ with tab4:
 
                 # Smart context selection: use full text for small docs, RAG for large docs
                 if not use_rag:
-                    # Small documents: use full context (up to 100K chars)
+                    # Small documents: use full context (up to 110K tokens)
                     # This is more efficient - no chunking, no embeddings, just direct LLM call
-                    context = st.session_state.get('doc_chat_total_text', '')[:100000]
+                    context = truncate_to_token_limit(
+                        st.session_state.get('doc_chat_total_text', ''), 
+                        max_tokens=110000, 
+                        encoding_obj=encoding
+                    )
 
                     messages = [
                         {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
@@ -4150,9 +4617,8 @@ with tab3:
 
             for attempt in range(max_retries):
                 try:
-                    # Use first 100,000 characters to capture full document context
-                    # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
-                    combined_text = document_text[:100000]
+                    # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+                    combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
 
                     # Now do the expensive analysis on focused content
                     prompt = f"""Evaluate this document against: {criterion}
@@ -4704,11 +5170,10 @@ def extract_document_content(uploaded_file):
 #         }
 
 def analyze_question_with_llm(question, document_text):
-    """Analyze a single question against the document using LLM with full context (up to 100K chars)."""
+    """Analyze a single question against the document using LLM with full context (up to 110K tokens)."""
     try:
-        # Use first 100,000 characters to capture full document context
-        # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
-        combined_text = (document_text or "")[:100000]
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        combined_text = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
 
         if not combined_text.strip():
             return {
@@ -4785,12 +5250,11 @@ def analyze_question_with_critical_opinion(question, answer, reasoning, evidence
     Critically assess if the document's answer to a specific question is adequate and appropriate.
     Evaluates whether the document's response truly addresses the concern raised in the question.
     Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
-    Uses full 100K chars (≈25K tokens) for complete document understanding - cost effective within token budget.
+    Uses up to 110K tokens for complete document understanding - maximizes context window usage.
     """
     try:
-        # Use first 100,000 characters to capture full document context
-        # 100K chars ≈ 25K tokens, well within gpt-5-mini's context window (cost effective)
-        doc_context = (document_text or "")[:100000]
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
         
         # Single API call for critical evaluation - focuses on answer adequacy
         resp = client.chat.completions.create(
