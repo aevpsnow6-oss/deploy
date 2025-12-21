@@ -2846,70 +2846,6 @@ with tab2:
     if 'document_extracted_tab2' not in st.session_state:
         st.session_state['document_extracted_tab2'] = False
 
-    # Rubric and Criteria Selection Section
-    st.markdown("### Selección de Rúbricas y Criterios")
-    
-    # All available rubrics
-    all_rubrics = {
-        # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
-        # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
-        "Participación durante la evaluación (metodología)": parteval_rubric,
-        "Integración del Enfoque de Género": gender_rubric,
-        # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
-        "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
-    }
-
-    # Step 1: Select Rubrics
-    st.markdown("#### 1. Seleccione las rúbricas a aplicar:")
-    selected_rubric_names = st.multiselect(
-        "Rúbricas:",
-        options=list(all_rubrics.keys()),
-        default=st.session_state['selected_rubrics_tab2'],
-        key='rubric_selector_tab2'
-    )
-    st.session_state['selected_rubrics_tab2'] = selected_rubric_names
-
-    # Step 2: Select Criteria within each rubric
-    if selected_rubric_names:
-        st.markdown("#### 2. Seleccione los criterios específicos:")
-        
-        for rubric_name in selected_rubric_names:
-            rubric_dict = all_rubrics[rubric_name]
-            
-            with st.expander(f"📋 {rubric_name} ({len(rubric_dict)} criterios disponibles)", expanded=True):
-                # Select all checkbox for this rubric
-                select_all_key = f"select_all_{rubric_name}_tab2"
-                select_all = st.checkbox(f"Seleccionar todos los criterios", key=select_all_key)
-                
-                # Initialize criteria selection for this rubric
-                if rubric_name not in st.session_state['selected_criteria_tab2']:
-                    st.session_state['selected_criteria_tab2'][rubric_name] = []
-                
-                # Show criteria checkboxes
-                selected_criteria = []
-                for criterion in rubric_dict.keys():
-                    # Default checked if select_all or previously selected
-                    default_value = select_all or criterion in st.session_state['selected_criteria_tab2'][rubric_name]
-                    
-                    is_selected = st.checkbox(
-                        f"{criterion}",
-                        value=default_value,
-                        key=f"criterion_{rubric_name}_{criterion}_tab2"
-                    )
-                    
-                    if is_selected:
-                        selected_criteria.append(criterion)
-                
-                # Update session state
-                st.session_state['selected_criteria_tab2'][rubric_name] = selected_criteria
-                
-                st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(rubric_dict)}")
-
-    # Show summary of selections
-    if selected_rubric_names:
-        total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
-        st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
-
     # Document Extraction Section
     st.markdown("---")
     st.markdown("### 📥 Extracción de Documento")
@@ -3410,17 +3346,16 @@ with tab2:
             st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
             st.stop()
         
+        # Get selected rubrics from session state
+        selected_rubric_names = st.session_state.get('selected_rubrics_tab2', [])
         if not selected_rubric_names:
             st.error("Por favor seleccione al menos una rúbrica.")
             st.stop()
         
+        # Calculate total criteria
+        total_criteria = sum(len(st.session_state.get('selected_criteria_tab2', {}).get(r, [])) for r in selected_rubric_names)
         if total_criteria == 0:
             st.error("Por favor seleccione al menos un criterio.")
-            st.stop()
-        
-        selected_sections = st.session_state.get('selected_sections_tab2', [])
-        if not selected_sections:
-            st.error("Por favor selecciona al menos una sección para evaluar.")
             st.stop()
         
         # Check if document needs re-extraction (shouldn't happen, but safety check)
@@ -3451,6 +3386,16 @@ with tab2:
             st.stop()
 
         # Build filtered rubrics based on selection
+        # Get selected rubrics from session state
+        selected_rubric_names = st.session_state.get('selected_rubrics_tab2', [])
+        
+        # Define all_rubrics for evaluation
+        all_rubrics = {
+            "Participación durante la evaluación (metodología)": parteval_rubric,
+            "Integración del Enfoque de Género": gender_rubric,
+            "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        }
+        
         rubrics_to_evaluate = []
         for rubric_name in selected_rubric_names:
             selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
