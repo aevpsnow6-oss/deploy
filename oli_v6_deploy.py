@@ -3086,6 +3086,77 @@ with tab2:
                         f"- Número de palabras: {doc_stats.get('n_words', 0):,}\n" + 
                         f"- Número de párrafos: {doc_stats.get('n_paragraphs', 0)}")
     
+    # Rubric and Criteria Selection Section (moved after document extraction)
+    st.markdown("---")
+    st.markdown("### 📋 Selección de Rúbricas y Criterios")
+    
+    # Only show rubric selection if document is extracted
+    if st.session_state.get('document_extracted_tab2', False):
+        # All available rubrics
+        all_rubrics = {
+            # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
+            # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
+            "Participación durante la evaluación (metodología)": parteval_rubric,
+            "Integración del Enfoque de Género": gender_rubric,
+            # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
+            "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        }
+
+        # Step 1: Select Rubrics
+        st.markdown("#### 1. Seleccione las rúbricas a aplicar:")
+        selected_rubric_names = st.multiselect(
+            "Rúbricas:",
+            options=list(all_rubrics.keys()),
+            default=st.session_state['selected_rubrics_tab2'],
+            key='rubric_selector_tab2'
+        )
+        st.session_state['selected_rubrics_tab2'] = selected_rubric_names
+
+        # Step 2: Select Criteria within each rubric
+        if selected_rubric_names:
+            st.markdown("#### 2. Seleccione los criterios específicos:")
+            
+            for rubric_name in selected_rubric_names:
+                rubric_dict = all_rubrics[rubric_name]
+                
+                with st.expander(f"📋 {rubric_name} ({len(rubric_dict)} criterios disponibles)", expanded=True):
+                    # Select all checkbox for this rubric
+                    select_all_key = f"select_all_{rubric_name}_tab2"
+                    select_all = st.checkbox(f"Seleccionar todos los criterios", key=select_all_key)
+                    
+                    # Initialize criteria selection for this rubric
+                    if rubric_name not in st.session_state['selected_criteria_tab2']:
+                        st.session_state['selected_criteria_tab2'][rubric_name] = []
+                    
+                    # Show criteria checkboxes
+                    selected_criteria = []
+                    for criterion in rubric_dict.keys():
+                        # Default checked if select_all or previously selected
+                        default_value = select_all or criterion in st.session_state['selected_criteria_tab2'][rubric_name]
+                        
+                        is_selected = st.checkbox(
+                            f"{criterion}",
+                            value=default_value,
+                            key=f"criterion_{rubric_name}_{criterion}_tab2"
+                        )
+                        
+                        if is_selected:
+                            selected_criteria.append(criterion)
+                    
+                    # Update session state
+                    st.session_state['selected_criteria_tab2'][rubric_name] = selected_criteria
+                    
+                    st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(rubric_dict)}")
+
+        # Show summary of selections
+        if selected_rubric_names:
+            total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
+            st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
+        else:
+            st.info("ℹ️ Selecciona al menos una rúbrica para continuar con la evaluación.")
+    else:
+        st.info("ℹ️ Por favor extrae el documento primero para poder seleccionar las rúbricas y criterios.")
+    
     # Process and Evaluate button
     st.markdown("---")
     st.markdown("### ⚙️ Procesamiento y Evaluación")
