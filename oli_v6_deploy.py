@@ -2833,6 +2833,7 @@ with tab2:
         st.warning("Archivo de rúbricas no disponible para descarga.")
 
     # Document upload
+    st.markdown("### 📄 Carga de Documento")
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
 
     # Initialize session state for selections and results persistence
@@ -2842,6 +2843,8 @@ with tab2:
         st.session_state['selected_criteria_tab2'] = {}
     if 'tab2_results' not in st.session_state:
         st.session_state['tab2_results'] = None
+    if 'document_extracted_tab2' not in st.session_state:
+        st.session_state['document_extracted_tab2'] = False
 
     # Rubric and Criteria Selection Section
     st.markdown("### Selección de Rúbricas y Criterios")
@@ -2907,9 +2910,249 @@ with tab2:
         total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
         st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
 
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file is not None:
+        file_hash = hash(uploaded_file.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab2') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab2'] = False
+            st.session_state['last_file_hash_tab2'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab2", type="primary"):
+            if uploaded_file is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Validando extracción...")
+                    
+                    # Validate extraction
+                    validation_results = validate_extraction(df, tables_data, extraction_stats)
+                    progress_bar.progress(0.3, text="Extracción validada. Procesando secciones...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        # Extract text directly - already clean from extract_docx_structure_enhanced
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        # Calculate section stats
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab2'] = full_document_text
+                    st.session_state['document_stats_tab2'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab2'] = exploded_df
+                    st.session_state['extraction_df_tab2'] = df
+                    st.session_state['tables_data_tab2'] = tables_data
+                    st.session_state['extraction_stats_tab2'] = extraction_stats
+                    st.session_state['validation_results_tab2'] = validation_results
+                    st.session_state['sections_df_tab2'] = llm_summary_df
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab2'] = file_hash
+                    st.session_state['document_extracted_tab2'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()  # Rerun to show extraction results
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab2', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            validation_results = st.session_state.get('validation_results_tab2', {})
+            extraction_stats = st.session_state.get('extraction_stats_tab2', {})
+            sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Show validation results
+                with st.expander("📊 Resultados de Extracción y Validación", expanded=True):
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Puntuación de Calidad", f"{validation_results.get('quality_score', 0)}/100")
+                    with col2:
+                        st.metric("Encabezados Detectados", extraction_stats.get('headers_detected', 0))
+                    with col3:
+                        st.metric("Tablas Extraídas", len(st.session_state.get('tables_data_tab2', [])))
+                    with col4:
+                        st.metric("Secciones", len(header_1_values))
+                    
+                    # Quality score indicator
+                    quality_score = validation_results.get('quality_score', 0)
+                    if quality_score >= 80:
+                        st.success(f"✅ Calidad de extracción: Excelente ({quality_score}/100)")
+                    elif quality_score >= 60:
+                        st.warning(f"⚠️ Calidad de extracción: Buena ({quality_score}/100)")
+                    else:
+                        st.error(f"❌ Calidad de extracción: Requiere revisión ({quality_score}/100)")
+                    
+                    # Show warnings
+                    warnings = validation_results.get('warnings', [])
+                    if warnings:
+                        st.warning("**Advertencias:**")
+                        for warning in warnings:
+                            st.write(f"- {warning}")
+                    
+                    # Show recommendations
+                    recommendations = validation_results.get('recommendations', [])
+                    if recommendations:
+                        st.info("**Recomendaciones:**")
+                        for rec in recommendations:
+                            st.write(f"- {rec}")
+                    
+                    # Show detection method breakdown
+                    st.markdown("**Métodos de detección de encabezados:**")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.write(f"Por estilo: {extraction_stats.get('headers_by_style', 0)}")
+                    with col2:
+                        st.write(f"Por formato: {extraction_stats.get('headers_by_formatting', 0)}")
+                    with col3:
+                        st.write(f"Por patrón: {extraction_stats.get('headers_by_pattern', 0)}")
+                
+                # Show document structure preview
+                with st.expander("📋 Vista Previa de Estructura del Documento", expanded=False):
+                    st.markdown("**Secciones detectadas:**")
+                    sections_preview = sections_df[['header_1', 'n_words', 'n_paragraphs', 'n_tables']].copy()
+                    sections_preview.columns = ['Sección', 'Palabras', 'Párrafos', 'Tablas']
+                    st.dataframe(sections_preview, use_container_width=True, hide_index=True)
+                
+                # Section selector
+                st.markdown("---")
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab2' not in st.session_state:
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab2', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab2"):
+                        st.session_state['selected_sections_tab2'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab2"):
+                        st.session_state['selected_sections_tab2'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos"
+                        if section_info['n_tables'] > 0:
+                            checkbox_label += f", {section_info['n_tables']} tablas"
+                        checkbox_label += ")"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab2"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                
+                # Update session state
+                st.session_state['selected_sections_tab2'] = selected_sections
+                
+                # Show selection summary
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2  # Rough estimate
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+                    
+                    if estimated_tokens > 110000:
+                        st.warning(f"⚠️ El contenido seleccionado excede el límite de tokens (~{estimated_tokens:,} > 110,000). "
+                                  f"Se truncará automáticamente durante la evaluación.")
+                else:
+                    st.warning("⚠️ No hay secciones seleccionadas. Por favor selecciona al menos una sección.")
+                
+                # Show document summary
+                doc_stats = st.session_state.get('document_stats_tab2', {})
+                st.info(f"**Resumen del documento:**\n\n" + 
+                        f"- Tamaño del archivo: {doc_stats.get('file_size', 0)/1024:.2f} KB\n" + 
+                        f"- Número de palabras: {doc_stats.get('n_words', 0):,}\n" + 
+                        f"- Número de párrafos: {doc_stats.get('n_paragraphs', 0)}")
+    
     # Process and Evaluate button
     st.markdown("---")
-    st.markdown("### Procesamiento y Evaluación")
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
 
     def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
         """Analyze document against criterion with retry logic"""
@@ -3161,9 +3404,10 @@ with tab2:
                 'evidence': separator.join(evidence_parts)
             }
     
-    if st.button('Procesar y Evaluar', key='process_evaluate_tab2'):
-        if uploaded_file is None:
-            st.error("Por favor suba un archivo DOCX primero.")
+    if st.button('🚀 Procesar y Evaluar', key='process_evaluate_tab2', type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab2', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
             st.stop()
         
         if not selected_rubric_names:
@@ -3174,215 +3418,17 @@ with tab2:
             st.error("Por favor seleccione al menos un criterio.")
             st.stop()
         
-        # Process document
-        file_hash = hash(uploaded_file.getvalue())
-        if st.session_state.get('last_file_hash_tab2') != file_hash:
-            with st.spinner("Procesando documento..."):
-                try:
-                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                    tmp_file.write(uploaded_file.read())
-                    tmp_file.close()
-                    
-                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-                    doc_result = docx2python(tmp_file.name)
-                    
-                    # Use enhanced extraction
-                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
-                    progress_bar.progress(0.2, text="Documento cargado. Validando extracción...")
-                    
-                    # Validate extraction
-                    validation_results = validate_extraction(df, tables_data, extraction_stats)
-                    progress_bar.progress(0.3, text="Extracción validada. Procesando secciones...")
-                    
-                    # Extract sections
-                    header_1_values = df['header_1'].dropna().unique()
-                    llm_summary_rows = []
-                    
-                    for idx, header in enumerate(header_1_values):
-                        section_df = df[df['header_1'] == header].copy()
-                        # Extract text directly - already clean from extract_docx_structure_enhanced
-                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        # Calculate section stats
-                        section_words = len(full_text.split())
-                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
-                        section_tables = len(section_df[section_df['source_type'] == 'table'])
-                        
-                        llm_summary_rows.append({
-                            'header_1': header,
-                            'llm_paragraph': full_text if full_text else "",
-                            'n_words': section_words,
-                            'n_paragraphs': section_paras,
-                            'n_tables': section_tables
-                        })
-
-                    progress_bar.progress(0.5, text="Secciones extraídas.")
-                    
-                    # Create exploded dataframe
-                    llm_summary_df = pd.DataFrame(llm_summary_rows)
-                    exploded_df = llm_summary_df.assign(
-                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                    ).explode('llm_paragraph')
-                    exploded_df = exploded_df.reset_index(drop=True)
-                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                    
-                    # Get full text
-                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
-                    
-                    # Store in session state
-                    file_size = os.path.getsize(tmp_file.name)
-                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                    n_paragraphs = len(exploded_df)
-                    
-                    st.session_state['full_document_text_tab2'] = full_document_text
-                    st.session_state['document_stats_tab2'] = {
-                        'file_size': file_size,
-                        'n_words': n_words,
-                        'n_paragraphs': n_paragraphs
-                    }
-                    st.session_state['exploded_df_tab2'] = exploded_df
-                    st.session_state['extraction_df_tab2'] = df
-                    st.session_state['tables_data_tab2'] = tables_data
-                    st.session_state['extraction_stats_tab2'] = extraction_stats
-                    st.session_state['validation_results_tab2'] = validation_results
-                    st.session_state['sections_df_tab2'] = llm_summary_df
-                    st.session_state['selected_sections_tab2'] = list(header_1_values)  # Select all by default
-                    st.session_state['last_file_hash_tab2'] = file_hash
-                    
-                    try:
-                        os.unlink(tmp_file.name)
-                    except:
-                        pass
-                    
-                    progress_bar.progress(1.0, text="Procesamiento completo.")
-                    
-                    # Display extraction results and validation
-                    st.success("✅ Documento procesado con éxito")
-                    
-                    # Show validation results
-                    with st.expander("📊 Resultados de Extracción y Validación", expanded=True):
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Puntuación de Calidad", f"{validation_results['quality_score']}/100")
-                        with col2:
-                            st.metric("Encabezados Detectados", extraction_stats['headers_detected'])
-                        with col3:
-                            st.metric("Tablas Extraídas", len(tables_data))
-                        with col4:
-                            st.metric("Secciones", len(header_1_values))
-                        
-                        # Quality score indicator
-                        if validation_results['quality_score'] >= 80:
-                            st.success(f"✅ Calidad de extracción: Excelente ({validation_results['quality_score']}/100)")
-                        elif validation_results['quality_score'] >= 60:
-                            st.warning(f"⚠️ Calidad de extracción: Buena ({validation_results['quality_score']}/100)")
-                        else:
-                            st.error(f"❌ Calidad de extracción: Requiere revisión ({validation_results['quality_score']}/100)")
-                        
-                        # Show warnings
-                        if validation_results['warnings']:
-                            st.warning("**Advertencias:**")
-                            for warning in validation_results['warnings']:
-                                st.write(f"- {warning}")
-                        
-                        # Show recommendations
-                        if validation_results['recommendations']:
-                            st.info("**Recomendaciones:**")
-                            for rec in validation_results['recommendations']:
-                                st.write(f"- {rec}")
-                        
-                        # Show detection method breakdown
-                        st.markdown("**Métodos de detección de encabezados:**")
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.write(f"Por estilo: {extraction_stats['headers_by_style']}")
-                        with col2:
-                            st.write(f"Por formato: {extraction_stats['headers_by_formatting']}")
-                        with col3:
-                            st.write(f"Por patrón: {extraction_stats['headers_by_pattern']}")
-                    
-                    # Show document structure preview
-                    with st.expander("📋 Vista Previa de Estructura del Documento", expanded=False):
-                        st.markdown("**Secciones detectadas:**")
-                        sections_preview = llm_summary_df[['header_1', 'n_words', 'n_paragraphs', 'n_tables']].copy()
-                        sections_preview.columns = ['Sección', 'Palabras', 'Párrafos', 'Tablas']
-                        st.dataframe(sections_preview, use_container_width=True, hide_index=True)
-                    
-                    # Section selector
-                    st.markdown("### 🔍 Selección de Secciones para Evaluación")
-                    st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
-                    
-                    # Initialize selected sections if not exists or if document changed
-                    if 'selected_sections_tab2' not in st.session_state or st.session_state.get('last_file_hash_tab2') != file_hash:
-                        st.session_state['selected_sections_tab2'] = list(header_1_values)
-                    
-                    # Section selection interface
-                    selected_sections = st.session_state.get('selected_sections_tab2', list(header_1_values)).copy()
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col2:
-                        if st.button("✅ Seleccionar Todas", key="select_all_sections_tab2"):
-                            st.session_state['selected_sections_tab2'] = list(header_1_values)
-                            st.rerun()
-                        
-                        if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab2"):
-                            st.session_state['selected_sections_tab2'] = []
-                            st.rerun()
-                    
-                    with col1:
-                        st.markdown("**Secciones disponibles:**")
-                        for section in header_1_values:
-                            section_info = llm_summary_df[llm_summary_df['header_1'] == section].iloc[0]
-                            is_selected = section in selected_sections
-                            
-                            checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos"
-                            if section_info['n_tables'] > 0:
-                                checkbox_label += f", {section_info['n_tables']} tablas"
-                            checkbox_label += ")"
-                            
-                            checkbox_key = f"section_checkbox_{section}_tab2"
-                            new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
-                            
-                            if new_selection and section not in selected_sections:
-                                selected_sections.append(section)
-                            elif not new_selection and section in selected_sections:
-                                selected_sections.remove(section)
-                    
-                    # Update session state
-                    st.session_state['selected_sections_tab2'] = selected_sections
-                    
-                    # Show selection summary
-                    if selected_sections:
-                        selected_df = llm_summary_df[llm_summary_df['header_1'].isin(selected_sections)]
-                        total_selected_words = selected_df['n_words'].sum()
-                        total_selected_paras = selected_df['n_paragraphs'].sum()
-                        
-                        # Estimate tokens
-                        if encoding:
-                            selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
-                            estimated_tokens = len(encoding.encode(selected_text))
-                        else:
-                            estimated_tokens = total_selected_words * 1.2  # Rough estimate
-                        
-                        st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
-                                  f"{total_selected_words:,} palabras | "
-                                  f"~{estimated_tokens:,} tokens estimados")
-                        
-                        if estimated_tokens > 110000:
-                            st.warning(f"⚠️ El contenido seleccionado excede el límite de tokens (~{estimated_tokens:,} > 110,000). "
-                                      f"Se truncará automáticamente durante la evaluación.")
-                    else:
-                        st.warning("⚠️ No hay secciones seleccionadas. Por favor selecciona al menos una sección.")
-                    
-                    st.info(f"**Resumen del documento:**\n\n" + 
-                            f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                            f"- Número de palabras: {n_words:,}\n" + 
-                            f"- Número de párrafos: {n_paragraphs}")
-                    
-                except Exception as e:
-                    st.error(f"Error procesando el documento: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
-                    st.stop()
+        selected_sections = st.session_state.get('selected_sections_tab2', [])
+        if not selected_sections:
+            st.error("Por favor selecciona al menos una sección para evaluar.")
+            st.stop()
+        
+        # Check if document needs re-extraction (shouldn't happen, but safety check)
+        if uploaded_file is not None:
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('last_file_hash_tab2') != file_hash:
+                st.warning("⚠️ El documento ha cambiado. Por favor extrae el documento nuevamente.")
+                st.stop()
         
         # Evaluate with selected rubrics and criteria
         # Get selected sections or use full document
