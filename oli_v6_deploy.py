@@ -2953,67 +2953,12 @@ with tab2:
         if st.session_state.get('document_extracted_tab2', False) and not file_changed:
             st.success("✅ Documento extraído con éxito")
             
-            validation_results = st.session_state.get('validation_results_tab2', {})
-            extraction_stats = st.session_state.get('extraction_stats_tab2', {})
             sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
             
             if not sections_df.empty:
                 header_1_values = sections_df['header_1'].tolist()
                 
-                # Show validation results
-                with st.expander("📊 Resultados de Extracción y Validación", expanded=True):
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Puntuación de Calidad", f"{validation_results.get('quality_score', 0)}/100")
-                    with col2:
-                        st.metric("Encabezados Detectados", extraction_stats.get('headers_detected', 0))
-                    with col3:
-                        st.metric("Tablas Extraídas", len(st.session_state.get('tables_data_tab2', [])))
-                    with col4:
-                        st.metric("Secciones", len(header_1_values))
-                    
-                    # Quality score indicator
-                    quality_score = validation_results.get('quality_score', 0)
-                    if quality_score >= 80:
-                        st.success(f"✅ Calidad de extracción: Excelente ({quality_score}/100)")
-                    elif quality_score >= 60:
-                        st.warning(f"⚠️ Calidad de extracción: Buena ({quality_score}/100)")
-                    else:
-                        st.error(f"❌ Calidad de extracción: Requiere revisión ({quality_score}/100)")
-                    
-                    # Show warnings
-                    warnings = validation_results.get('warnings', [])
-                    if warnings:
-                        st.warning("**Advertencias:**")
-                        for warning in warnings:
-                            st.write(f"- {warning}")
-                    
-                    # Show recommendations
-                    recommendations = validation_results.get('recommendations', [])
-                    if recommendations:
-                        st.info("**Recomendaciones:**")
-                        for rec in recommendations:
-                            st.write(f"- {rec}")
-                    
-                    # Show detection method breakdown
-                    st.markdown("**Métodos de detección de encabezados:**")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.write(f"Por estilo: {extraction_stats.get('headers_by_style', 0)}")
-                    with col2:
-                        st.write(f"Por formato: {extraction_stats.get('headers_by_formatting', 0)}")
-                    with col3:
-                        st.write(f"Por patrón: {extraction_stats.get('headers_by_pattern', 0)}")
-                
-                # Show document structure preview
-                with st.expander("📋 Vista Previa de Estructura del Documento", expanded=False):
-                    st.markdown("**Secciones detectadas:**")
-                    sections_preview = sections_df[['header_1', 'n_words', 'n_paragraphs', 'n_tables']].copy()
-                    sections_preview.columns = ['Sección', 'Palabras', 'Párrafos', 'Tablas']
-                    st.dataframe(sections_preview, use_container_width=True, hide_index=True)
-                
-                # Section selector
-                st.markdown("---")
+                # Section selector - simplified, no warnings or diagnostics
                 st.markdown("### 🔍 Selección de Secciones para Evaluación")
                 st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
                 
@@ -3040,10 +2985,7 @@ with tab2:
                         section_info = sections_df[sections_df['header_1'] == section].iloc[0]
                         is_selected = section in selected_sections
                         
-                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos"
-                        if section_info['n_tables'] > 0:
-                            checkbox_label += f", {section_info['n_tables']} tablas"
-                        checkbox_label += ")"
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
                         
                         checkbox_key = f"section_checkbox_{section}_tab2"
                         new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
@@ -3056,7 +2998,7 @@ with tab2:
                 # Update session state
                 st.session_state['selected_sections_tab2'] = selected_sections
                 
-                # Show selection summary
+                # Show selection summary - simplified
                 if selected_sections:
                     selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
                     total_selected_words = selected_df['n_words'].sum()
@@ -3072,19 +3014,6 @@ with tab2:
                     st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
                               f"{total_selected_words:,} palabras | "
                               f"~{estimated_tokens:,} tokens estimados")
-                    
-                    if estimated_tokens > 110000:
-                        st.warning(f"⚠️ El contenido seleccionado excede el límite de tokens (~{estimated_tokens:,} > 110,000). "
-                                  f"Se truncará automáticamente durante la evaluación.")
-                else:
-                    st.warning("⚠️ No hay secciones seleccionadas. Por favor selecciona al menos una sección.")
-                
-                # Show document summary
-                doc_stats = st.session_state.get('document_stats_tab2', {})
-                st.info(f"**Resumen del documento:**\n\n" + 
-                        f"- Tamaño del archivo: {doc_stats.get('file_size', 0)/1024:.2f} KB\n" + 
-                        f"- Número de palabras: {doc_stats.get('n_words', 0):,}\n" + 
-                        f"- Número de párrafos: {doc_stats.get('n_paragraphs', 0)}")
     
     # Rubric and Criteria Selection Section (moved after document extraction)
     st.markdown("---")
