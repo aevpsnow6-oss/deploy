@@ -2994,6 +2994,23 @@ with tab2:
                             selected_sections.append(section)
                         elif not new_selection and section in selected_sections:
                             selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                # Show first 500 characters as preview, full content in expandable
+                                preview_text = section_content[:500] + "..." if len(section_content) > 500 else section_content
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab2",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
                 
                 # Update session state
                 st.session_state['selected_sections_tab2'] = selected_sections
