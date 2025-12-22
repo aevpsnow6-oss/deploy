@@ -4388,9 +4388,193 @@ with tab3:
         st.session_state['selected_dimensions_tab3'] = []
     if 'tab3_results' not in st.session_state:
         st.session_state['tab3_results'] = None
+    if 'document_extracted_tab3' not in st.session_state:
+        st.session_state['document_extracted_tab3'] = False
 
-    # Rubric and Criteria Selection Section
-    st.markdown("### Selección de Criterios")
+    # Document upload
+    st.markdown("### 📄 Carga de Documento")
+    uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader_tab3")
+    
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file_prodoc is not None:
+        file_hash = hash(uploaded_file_prodoc.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab3') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab3'] = False
+            st.session_state['last_file_hash_tab3'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab3", type="primary"):
+            if uploaded_file_prodoc is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file_prodoc.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab3'] = full_document_text
+                    st.session_state['prodoc_document_stats_tab3'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab3'] = exploded_df
+                    st.session_state['extraction_df_tab3'] = df
+                    st.session_state['tables_data_tab3'] = tables_data
+                    st.session_state['extraction_stats_tab3'] = extraction_stats
+                    st.session_state['sections_df_tab3'] = llm_summary_df
+                    st.session_state['selected_sections_tab3'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab3'] = file_hash
+                    st.session_state['document_extracted_tab3'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab3', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab3' not in st.session_state:
+                    st.session_state['selected_sections_tab3'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab3', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab3"):
+                        st.session_state['selected_sections_tab3'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab3"):
+                        st.session_state['selected_sections_tab3'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab3"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab3",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                
+                # Update session state
+                st.session_state['selected_sections_tab3'] = selected_sections
+                
+                # Show selection summary
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+
+    # Rubric and Criteria Selection Section (moved after document extraction)
+    st.markdown("---")
+    st.markdown("### 📋 Selección de Criterios")
     
     # Group indicadores by dimension and criterio, maintaining order
     # Structure: {dimension: {criterio: [(unique_key, indicador_text, sort_key)]}}
@@ -4421,9 +4605,11 @@ with tab3:
         match = re.match(r'(\d+)\.', criterio_name)
         return int(match.group(1)) if match else 999
     
-    # Display the loaded rubric with selection grouped by dimension
-    with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
-        st.subheader("Criterios de Evaluación PRODOC")
+    # Only show rubric selection if document is extracted
+    if st.session_state.get('document_extracted_tab3', False):
+        # Display the loaded rubric with selection grouped by dimension
+        with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
+            st.subheader("Criterios de Evaluación PRODOC")
         st.markdown(
             """
             <div class='reference-box'>
@@ -4531,92 +4717,120 @@ with tab3:
         )
         
         st.info(f"📌 Indicadores seleccionados: {len(selected_criteria)}/{total_indicadores} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
-
-    # Document upload
-    st.markdown("### Carga de Documento")
-    uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader_tab3")
+    else:
+        st.info("ℹ️ Por favor extrae el documento primero para poder seleccionar los criterios.")
 
     # Process and Evaluate button
     st.markdown("---")
-    if st.button('Procesar y Evaluar', key="prodoc_process_button_tab3"):
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
+    if st.button('🚀 Procesar y Evaluar', key="prodoc_process_button_tab3", type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab3', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
+            st.stop()
+        
         if uploaded_file_prodoc is None:
             st.error("Por favor suba un archivo DOCX primero.")
             st.stop()
         
+        # Get selected criteria from session state
+        selected_criteria = st.session_state.get('selected_criteria_tab3', [])
         if not selected_criteria:
             st.error("Por favor seleccione al menos un criterio.")
             st.stop()
         
-        uploaded_file = uploaded_file_prodoc
-        st.markdown("#### Procesando documento...")
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab3', [])
+        sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
+        
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab3', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
+            st.stop()
+        
+        # Skip the old extraction logic - document is already extracted
+        # Evaluate with selected criteria
+        if False:  # Disable old extraction logic
+            uploaded_file = uploaded_file_prodoc
+            st.markdown("#### Procesando documento...")
 
-        file_hash = hash(uploaded_file.getvalue())
-        if st.session_state.get('prodoc_last_file_hash_tab3') != file_hash:
-            with st.spinner("Procesando documento..."):
-                try:
-                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                    tmp_file.write(uploaded_file.read())
-                    tmp_file.close()
-                    
-                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-                    doc_result = docx2python(tmp_file.name)
-                    df = extract_docx_structure(tmp_file.name)
-                    
-                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
-
-                    # Extract sections directly (no LLM needed - text is already well-formatted)
-                    header_1_values = df['header_1'].dropna().unique()
-                    llm_summary_rows = []
-                    progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
-
-                    for idx, header in enumerate(header_1_values):
-                        section_df = df[df['header_1'] == header].copy()
-                        # Extract text directly - already clean from extract_docx_structure
-                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
-
-                    progress_bar.progress(0.5, text="Secciones extraídas.")
-                    llm_summary_df = pd.DataFrame(llm_summary_rows)
-                    llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
-                    exploded_df = llm_summary_df.assign(
-                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                    ).explode('llm_paragraph')
-                    exploded_df = exploded_df.reset_index(drop=True)
-                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                    
-                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
-                    file_size = os.path.getsize(tmp_file.name)
-                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                    n_paragraphs = len(exploded_df)
-                    
-                    st.session_state['prodoc_full_document_text_tab3'] = full_document_text
-                    st.session_state['prodoc_document_stats_tab3'] = {
-                        'file_size': file_size,
-                        'n_words': n_words,
-                        'n_paragraphs': n_paragraphs
-                    }
-                    st.session_state['prodoc_exploded_df_tab3'] = exploded_df
-                    st.session_state['prodoc_last_file_hash_tab3'] = file_hash
-                    
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('prodoc_last_file_hash_tab3') != file_hash:
+                with st.spinner("Procesando documento..."):
                     try:
-                        os.unlink(tmp_file.name)
-                    except:
-                        pass
-                    
-                    progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
-                    st.info(f"**Resumen del documento:**\n\n" + 
-                            f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                            f"- Número de palabras: {n_words}\n" + 
-                            f"- Número de párrafos: {n_paragraphs}")
-                    st.markdown("#### Estructura extraída del documento:")
-                    st.dataframe(exploded_df, use_container_width=True)
-                    progress_bar.progress(1.0, text="Procesamiento completo.")
-                    
-                except Exception as e:
-                    st.error(f"Error procesando el documento: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
-                    st.stop()
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        
+                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                        doc_result = docx2python(tmp_file.name)
+                        df = extract_docx_structure(tmp_file.name)
+                        
+                        progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+
+                        # Extract sections directly (no LLM needed - text is already well-formatted)
+                        header_1_values = df['header_1'].dropna().unique()
+                        llm_summary_rows = []
+                        progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
+
+                        for idx, header in enumerate(header_1_values):
+                            section_df = df[df['header_1'] == header].copy()
+                            # Extract text directly - already clean from extract_docx_structure
+                            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                            llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
+
+                        progress_bar.progress(0.5, text="Secciones extraídas.")
+                        llm_summary_df = pd.DataFrame(llm_summary_rows)
+                        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                        exploded_df = llm_summary_df.assign(
+                            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                        ).explode('llm_paragraph')
+                        exploded_df = exploded_df.reset_index(drop=True)
+                        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                        
+                        full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                        file_size = os.path.getsize(tmp_file.name)
+                        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                        n_paragraphs = len(exploded_df)
+                        
+                        st.session_state['prodoc_full_document_text_tab3'] = full_document_text
+                        st.session_state['prodoc_document_stats_tab3'] = {
+                            'file_size': file_size,
+                            'n_words': n_words,
+                            'n_paragraphs': n_paragraphs
+                        }
+                        st.session_state['prodoc_exploded_df_tab3'] = exploded_df
+                        st.session_state['prodoc_last_file_hash_tab3'] = file_hash
+                        
+                        try:
+                            os.unlink(tmp_file.name)
+                        except:
+                            pass
+                        
+                        progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+                        st.info(f"**Resumen del documento:**\n\n" + 
+                                f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+                                f"- Número de palabras: {n_words}\n" + 
+                                f"- Número de párrafos: {n_paragraphs}")
+                        st.markdown("#### Estructura extraída del documento:")
+                        st.dataframe(exploded_df, use_container_width=True)
+                        progress_bar.progress(1.0, text="Procesamiento completo.")
+                        
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
         
         # Define the evaluation function for tab3 (same as tab1)
         def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
@@ -5746,7 +5960,13 @@ with tab1:
     if 'tab1_doc_stats' not in st.session_state:
         st.session_state['tab1_doc_stats'] = None
 
-  # Sección de carga y procesamiento de archivo
+    # Initialize session state for Tab 1
+    if 'document_extracted_tab1' not in st.session_state:
+        st.session_state['document_extracted_tab1'] = False
+    if 'selected_sections_tab1' not in st.session_state:
+        st.session_state['selected_sections_tab1'] = []
+    
+    # Document upload
     st.subheader("📄 Carga de documento")
     uploaded_file = st.file_uploader(
         "Sube un DOCX para la evaluación:",
@@ -5755,9 +5975,187 @@ with tab1:
         help="Selecciona un documento de Word (.docx) para el análisis de valoración preliminar de calidad"
     )
     
-    # Filter section - added after file uploader
-    st.subheader("🔍 Filtros de análisis (opcional)")
-    st.info("Selecciona secciones y subsecciones específicas para un análisis enfocado. Deja en blanco para analizar todas.")
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file is not None:
+        file_hash = hash(uploaded_file.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab1') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab1'] = False
+            st.session_state['last_file_hash_tab1'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab1", type="primary"):
+            if uploaded_file is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab1'] = full_document_text
+                    st.session_state['appraisal_document_stats'] = {
+                        'file_size': file_size,
+                        'word_count': n_words,
+                        'n_words': n_words
+                    }
+                    st.session_state['exploded_df_tab1'] = exploded_df
+                    st.session_state['extraction_df_tab1'] = df
+                    st.session_state['tables_data_tab1'] = tables_data
+                    st.session_state['extraction_stats_tab1'] = extraction_stats
+                    st.session_state['sections_df_tab1'] = llm_summary_df
+                    st.session_state['selected_sections_tab1'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab1'] = file_hash
+                    st.session_state['document_extracted_tab1'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab1', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab1' not in st.session_state:
+                    st.session_state['selected_sections_tab1'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab1', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab1"):
+                        st.session_state['selected_sections_tab1'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab1"):
+                        st.session_state['selected_sections_tab1'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab1"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab1",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                
+                # Update session state
+                st.session_state['selected_sections_tab1'] = selected_sections
+                
+                # Show selection summary
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+    
+    # Filter section for questions (optional, for filtering which questions to analyze)
+    st.markdown("---")
+    st.subheader("🔍 Filtros de Preguntas (opcional)")
+    st.info("Selecciona secciones y subsecciones de preguntas para un análisis enfocado. Deja en blanco para analizar todas las preguntas.")
     
     # Get unique sections and subsections from questions
     df_with_sections = df_appraisal.copy()
@@ -5772,53 +6170,56 @@ with tab1:
     col_filter1, col_filter2 = st.columns(2)
     
     with col_filter1:
-        selected_sections = st.multiselect(
+        selected_sections_filter = st.multiselect(
             "Selecciona Secciones:",
             options=[f"Sección {int(s)}" for s in all_sections],
-            key="filter_sections",
+            key="filter_sections_tab1",
             help="Selecciona una o más secciones para analizar"
         )
     
     with col_filter2:
-        selected_subsections = st.multiselect(
+        selected_subsections_filter = st.multiselect(
             "Selecciona Subsecciones:",
             options=[f"Subsección {s}" for s in all_subsections],
-            key="filter_subsections",
+            key="filter_subsections_tab1",
             help="Selecciona una o más subsecciones para analizar"
         )
     
     # Extract section numbers from filter selections
-    filtered_section_nums = [int(s.split()[-1]) for s in selected_sections] if selected_sections else None
-    filtered_subsection_ids = [s.split()[-1] for s in selected_subsections] if selected_subsections else None
+    filtered_section_nums = [int(s.split()[-1]) for s in selected_sections_filter] if selected_sections_filter else None
+    filtered_subsection_ids = [s.split()[-1] for s in selected_subsections_filter] if selected_subsections_filter else None
     
     # Processing button
+    st.markdown("---")
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
     if st.button('🔍 Analizar documento', key="appraisal_process_button", type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab1', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
+            st.stop()
+        
         if uploaded_file is None:
-            st.warning("⚠️ Por favor sube un archivo DOCX primero.")
+            st.warning("⚠️ Por favor suba un archivo DOCX primero.")
             st.stop()
         
-        # Extract document content
-        with st.spinner("📖 Extrayendo contenido del documento..."):
-            doc_result = extract_document_content(uploaded_file)
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab1', [])
+        sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
         
-        if not doc_result['success']:
-            st.error(f"❌ Error procesando el documento: {doc_result['error']}")
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab1', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
             st.stop()
-        
-        # Store document stats (using consistent key names)
-        st.session_state['appraisal_document_stats'] = {
-            'file_size': doc_result['file_size'],
-            'word_count': doc_result['word_count'],
-            'n_words': doc_result['word_count']  # Keep both for compatibility
-        }
-        
-        # Display document info
-        st.success("✅ ¡Documento procesado con éxito!")
-        st.info(f"""
-        **Resumen del documento:**
-        - Tamaño del archivo: {doc_result['file_size']/1024:.2f} KB
-        - Número de palabras: {doc_result['word_count']:,}
-        """)
         
         # Get questions for analysis
         questions = df_appraisal['Pregunta_Realizada'].dropna().unique().tolist()
@@ -5863,7 +6264,7 @@ with tab1:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all questions for document-based analysis first
             future_to_question_doc = {
-                executor.submit(analyze_question_with_llm, q, doc_result['text']): q 
+                executor.submit(analyze_question_with_llm, q, document_text): q 
                 for q in questions
             }
             
@@ -5891,7 +6292,7 @@ with tab1:
                     row['Respuesta'],
                     row['Razonamiento'],
                     row['Evidencia'],
-                    doc_result['text']  # Pass complete document text for context
+                    document_text  # Pass selected sections text for context
                 ): row['Pregunta']
                 for _, row in results_df_temp.iterrows()
             }
