@@ -3011,6 +3011,32 @@ with tab2:
                                 st.caption(f"Total: {len(section_content):,} caracteres")
                             else:
                                 st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab2', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab2",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
                 
                 # Update session state
                 st.session_state['selected_sections_tab2'] = selected_sections
@@ -4551,6 +4577,32 @@ with tab3:
                                 st.caption(f"Total: {len(section_content):,} caracteres")
                             else:
                                 st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab3', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab3",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
                 
                 # Update session state
                 st.session_state['selected_sections_tab3'] = selected_sections
@@ -6131,6 +6183,32 @@ with tab1:
                                 st.caption(f"Total: {len(section_content):,} caracteres")
                             else:
                                 st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab1', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab1",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
                 
                 # Update session state
                 st.session_state['selected_sections_tab1'] = selected_sections
