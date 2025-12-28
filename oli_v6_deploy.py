@@ -5032,7 +5032,7 @@ Proporciona tu respuesta como JSON:
             }
         
         # Evaluate with selected criteria
-        document_text = st.session_state.get('prodoc_full_document_text_tab3', '')
+        document_text = st.session_state.get('full_document_text_tab3', '')
         if not document_text:
             st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
             st.stop()
