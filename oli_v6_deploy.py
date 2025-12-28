@@ -5443,8 +5443,66 @@ def extract_document_content(uploaded_file):
 #             'Status': 'Error'
 #         }
 
-def analyze_question_with_llm(question, document_text):
-    """Analyze a single question against the document using LLM with full context (up to 110K tokens)."""
+def parse_two_part_question(question):
+    """
+    Detect and parse two-part rubric questions where:
+    - Part 1 (broader): Sets the general context
+    - Part 2 (specific): Asks the critical detail that needs primary focus
+
+    Returns dict with 'is_two_part', 'part1', 'part2', 'full_question'
+    """
+    import re
+
+    # Pattern 1: Questions with explicit keywords separating them (check this first)
+    # Keywords like "Específicamente" act as clear separators
+    keywords = ['específicamente', 'en particular', 'en concreto', 'puntualmente', 'además']
+    for keyword in keywords:
+        # The keyword is a separator, not part of either question
+        pattern = rf'(.*?\?)\s*{keyword}[,:]?\s*¿\s*(.*?\?)'
+        match = re.search(pattern, question, re.IGNORECASE)
+        if match:
+            part2 = match.group(2).strip()
+            # Ensure part2 starts with ¿
+            if not part2.startswith('¿'):
+                part2 = '¿' + part2
+            return {
+                'is_two_part': True,
+                'part1': match.group(1).strip(),
+                'part2': part2,
+                'full_question': question
+            }
+
+    # Pattern 2: Questions run together like "...gráfico?Se identifican..." or "...?¿Se..."
+    # This is the most common pattern in the rubrics (no keyword separator)
+    match = re.search(r'(.*?\?)\s*¿?\s*([A-ZSÉA].*?\?)', question)
+    if match:
+        part1 = match.group(1).strip()
+        part2 = match.group(2).strip()
+
+        # Ensure part2 starts with ¿ if it doesn't already
+        if not part2.startswith('¿'):
+            part2 = '¿' + part2
+
+        return {
+            'is_two_part': True,
+            'part1': part1,
+            'part2': part2,
+            'full_question': question
+        }
+
+    # Not a two-part question
+    return {
+        'is_two_part': False,
+        'part1': None,
+        'part2': None,
+        'full_question': question
+    }
+
+def analyze_question_with_llm_tab1(question, document_text):
+    """
+    Analyze a single question against the document using LLM with full context (up to 110K tokens).
+    TAB1-SPECIFIC VERSION: Explicitly states when 2+ parts are detected in the question.
+    """
     try:
         # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
         combined_text = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
@@ -5458,22 +5516,77 @@ def analyze_question_with_llm(question, document_text):
                 'Status': 'Success'
             }
 
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize system prompt based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert document analyst specializing in ILO project quality assessment.
+
+**CRITICAL INSTRUCTION FOR TWO-PART QUESTIONS:**
+
+This question has TWO PARTS with different priorities:
+1. **Part 1 (Broader Context)**: Provides the general framework
+2. **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis
+
+**YOUR ANALYSIS APPROACH:**
+1. **START with Part 2**: Analyze the specific question FIRST and IN DEPTH
+2. **Then Part 1**: Consider how Part 2's findings relate to the broader context in Part 1
+3. **Final Assessment**: The overall answer should be driven by Part 2, but explained in context of Part 1
+
+**Response Structure (JSON):**
+{
+    "Respuesta": "Yes/No/Partial/Not Found (based primarily on Part 2)",
+    "Razonamiento": "**DEBE COMENZAR CON**: 'Se identificaron 2 partes en esta pregunta.' LUEGO responder la pregunta específica (Parte 2) con análisis detallado. DESPUÉS explicar cómo esto se relaciona con la pregunta general (Parte 1). Máximo 200 palabras.",
+    "Evidencia": "Proporcionar evidencia PRINCIPALMENTE para la Parte 2 (pregunta específica), luego evidencia de apoyo para la Parte 1. Máximo 300 palabras con citas directas."
+}
+
+**Estructura OBLIGATORIA para Razonamiento:**
+"Se identificaron 2 partes en esta pregunta. [Respuesta específica a Parte 2 con análisis detallado]. Esto [afecta/se relaciona con] [Parte 1] porque [explicación de la relación]."
+
+Siempre responder en español. Enfoque: 70% en Parte 2, 30% en cómo se relaciona con Parte 1."""
+
+            user_content = f"""PREGUNTA CON DOS PARTES:
+
+**PARTE 1 (Contexto General):**
+{parsed['part1']}
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**Pregunta Completa:**
+{question}
+
+**Texto del Documento:**
+{combined_text}
+
+RECUERDA:
+1. COMENZAR tu Razonamiento con "Se identificaron 2 partes en esta pregunta."
+2. Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica)
+3. Luego explica cómo se relaciona con la Parte 1 (contexto general)"""
+
+        else:
+            # Original single-question prompt
+            system_content = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
+            {
+                "Respuesta": "Yes/No/Partial/Not Found",
+                "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+                "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+            }"""
+
+            user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
+
         # Single API call per question - much more efficient than chunking
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
-                    {
-                        "Respuesta": "Yes/No/Partial/Not Found",
-                        "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                        "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-                    }"""
+                    "content": system_content
                 },
                 {
                     "role": "user",
-                    "content": f"Question: {question}\n\nDocument Text: {combined_text}"
+                    "content": user_content
                 }
             ],
             max_completion_tokens=8000,
@@ -5519,26 +5632,214 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
-def analyze_question_with_critical_opinion(question, answer, reasoning, evidence, document_text=""):
-    """
-    Critically assess if the document's answer to a specific question is adequate and appropriate.
-    Evaluates whether the document's response truly addresses the concern raised in the question.
-    Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
-    Uses up to 110K tokens for complete document understanding - maximizes context window usage.
-    """
+def analyze_question_with_llm(question, document_text):
+    """Analyze a single question against the document using LLM with full context (up to 110K tokens)."""
     try:
         # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
-        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
-        
-        # Single API call for critical evaluation - focuses on answer adequacy
+        combined_text = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+
+        if not combined_text.strip():
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Not Found',
+                'Razonamiento': 'No se encontró contenido en el documento para analizar.',
+                'Evidencia': '',
+                'Status': 'Success'
+            }
+
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize system prompt based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert document analyst specializing in ILO project quality assessment.
+
+**CRITICAL INSTRUCTION FOR TWO-PART QUESTIONS:**
+
+This question has TWO PARTS with different priorities:
+1. **Part 1 (Broader Context)**: Provides the general framework
+2. **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis
+
+**YOUR ANALYSIS APPROACH:**
+1. **START with Part 2**: Analyze the specific question FIRST and IN DEPTH
+2. **Then Part 1**: Consider how Part 2's findings relate to the broader context in Part 1
+3. **Final Assessment**: The overall answer should be driven by Part 2, but explained in context of Part 1
+
+**Response Structure (JSON):**
+{
+    "Respuesta": "Yes/No/Partial/Not Found (based primarily on Part 2)",
+    "Razonamiento": "BEGIN by answering the specific question (Part 2) with detailed analysis. THEN explain how this relates to the broader question (Part 1). Maximum 200 words.",
+    "Evidencia": "Provide evidence PRIMARILY for Part 2 (the specific question), then supporting evidence for Part 1. Maximum 300 words with direct quotes."
+}
+
+**Example Structure for Razonamiento:**
+"Respecto a [specific Part 2]: [detailed analysis of Part 2]... Esto [connects to/affects] [broader Part 1] porque [explanation of relationship]."
+
+Always respond in Spanish. Focus 70% on Part 2, 30% on how it relates to Part 1."""
+
+            user_content = f"""PREGUNTA CON DOS PARTES:
+
+**PARTE 1 (Contexto General):**
+{parsed['part1']}
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**Pregunta Completa:**
+{question}
+
+**Texto del Documento:**
+{combined_text}
+
+RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica), luego explica cómo se relaciona con la Parte 1 (contexto general)."""
+
+        else:
+            # Original single-question prompt
+            system_content = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
+            {
+                "Respuesta": "Yes/No/Partial/Not Found",
+                "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+                "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+            }"""
+
+            user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
+
+        # Single API call per question - much more efficient than chunking
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an expert in project quality appraisal and international development (ILO standards).
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": user_content
+                }
+            ],
+            max_completion_tokens=8000,
+            reasoning_effort="minimal"
+        )
+
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'No se recibió respuesta del modelo.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
+
+        # Parse JSON response
+        try:
+            result = json.loads(content.strip())
+            return {
+                'Pregunta': question,
+                'Respuesta': result.get('Respuesta', 'Not Found'),
+                'Razonamiento': result.get('Razonamiento', ''),
+                'Evidencia': result.get('Evidencia', ''),
+                'Status': 'Success'
+            }
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return error
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'Error al procesar la respuesta del modelo.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
+
+    except Exception as e:
+        return {
+            'Pregunta': question,
+            'Respuesta': 'Error',
+            'Razonamiento': f'Analysis failed: {str(e)}',
+            'Evidencia': '',
+            'Status': 'Error'
+        }
+
+def analyze_question_with_critical_opinion_tab1(question, answer, reasoning, evidence, document_text=""):
+    """
+    TAB1-SPECIFIC VERSION: Critically assess if the document's answer to a specific question is adequate.
+    Explicitly checks if the reasoning properly identifies and addresses two-part questions.
+    """
+    try:
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize critical evaluation based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+
+**CRITICAL EVALUATION FOR TWO-PART QUESTIONS:**
+
+This is a TWO-PART question where:
+- **Part 1 (Broader)**: Sets general context
+- **Part 2 (Specific - PRIMARY)**: The critical detail that needs focused assessment
+
+**Your Critical Assessment Must Evaluate:**
+
+1. **FIRST - Check Structure**: Does the reasoning BEGIN with "Se identificaron 2 partes en esta pregunta" or similar acknowledgment?
+   - If NO: This is a CRITICAL FAILURE - the analysis didn't recognize the question structure
+
+2. **PRIMARY FOCUS - Part 2 (Specific Question):**
+   - Does the answer adequately address the SPECIFIC question (Part 2)?
+   - Is the evidence for Part 2 substantive and concrete?
+   - Are there critical gaps or superficial treatment of Part 2?
+   - Does the document truly deliver on the specific requirement?
+
+3. **SECONDARY - Part 1 (Broader Context):**
+   - Does the answer address the broader context (Part 1)?
+   - How do the Part 2 findings affect the Part 1 assessment?
+
+4. **INTEGRATION:**
+   - Is there coherence between how Part 2 relates to Part 1?
+   - Are there contradictions or misalignments?
+
+**Be especially critical if:**
+- The reasoning doesn't acknowledge the two-part structure
+- Part 2 (specific question) is answered superficially or avoided
+- Evidence focuses on Part 1 but neglects Part 2
+- The reasoning doesn't connect Part 2's findings to Part 1's context
+
+Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about shortcomings, especially regarding Part 2.
+Respond ONLY with the critical opinion text, no JSON, no formatting."""
+
+            user_content = f"""PREGUNTA CON DOS PARTES:
+
+**PARTE 1 (Contexto General):**
+{parsed['part1']}
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**Pregunta Completa:**
+{question}
+
+**Respuesta del Documento:** {answer}
+
+**Razonamiento del Documento:** {reasoning}
+
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Evalúa críticamente:
+1. ¿El razonamiento reconoce explícitamente que hay 2 partes en la pregunta?
+2. ¿La respuesta aborda adecuadamente AMBAS partes, especialmente la Parte 2 (pregunta específica)?
+3. ¿La evidencia y el razonamiento son suficientes para ambas partes?"""
+
+        else:
+            # Original single-question critical evaluation
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
                     Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
-                    
+
                     Review the answer, reasoning, evidence, AND full document context together to evaluate:
                     - Does the answer fully address the concern raised in the question?
                     - Is the evidence substantive enough to support the answer?
@@ -5548,13 +5849,11 @@ def analyze_question_with_critical_opinion(question, answer, reasoning, evidence
                     - Should the project have included additional measures or details?
                     - Is the reasoning robust or superficial?
                     - What is NOT mentioned that should be?
-                    
+
                     Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
                     Respond ONLY with the critical opinion text, no JSON, no formatting."""
-                },
-                {
-                    "role": "user",
-                    "content": f"""Question: {question}
+
+            user_content = f"""Question: {question}
 
 Document's Answer: {answer}
 
@@ -5566,6 +5865,146 @@ Full Document Context (complete):
 {doc_context}
 
 Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
+
+        # Single API call for critical evaluation - focuses on answer adequacy
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": user_content
+                }
+            ],
+            max_completion_tokens=500,
+            reasoning_effort="minimal"
+        )
+
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
+            return "No se generó evaluación crítica."
+
+        return content.strip()
+
+    except Exception as e:
+        return f"Error en evaluación crítica: {str(e)}"
+
+def analyze_question_with_critical_opinion(question, answer, reasoning, evidence, document_text=""):
+    """
+    Critically assess if the document's answer to a specific question is adequate and appropriate.
+    Evaluates whether the document's response truly addresses the concern raised in the question.
+    Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
+    Uses up to 110K tokens for complete document understanding - maximizes context window usage.
+    Enhanced to handle two-part questions with proper focus on the specific (Part 2) aspect.
+    """
+    try:
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize critical evaluation based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+
+**CRITICAL EVALUATION FOR TWO-PART QUESTIONS:**
+
+This is a TWO-PART question where:
+- **Part 1 (Broader)**: Sets general context
+- **Part 2 (Specific - PRIMARY)**: The critical detail that needs focused assessment
+
+**Your Critical Assessment Must Evaluate:**
+
+1. **PRIMARY FOCUS - Part 2 (Specific Question):**
+   - Does the answer adequately address the SPECIFIC question (Part 2)?
+   - Is the evidence for Part 2 substantive and concrete?
+   - Are there critical gaps or superficial treatment of Part 2?
+   - Does the document truly deliver on the specific requirement?
+
+2. **SECONDARY - Part 1 (Broader Context):**
+   - Does the answer address the broader context (Part 1)?
+   - How do the Part 2 findings affect the Part 1 assessment?
+
+3. **INTEGRATION:**
+   - Is there coherence between how Part 2 relates to Part 1?
+   - Are there contradictions or misalignments?
+
+**Be especially critical if:**
+- Part 2 (specific question) is answered superficially or avoided
+- Evidence focuses on Part 1 but neglects Part 2
+- The reasoning doesn't connect Part 2's findings to Part 1's context
+
+Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about shortcomings, especially regarding Part 2.
+Respond ONLY with the critical opinion text, no JSON, no formatting."""
+
+            user_content = f"""PREGUNTA CON DOS PARTES:
+
+**PARTE 1 (Contexto General):**
+{parsed['part1']}
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**Pregunta Completa:**
+{question}
+
+**Respuesta del Documento:** {answer}
+
+**Razonamiento del Documento:** {reasoning}
+
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Evalúa críticamente: ¿La respuesta aborda adecuadamente AMBAS partes, especialmente la Parte 2 (pregunta específica)? ¿La evidencia y el razonamiento son suficientes para ambas partes?"""
+
+        else:
+            # Original single-question critical evaluation
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+                    Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
+
+                    Review the answer, reasoning, evidence, AND full document context together to evaluate:
+                    - Does the answer fully address the concern raised in the question?
+                    - Is the evidence substantive enough to support the answer?
+                    - Does the full document context confirm or contradict the claimed answer?
+                    - Is the proposed approach sufficient according to best practices?
+                    - Are there gaps, risks, or inadequacies in what the document claims?
+                    - Should the project have included additional measures or details?
+                    - Is the reasoning robust or superficial?
+                    - What is NOT mentioned that should be?
+
+                    Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
+                    Respond ONLY with the critical opinion text, no JSON, no formatting."""
+
+            user_content = f"""Question: {question}
+
+Document's Answer: {answer}
+
+Document's Reasoning: {reasoning}
+
+Document's Evidence: {evidence}
+
+Full Document Context (complete):
+{doc_context}
+
+Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
+
+        # Single API call for critical evaluation - focuses on answer adequacy
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": user_content
                 }
             ],
             max_completion_tokens=500,
@@ -6341,11 +6780,12 @@ with tab1:
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all questions for document-based analysis first
+            # TAB1: Using tab1-specific function that explicitly states when 2 parts are detected
             future_to_question_doc = {
-                executor.submit(analyze_question_with_llm, q, document_text): q 
+                executor.submit(analyze_question_with_llm_tab1, q, document_text): q
                 for q in questions
             }
-            
+
             # Process document-based analyses
             completed = 0
             for future in as_completed(future_to_question_doc):
@@ -6353,19 +6793,20 @@ with tab1:
                 result = future.result()
                 results.append(result)
                 completed += 1
-                
+
                 # Update progress
                 progress = completed / len(questions)
                 progress_bar.progress(progress * 0.5)  # First half of progress bar
                 status_text.text(f"Análisis documentales: {completed}/{len(questions)} preguntas")
-            
+
             # Create results DataFrame to get answers for critical evaluation
             results_df_temp = pd.DataFrame(results)
-            
+
             # Now submit critical evaluations with answer, reasoning, evidence AND document context
+            # TAB1: Using tab1-specific function that checks for proper two-part acknowledgment
             future_to_question_critical = {
                 executor.submit(
-                    analyze_question_with_critical_opinion,
+                    analyze_question_with_critical_opinion_tab1,
                     row['Pregunta'],
                     row['Respuesta'],
                     row['Razonamiento'],
