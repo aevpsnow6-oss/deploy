@@ -4884,18 +4884,82 @@ with tab3:
                         st.error(traceback.format_exc())
                         st.stop()
         
-        # Define the evaluation function for tab3 (same as tab1)
+        # Define the evaluation function for tab3 with COUNTING support
         def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
-            """Analyze document against criterion with retry logic"""
+            """
+            Analyze document against criterion with retry logic.
+            TAB3-SPECIFIC: Enhanced to handle COUNT-BASED rubrics (stakeholders, participation forms, etc.)
+            """
             import time
+
+            # Detect if this is a stakeholder participation counting rubric
+            is_stakeholder_counting = any(keyword in criterion.lower() for keyword in
+                ['mandante', 'participan', 'stakeholder', 'actores', 'gobierno', 'empleador', 'trabajador'])
 
             for attempt in range(max_retries):
                 try:
                     # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
                     combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
 
-                    # Now do the expensive analysis on focused content
-                    prompt = f"""Evaluate this document against: {criterion}
+                    # Enhanced prompt for count-based rubrics
+                    if is_stakeholder_counting:
+                        system_content = """Eres un evaluador experto de documentos especialmente capacitado para CONTAR y CATEGORIZAR elementos.
+
+**INSTRUCCIONES CRÍTICAS PARA EVALUACIÓN BASADA EN CONTEOS:**
+
+Cuando evalúes indicadores sobre participación de actores/mandantes:
+
+1. **IDENTIFICA y CUENTA** cada tipo de mandante/actor mencionado:
+   - **Gobierno** (autoridades, funcionarios públicos, ministerios, etc.)
+   - **Empleadores** (empresas, organizaciones patronales, cámaras de comercio, etc.)
+   - **Trabajadores** (sindicatos, organizaciones de trabajadores, trabajadores individuales, etc.)
+
+2. **IDENTIFICA y CUENTA** las formas/maneras de participación para CADA tipo de mandante:
+   - Ejemplos: diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
+
+3. **ESTRUCTURA TU ANÁLISIS** de esta manera:
+   ```
+   CONTEO DE MANDANTES:
+   - Gobierno: [NÚMERO] mandantes identificados
+     * Formas de participación: [LISTAR y CONTAR]
+   - Empleadores: [NÚMERO] mandantes identificados
+     * Formas de participación: [LISTAR y CONTAR]
+   - Trabajadores: [NÚMERO] mandantes identificados
+     * Formas de participación: [LISTAR y CONTAR]
+
+   TOTAL: [X] tipos de mandantes participando en [Y] formas diferentes
+
+   JUSTIFICACIÓN DEL PUNTAJE:
+   [Explicar cómo los conteos determinan el nivel según la rúbrica]
+   ```
+
+4. **ASIGNA EL PUNTAJE** basándote ESTRICTAMENTE en los conteos según los niveles de la rúbrica.
+
+Siempre responde en español, incluso si el documento está en inglés."""
+
+                        user_content = f"""Evalúa este documento contra el siguiente indicador (REQUIERE CONTEO):
+
+**Indicador:** {criterion}
+
+**Niveles de puntuación:** {json.dumps(descriptions, ensure_ascii=False, indent=2)}
+
+**Documento a evaluar:**
+{combined_text}
+
+**RECUERDA:**
+1. CUENTA explícitamente cada tipo de mandante
+2. CUENTA las formas de participación para cada tipo
+3. Presenta los conteos de manera estructurada
+4. Justifica el puntaje con base en los números contados
+
+Proporciona tu respuesta como JSON:
+{{"analysis": "COMIENZA con los conteos estructurados, luego la justificación del puntaje basada en los números. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 con el mandante y forma de participación", "cita 2", "etc - 5-8 citas clave del texto como array"]}}"""
+
+                    else:
+                        # Original prompt for non-counting rubrics
+                        system_content = "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."
+
+                        user_content = f"""Evaluate this document against: {criterion}
 
     Scoring levels: {json.dumps(descriptions)}
 
@@ -4903,15 +4967,15 @@ with tab3:
     {combined_text}
 
     IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
-    
+
     Provide JSON with:
     {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
                     response = client.chat.completions.create(
                         model="gpt-5-mini",
                         messages=[
-                            {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
-                            {"role": "user", "content": prompt}
+                            {"role": "system", "content": system_content},
+                            {"role": "user", "content": user_content}
                         ],
                         max_completion_tokens=6500,
                         reasoning_effort="minimal",
