@@ -4903,41 +4903,58 @@ with tab3:
 
                     # Enhanced prompt for count-based rubrics
                     if is_stakeholder_counting:
-                        system_content = """Eres un evaluador experto de documentos especialmente capacitado para CONTAR y CATEGORIZAR elementos.
+                        system_content = """Eres un evaluador experto de documentos especialmente capacitado para CONTAR y aplicar LÓGICA DE UMBRALES.
 
-**INSTRUCCIONES CRÍTICAS PARA EVALUACIÓN BASADA EN CONTEOS:**
+**INSTRUCCIONES CRÍTICAS PARA EVALUACIÓN BASADA EN CONTEOS CON UMBRALES:**
 
-Cuando evalúes indicadores sobre participación de actores/mandantes:
+Los niveles de la rúbrica especifican requisitos como "AL MENOS X mandantes participando en AL MENOS Y formas".
+Debes aplicar lógica de umbrales estricta:
 
 1. **IDENTIFICA y CUENTA** cada tipo de mandante/actor mencionado:
    - **Gobierno** (autoridades, funcionarios públicos, ministerios, etc.)
    - **Empleadores** (empresas, organizaciones patronales, cámaras de comercio, etc.)
    - **Trabajadores** (sindicatos, organizaciones de trabajadores, trabajadores individuales, etc.)
 
-2. **IDENTIFICA y CUENTA** las formas/maneras de participación para CADA tipo de mandante:
-   - Ejemplos: diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
+2. **CUENTA las formas de participación** para CADA mandante individualmente:
+   - Diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
+   - Cada forma debe ser DISTINTA y VERIFICABLE en el documento
 
-3. **ESTRUCTURA TU ANÁLISIS** de esta manera:
+3. **APLICA LÓGICA DE UMBRALES** según los niveles de la rúbrica:
+   - Si el nivel requiere "AL MENOS 2 mandantes en AL MENOS 2 formas":
+     * CUENTA cuántos mandantes tienen 2 o más formas de participación
+     * Si al menos 2 mandantes alcanzan ese umbral → cumple el nivel
+     * Si solo 1 mandante alcanza ese umbral → NO cumple el nivel
+
+   - Ejemplo:
+     * Gobierno: 3 formas ✓ (cumple umbral de 2+)
+     * Empleadores: 2 formas ✓ (cumple umbral de 2+)
+     * Trabajadores: 1 forma ✗ (NO cumple umbral de 2+)
+     * Resultado: 2 mandantes cumplen el umbral → SÍ califica para "al menos 2 mandantes en al menos 2 formas"
+
+4. **ESTRUCTURA TU ANÁLISIS** así:
    ```
-   CONTEO DE MANDANTES:
-   - Gobierno: [NÚMERO] mandantes identificados
-     * Formas de participación: [LISTAR y CONTAR]
-   - Empleadores: [NÚMERO] mandantes identificados
-     * Formas de participación: [LISTAR y CONTAR]
-   - Trabajadores: [NÚMERO] mandantes identificados
-     * Formas de participación: [LISTAR y CONTAR]
+   CONTEO POR MANDANTE:
+   - Gobierno: [N] formas identificadas → [LISTAR formas]
+   - Empleadores: [N] formas identificadas → [LISTAR formas]
+   - Trabajadores: [N] formas identificadas → [LISTAR formas]
 
-   TOTAL: [X] tipos de mandantes participando en [Y] formas diferentes
+   EVALUACIÓN DE UMBRALES (según nivel de la rúbrica):
+   - Nivel X requiere: "AL MENOS [A] mandantes en AL MENOS [B] formas"
+   - Mandantes que cumplen umbral de [B]+ formas: [LISTA DE MANDANTES]
+   - Total de mandantes que cumplen umbral: [NÚMERO]
+   - ¿Cumple requisito de [A]+ mandantes?: [SÍ/NO]
 
    JUSTIFICACIÓN DEL PUNTAJE:
-   [Explicar cómo los conteos determinan el nivel según la rúbrica]
+   [Explicar EXPLÍCITAMENTE cómo los conteos y umbrales determinan el nivel]
    ```
 
-4. **ASIGNA EL PUNTAJE** basándote ESTRICTAMENTE en los conteos según los niveles de la rúbrica.
+5. **ASIGNA EL PUNTAJE** basándote ESTRICTAMENTE en:
+   - Cuántos mandantes cumplen el umbral mínimo de formas
+   - Si ese número cumple el requisito de "al menos X mandantes"
 
 Siempre responde en español, incluso si el documento está en inglés."""
 
-                        user_content = f"""Evalúa este documento contra el siguiente indicador (REQUIERE CONTEO):
+                        user_content = f"""Evalúa este documento contra el siguiente indicador (REQUIERE CONTEO CON LÓGICA DE UMBRALES):
 
 **Indicador:** {criterion}
 
@@ -4946,14 +4963,23 @@ Siempre responde en español, incluso si el documento está en inglés."""
 **Documento a evaluar:**
 {combined_text}
 
-**RECUERDA:**
-1. CUENTA explícitamente cada tipo de mandante
-2. CUENTA las formas de participación para cada tipo
-3. Presenta los conteos de manera estructurada
-4. Justifica el puntaje con base en los números contados
+**INSTRUCCIONES CRÍTICAS:**
+1. CUENTA las formas de participación para CADA mandante
+2. IDENTIFICA el umbral mínimo de formas requerido en cada nivel (ej: "al menos 2 formas")
+3. CUENTA cuántos mandantes CUMPLEN ese umbral
+4. VERIFICA si el número de mandantes que cumplen el umbral alcanza el requisito del nivel
+5. Justifica el puntaje EXPLÍCITAMENTE basándote en la lógica de umbrales
+
+**EJEMPLO DE RAZONAMIENTO CORRECTO:**
+"Nivel 4 requiere AL MENOS 2 mandantes participando en AL MENOS 2 formas cada uno.
+Gobierno participa en 3 formas (✓ cumple umbral de 2+)
+Empleadores participan en 2 formas (✓ cumple umbral de 2+)
+Trabajadores participan en 1 forma (✗ NO cumple umbral de 2+)
+Total de mandantes que cumplen umbral: 2
+Dado que 2 mandantes cumplen el umbral de 2+ formas, SÍ se alcanza el Nivel 4."
 
 Proporciona tu respuesta como JSON:
-{{"analysis": "COMIENZA con los conteos estructurados, luego la justificación del puntaje basada en los números. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 con el mandante y forma de participación", "cita 2", "etc - 5-8 citas clave del texto como array"]}}"""
+{{"analysis": "COMIENZA con el conteo por mandante, luego EVALÚA EXPLÍCITAMENTE los umbrales según cada nivel, finalmente JUSTIFICA el puntaje con la lógica de umbrales. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 que evidencia mandante y forma de participación específica", "cita 2", "etc - 5-8 citas clave como array"]}}"""
 
                     else:
                         # Original prompt for non-counting rubrics
