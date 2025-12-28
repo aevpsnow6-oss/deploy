@@ -6932,9 +6932,12 @@ with tab1:
         st.session_state['tab1_subsection_critical_evaluations'] = subsection_critical_evaluations
         st.session_state['tab1_section_analyses'] = section_analyses
         st.session_state['tab1_section_critical_evaluations'] = section_critical_evaluations
+
+        # Get document stats from session state
+        doc_stats = st.session_state.get('appraisal_document_stats', {})
         st.session_state['tab1_doc_stats'] = {
-            'file_size': doc_result['file_size'],
-            'word_count': doc_result['word_count']
+            'file_size': doc_stats.get('file_size', 0),
+            'word_count': doc_stats.get('word_count', 0)
         }
         
         # Display results
