@@ -8148,74 +8148,106 @@ with tab6:
             is_percent = (evo_toggle == "Porcentaje (100%)")
             barnorm = 'percent' if is_percent else None
             
-            tab_evo1, tab_evo2, tab_evo3, tab_evo4 = st.tabs(["Por País", "Por Unidad Admin", "Por Dimensión", "Por Subdimensión"])
+            # Define the tabs - Expanded List
+            tab_labels = [
+                "Por País", "Por Unidad Admin", "Por Dimensión", "Por Subdimensión",
+                "Resp. Gestión", "Temática Eval.", "Temática Rec.", "Unidad Técnica",
+                "Fuente Fondo", "Naturaleza", "Tipo Eval.", "Momento", "Progreso", "Tipo Doc."
+            ]
             
-            # Helper to plot evolution
-            def plot_evolution(df_in, cat_col, title_prefix):
-                if 'Year' not in df_in.columns or df_in.empty:
-                    st.info("No hay datos de Año para mostrar evolución.")
-                    return
-                    
-                # Filter out bad years (0, nan)
-                df_clean = df_in[df_in['Year'] > 1900].copy()
-                if df_clean.empty:
-                     st.info("No hay datos válidos de año.")
-                     return
-
-                # Check cardinality
-                unique_vals = df_clean[cat_col].nunique()
-                if unique_vals > 20: 
-                     st.warning(f"Hay muchos valores únicos ({unique_vals}) en {cat_col}. Se muestran los Top 20.")
-                     top_20 = df_clean[cat_col].value_counts().nlargest(20).index
-                     df_clean = df_clean[df_clean[cat_col].isin(top_20)]
-
-                # Group
-                df_grouped = df_clean.groupby(['Year', cat_col]).size().reset_index(name='count')
-                
-                fig = px.bar(
-                    df_grouped, 
-                    x="Year", 
-                    y="count", 
-                    color=cat_col, 
-                    title=f"Evolución de {title_prefix}",
-                    barmode='stack', # Always stack
-                )
-                
-                # Apply 100% stack if requested. Plotly express 'barnorm' param in px.bar does this easily
-                # Re-do with barnorm logic if easier or update layout
-                if is_percent:
-                     # Calculate percentages manually or use barnorm? 
-                     # px.bar argument 'barnorm'='percent' works great.
-                     # Let's recreate fig to be clean
-                     fig = px.bar(
-                        df_grouped, 
-                        x="Year", 
-                        y="count", 
-                        color=cat_col, 
-                        title=f"Evolución de {title_prefix} (%)",
-                        barmode='relative', # relative + barnorm = 100%
-                    )
-                     fig.update_layout(barnorm='percent')
-                
-                st.plotly_chart(fig, use_container_width=True)
-
-            with tab_evo1:
+            tabs = st.tabs(tab_labels)
+            
+            # 0. Por País
+            with tabs[0]:
                  if 'Country(ies)' in df_filtered_viz.columns:
                      plot_evolution(df_filtered_viz, 'Country(ies)', "País")
                  else:
                      st.info("Columna 'Country(ies)' no disponible.")
 
-            with tab_evo2:
+            # 1. Por Unidad Admin
+            with tabs[1]:
                  if 'Recommendation administrative unit' in df_filtered_viz.columns:
                      plot_evolution(df_filtered_viz, 'Recommendation administrative unit', "Unidad Administrativa")
                  else:
                      st.info("Columna 'Recommendation administrative unit' no disponible.")
 
-            with tab_evo3:
+            # 2. Por Dimensión
+            with tabs[2]:
                  plot_evolution(df_filtered_viz, 'assigned_dimension', "Dimensión")
 
-            with tab_evo4:
+            # 3. Por Subdimensión
+            with tabs[3]:
                  plot_evolution(df_filtered_viz, 'assigned_subdim', "Subdimensión")
+                 
+            # 4. Resp. Gestión (Management response)
+            with tabs[4]:
+                if 'Management response' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Management response', "Respuesta de Gestión")
+                else:
+                    st.info("Columna 'Management response' no disponible.")
+            
+            # 5. Temática Eval. (Evaluation theme(s))
+            with tabs[5]:
+                if 'Evaluation theme(s)' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Evaluation theme(s)', "Temática de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation theme(s)' no disponible.")
+
+            # 6. Temática Rec. (Recommendation theme)
+            with tabs[6]:
+                if 'Recommendation theme' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Recommendation theme', "Temática de Recomendación")
+                else:
+                    st.info("Columna 'Recommendation theme' no disponible.")
+
+            # 7. Unidad Técnica (Technical unit(s))
+            with tabs[7]:
+                if 'Technical unit(s)' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Technical unit(s)', "Unidad Técnica")
+                else:
+                    st.info("Columna 'Technical unit(s)' no disponible.")
+
+            # 8. Fuente Fondo (Funding source(s))
+            with tabs[8]:
+                if 'Funding source(s)' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Funding source(s)', "Fuente de Financiamiento")
+                else:
+                    st.info("Columna 'Funding source(s)' no disponible.")
+
+            # 9. Naturaleza (Evaluation nature)
+            with tabs[9]:
+                if 'Evaluation nature' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Evaluation nature', "Naturaleza de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation nature' no disponible.")
+            
+            # 10. Tipo Eval. (Evaluation type)
+            with tabs[10]:
+                if 'Evaluation type' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Evaluation type', "Tipo de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation type' no disponible.")
+
+            # 11. Momento (Evaluation timing)
+            with tabs[11]:
+                if 'Evaluation timing' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Evaluation timing', "Momento de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation timing' no disponible.")
+
+            # 12. Progreso (Progress)
+            with tabs[12]:
+                if 'Progress' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Progress', "Progreso")
+                else:
+                    st.info("Columna 'Progress' no disponible.")
+
+            # 13. Tipo Doc. (Evaluation document type)
+            with tabs[13]:
+                if 'Evaluation document type' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Evaluation document type', "Tipo de Documento")
+                else:
+                    st.info("Columna 'Evaluation document type' no disponible.")
 
             # --- Download ---
             st.markdown("### 📥 Descargar Resultados")
