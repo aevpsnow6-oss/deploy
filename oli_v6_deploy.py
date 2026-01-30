@@ -1,3 +1,5 @@
+import concurrent.futures
+import pickle
 import streamlit as st
 import pandas as pd
 import json
@@ -243,6 +245,147 @@ def verify_match_with_llm(rec_text, candidates, api_key):
         return 0 # Fallback to Top 1 if parse fails
     except:
         return 0 # Fallback to Top 1 on error
+
+# --- Analysis Cache (for Deep Analysis) ---
+class AnalysisCache:
+    def __init__(self, cache_file="analysis_cache.pkl"):
+        self.cache_file = cache_file
+        self.cache = {}
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'rb') as f:
+                    self.cache = pickle.load(f)
+            except:
+                self.cache = {}
+
+    def save(self):
+        with open(self.cache_file, 'wb') as f:
+            pickle.dump(self.cache, f)
+
+    def get(self, key):
+        return self.cache.get(key)
+    
+    def set(self, key, value):
+        self.cache[key] = value
+
+    def generate_key(self, rec, plan):
+        # Create a hash based on rec + plan content
+        content = f"{str(rec).strip()}|{str(plan).strip()}"
+        return content 
+
+# --- Deep Analysis Logic ---
+def analyze_recommendation_plan_pair(recommendation, action_plan, comments, client, model="gpt-4o-mini"):
+    """
+    Send recommendation, action plan, and comments to OpenAI API for analysis
+    """
+    if pd.isna(recommendation) or pd.isna(action_plan):
+        return None # Skip empty
+    
+    # Handle NaN comments
+    if pd.isna(comments):
+        comments = "No additional comments provided."
+    
+    # Define ILO development project relevant tags
+    ilo_tags_list = [
+        "capacity_building", "training", "employment_creation", "gender_equality", 
+        "decent_work", "labor_rights", "social_dialogue", "social_protection",
+        "occupational_safety", "child_labor", "forced_labor", "labor_migration",
+        "working_conditions", "skills_development", "social_inclusion", "monitoring_evaluation",
+        "institutional_strengthening", "policy_development", "knowledge_management",
+        "sustainability", "stakeholder_engagement", "data_collection", "technical_assistance",
+        "project_design", "implementation_methodology", "resource_allocation", 
+        "coordination", "partnership_building", "innovation", "digital_transformation"
+    ]
+    
+    rec_tags_list = ['governance', 'participation', 'gender_issues', 'just_transition', 'institutional_strenghtening', 
+                'public_policy_incidence', 'financial_sustainability']
+    
+    prompt = f"""
+    Analyze the following recommendation, its corresponding action plan, and additional comments:
+    
+    RECOMMENDATION:
+    {recommendation}
+    
+    ACTION PLAN:
+    {action_plan}
+    
+    ADDITIONAL COMMENTS:
+    {comments}
+    
+    Please extract and return ONLY a JSON object with the following fields:
+    1. extracted_actions_from_rec: List all specific actions requested in the recommendation
+    2. actions_proposed_in_plan: List all specific actions mentioned in the action plan
+    3. difficulties_mentioned: Any difficulties or challenges mentioned in implementing the recommendation (look carefully in the action plan AND comments for these)
+    4. reasons_for_rejection: If the recommendation wasn't fully accepted, reasons given (pay special attention to justifications in the comments)
+    5. rejection_difficulty_classification: Classify the reasons (Financial, Technical, Political, Low priority, Unjustified, Third party dependency, Time constraints, Cultural/behavioral, Local operational constraints, Mandate limitations, Other). At most 3.
+    6. coherence_score: Score from 0-10 how well the action plan addresses the recommendation
+    7. coherence_rationale: Detailed explanation (6-8 sentences).
+    8. plan_quality_score: Score from 0-10 (specificity, feasibility).
+    9. plan_quality_rationale: Detailed explanation (6-8 sentences).
+    10. attention_level_score: Score from 0-10 (priority given).
+    11. attention_level_rationale: Detailed explanation (6-8 sentences).
+    12. overall_score: Score from 0-10.
+    13. overall_score_rationale: Extensive analysis (6-8 sentences).
+    14. tags: Select 2-5 most relevant tags from: {", ".join(ilo_tags_list)}
+    
+    Now, analyze the recommendation on its own:
+    15. rec_innovation_score: (Very low, Low, Medium, High, Very High).
+    16. rec_innovation_rationale: Explanation (3-4 sentences).
+    17. rec_precision_and_clarity: (Very low, Low, Medium, High, Very High).
+    18. rec_precision_and_clarity_rationale: Explanation (3-4 sentences).
+    19. rec_additional_tags: Select 2-5 relevant tags from: {", ".join(rec_tags_list)}
+    20. rec_operational_feasibility: (Very low, Low, Medium, High, Very High).
+    21. rec_operational_feasibility_rationale: Explanation (3-4 sentences).
+    22. rec_timeline: (short, medium, long).
+    23. rec_timeline_rationale: Explanation (3-4 sentences).
+    24. rec_expected_impact: (Very low, Low, Medium, High, Very High).
+    25. rec_expected_impact_rationale: Explanation (3-4 sentences).
+    26. rec_intervention_approach: (processes, results, policy).
+    27. rec_intervention_approach_rationale: Explanation (3-4 sentences).
+    
+    Respond ONLY with the JSON object.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You analyze recommendations and action plans, returning structured JSON results."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        
+        return json.loads(response.choices[0].message.content)
+    
+    except Exception as e:
+        return {
+            "error": str(e),
+            "coherence_score": 0,
+            "overall_score": 0
+        }
+
+def run_row_analysis(args):
+    """
+    Worker for parallel analysis
+    """
+    idx, rec, plan, comments, api_key, cache_obj = args
+    
+    # Check cache first
+    key = cache_obj.generate_key(rec, plan)
+    cached = cache_obj.get(key)
+    if cached:
+        return idx, cached, True # True = from cache
+        
+    # If not in cache, call API
+    client = OpenAI(api_key=api_key)
+    result = analyze_recommendation_plan_pair(rec, plan, comments, client)
+    
+    return idx, result, False # False = new call
 
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
 import pickle
@@ -8433,6 +8576,130 @@ with tab6:
                     plot_evolution(df_viz_dedup, 'Evaluation document type', "Tipo de Documento")
                 else:
                     st.info("Columna 'Evaluation document type' no disponible.")
+
+        # --- SECCION 3: ANÁLISIS PROFUNDO (NUEVA) ---
+        st.markdown("---")
+        st.subheader("📝 3. Análisis Profundo de Planes de Acción (IA)")
+        st.info("Esta sección utiliza GPT-4o para analizar la **coherencia**, **calidad** y **atención** de los planes de acción frente a las recomendaciones. También evalúa la **innovación** de la recomendación.")
+
+        with st.expander("Configuración de Análisis Profundo", expanded=False):
+            deep_model = st.selectbox("Modelo:", ["gpt-4o-mini", "gpt-4o"], index=0, help="gpt-4o-mini es más rápido y barato. gpt-4o es más preciso.")
+            limit_rows_deep = st.number_input("Límite de recomendaciones a analizar (0 = Sin límite):", min_value=0, value=50, step=10, help="Limitar para pruebas rápidas.")
+
+        if st.button("🧠 Iniciar Análisis Profundo", key="btn_deep_analysis"):
+             # Get filtered data (deduplicated for analysis to avoid re-running same recs)
+             id_col_deep = 'Recommendation ID' if 'Recommendation ID' in df_filtered_viz.columns else 'Recommendation description'
+             df_deep_input = df_filtered_viz.drop_duplicates(subset=[id_col_deep]).copy()
+             
+             if limit_rows_deep > 0:
+                 df_deep_input = df_deep_input.head(limit_rows_deep)
+             
+             if df_deep_input.empty:
+                 st.warning("No hay datos para analizar.")
+             else:
+                 st.markdown(f"**Analizando {len(df_deep_input)} recomendaciones únicas...**")
+                 
+                 # Initialize Cache
+                 analysis_cache = AnalysisCache()
+                 
+                 # Prepare Args
+                 args_list = []
+                 for idx, row in df_deep_input.iterrows():
+                     rec = str(row.get('Recommendation description', ''))
+                     plan = str(row.get('Action plan', ''))
+                     comments = str(row.get('Comments', '')) if 'Comments' in row else ""
+                     args_list.append((idx, rec, plan, comments, openai_api_key, analysis_cache))
+                 
+                 # Results container
+                 results_map = {}
+                 
+                 # Progress Bar
+                 pbar_deep = st.progress(0, text="Iniciando análisis...")
+                 
+                 # Run Parallel
+                 completed_count = 0
+                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                     # Submit all
+                     futures = [executor.submit(run_row_analysis, arg) for arg in args_list]
+                     
+                     for future in concurrent.futures.as_completed(futures):
+                         idx, result, from_cache = future.result()
+                         if result:
+                            results_map[idx] = result
+                         
+                         completed_count += 1
+                         pbar_deep.progress(completed_count / len(args_list), text=f"Analizando... {completed_count}/{len(args_list)}")
+                 
+                 pbar_deep.empty()
+                 analysis_cache.save()
+                 
+                 # Merge Results back to DataFrame
+                 # Convert results_map to DataFrame
+                 analysis_list = []
+                 for idx, res in results_map.items():
+                     res['original_index'] = idx
+                     analysis_list.append(res)
+                 
+                 if analysis_list:
+                     df_analysis_results = pd.DataFrame(analysis_list)
+                     df_analysis_results.set_index('original_index', inplace=True)
+                     
+                     # Join with original input
+                     df_final_deep = df_deep_input.join(df_analysis_results)
+                     
+                     # Post-processing: Convert lists to strings for display/export
+                     list_cols = ['extracted_actions_from_rec', 'actions_proposed_in_plan', 'rejection_difficulty_classification', 'tags', 'rec_additional_tags']
+                     for col in list_cols:
+                         if col in df_final_deep.columns:
+                             df_final_deep[col] = df_final_deep[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
+
+                     st.session_state['deep_analysis_df'] = df_final_deep
+                     st.success("Análisis completado.")
+                 else:
+                     st.error("No se generaron resultados.")
+
+        # Display Results if available
+        if 'deep_analysis_df' in st.session_state:
+            df_res = st.session_state['deep_analysis_df']
+            
+            st.markdown("### Resultados del Análisis")
+            
+            # Key Metrics Distribution
+            col1, col2, col3, col4 = st.columns(4)
+            if 'coherence_score' in df_res.columns:
+                col1.metric("Coherencia Promedio", f"{df_res['coherence_score'].mean():.2f}")
+            if 'plan_quality_score' in df_res.columns:
+                col2.metric("Calidad Plan Promedio", f"{df_res['plan_quality_score'].mean():.2f}")
+            if 'rec_innovation_score' in df_res.columns:
+                # Value counts for categorical
+                pass
+            
+            # Show Dataframe
+            st.dataframe(df_res[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'difficulty_types', 'tags']], use_container_width=True)
+            
+            # Export
+            # Create Excel in memory
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_res.to_excel(writer, index=False, sheet_name='Deep_Analysis')
+            processed_data = output.getvalue()
+            
+            st.download_button(
+                label="📥 Descargar Reporte de Análisis Completo (.xlsx)",
+                data=processed_data,
+                file_name="analisis_profundo_planes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            # Visualizations
+            st.subheader("Visualizaciones")
+            if 'coherence_score' in df_res.columns:
+                fig_hist = px.histogram(df_res, x="coherence_score", nbins=10, title="Distribución de Coherencia")
+                st.plotly_chart(fig_hist)
+                
+            if 'rec_innovation_score' in df_res.columns:
+                 fig_pie = px.pie(df_res, names='rec_innovation_score', title="Nivel de Innovación de Recomendaciones")
+                 st.plotly_chart(fig_pie)
 
             # --- Download ---
             st.markdown("### 📥 Descargar Resultados")
