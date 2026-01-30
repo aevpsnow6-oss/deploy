@@ -8146,7 +8146,49 @@ with tab6:
             
             evo_toggle = st.radio("Tipo de Gráfico:", ["Absoluto", "Porcentaje (100%)"], horizontal=True, key="evo_chart_type")
             is_percent = (evo_toggle == "Porcentaje (100%)")
-            barnorm = 'percent' if is_percent else None
+            bar_norm_val = 'percent' if is_percent else None
+            
+            # Helper to plot evolution
+            def plot_evolution(df_in, cat_col, title_prefix):
+                if 'Year' not in df_in.columns or df_in.empty:
+                    st.info("No hay datos de Año para mostrar evolución.")
+                    return
+                    
+                # Filter out bad years (0, nan)
+                df_clean = df_in[df_in['Year'] > 1900].copy()
+                if df_clean.empty:
+                     st.info("No hay datos válidos de año.")
+                     return
+
+                # Check cardinality
+                unique_vals = df_clean[cat_col].nunique()
+                if unique_vals > 20: 
+                     st.warning(f"Hay muchos valores únicos ({unique_vals}) en {cat_col}. Se muestran los Top 20.")
+                     top_20 = df_clean[cat_col].value_counts().nlargest(20).index
+                     df_clean = df_clean[df_clean[cat_col].isin(top_20)]
+
+                # Group
+                df_grouped = df_clean.groupby(['Year', cat_col]).size().reset_index(name='count')
+                
+                # Determine title suffix
+                t_suffix = " (%)" if is_percent else ""
+                
+                # Create figure
+                # We use 'relative' barmode. If is_percent is true, we update layout with barnorm='percent'
+                fig = px.bar(
+                    df_grouped, 
+                    x="Year", 
+                    y="count", 
+                    color=cat_col, 
+                    title=f"Evolución de {title_prefix}{t_suffix}",
+                    barmode='relative', 
+                )
+                
+                if is_percent:
+                     fig.update_layout(barnorm='percent')
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
             
             # Define the tabs - Expanded List
             tab_labels = [
