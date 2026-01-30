@@ -7879,9 +7879,29 @@ with tab6:
             st.markdown("---")
             st.subheader("📊 Visualización de Resultados")
             
-            col_viz1, col_viz2 = st.columns(2)
+            
+            # --- Visual Filters ---
+            available_dims = sorted(df_viz['assigned_dimension'].unique())
+            
+            # We use a selectbox for explicit control (MOVED TO TOP)
+            # Default index logic must handle if nothing selected initially
+            manual_dim = st.selectbox(
+                "Filtrar Subdimensión por Dimensión:", 
+                options=["Todos"] + available_dims, 
+                index=0,
+                key="manual_dim_filter_top"
+            )
+            
+            selected_dim_label = None
+            if manual_dim != "Todos":
+                selected_dim_label = manual_dim
+            
+            st.markdown("---")
             
             # --- Treemap 1: Dimension ---
+            st.markdown("#### Por Dimensión")
+            st.caption("Selecciona una dimensión en el gráfico para ver detalles (opcional).")
+            
             dim_counts = df_viz['assigned_dimension'].value_counts().reset_index()
             dim_counts.columns = ['dimension', 'count']
             
@@ -7893,68 +7913,52 @@ with tab6:
                 color='dimension'
             )
             
-            selected_dim_label = None
+            # Enable selection (kept for interactivity, syncing with variable)
+            selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
             
-            with col_viz1:
-                st.markdown("#### Por Dimensión")
-                st.caption("Selecciona una dimensión para filtrar el gráfico de la derecha.")
-                # Enable selection
-                selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
-                
-                if isinstance(selection_dim, dict) and "selection" in selection_dim and "points" in selection_dim["selection"]:
-                     points = selection_dim["selection"]["points"]
-                     if points:
-                         # Try to get the label from different potential keys
-                         pt = points[0]
-                         selected_dim_label = pt.get('label') or pt.get('x') or pt.get('id')
-                
-                # Explicit Visual Filter for Dimension
-                st.markdown("---") 
-                available_dims = sorted(df_viz['assigned_dimension'].unique())
-                # If a selection was made on the chart, use it as default if possible, otherwise permit manual override
-                index_dim = 0
-                if selected_dim_label and selected_dim_label in available_dims:
-                    index_dim = available_dims.index(selected_dim_label)
-                
-                # We use a selectbox for explicit control
-                manual_dim = st.selectbox(
-                    "O filtrar Subdimensión por Dimensión manualmente:", 
-                    options=["Todos"] + available_dims, 
-                    index=0 if not selected_dim_label else index_dim + 1,
-                    key="manual_dim_filter"
-                )
-                
-                if manual_dim != "Todos":
-                    selected_dim_label = manual_dim
-                elif not selection_dim: # If "Todos" and no chart selection, reset
-                     selected_dim_label = None
+            # Additional logic: if user clicks chart, override manual filter? 
+            # User asked for filter on top. Let's prioritize the TOP filter, but if they click, maybe update?
+            # Streamlit widgets don't easily bi-directionally sync without complex callbacks. 
+            # To keep it simple and stable as requested:
+            # We will rely primarily on the Dropdown on top. 
+            # If the user clicks the chart, we can try to respect it if the dropdown is "Todos", 
+            # OR just strictly use the dropdown as the "master" filter as requested ("filters to be on top").
+            # Let's make the dropdown the primary control. 
+            
+            if isinstance(selection_dim, dict) and "selection" in selection_dim and "points" in selection_dim["selection"]:
+                 points = selection_dim["selection"]["points"]
+                 if points:
+                     pt = points[0]
+                     clicked_label = pt.get('label') or pt.get('x') or pt.get('id')
+                     if clicked_label and clicked_label in available_dims and manual_dim == "Todos":
+                         selected_dim_label = clicked_label
+                         st.info(f"Filtro aplicado por selección en gráfico: {selected_dim_label}")
 
             # --- Treemap 2: Subdim ---
-            with col_viz2:
-                st.markdown("#### Por Subdimensión")
+            st.markdown("#### Por Subdimensión")
+            
+            df_sub = df_viz.copy()
+            title_suffix = ""
+            
+            if selected_dim_label:
+                if selected_dim_label in df_sub['assigned_dimension'].unique():
+                    df_sub = df_sub[df_sub['assigned_dimension'] == selected_dim_label]
+                    title_suffix = f" ({selected_dim_label})"
+            
+            if not df_sub.empty:
+                subdim_counts = df_sub['assigned_subdim'].value_counts().reset_index()
+                subdim_counts.columns = ['subdim', 'count']
                 
-                df_sub = df_viz.copy()
-                title_suffix = ""
-                
-                if selected_dim_label:
-                    if selected_dim_label in df_sub['assigned_dimension'].unique():
-                        df_sub = df_sub[df_sub['assigned_dimension'] == selected_dim_label]
-                        title_suffix = f" ({selected_dim_label})"
-                
-                if not df_sub.empty:
-                    subdim_counts = df_sub['assigned_subdim'].value_counts().reset_index()
-                    subdim_counts.columns = ['subdim', 'count']
-                    
-                    fig_sub = px.treemap(
-                        subdim_counts,
-                        path=['subdim'],
-                        values='count',
-                        title=f'Recomendaciones por Subdimensión{title_suffix}',
-                        color='subdim'
-                    )
-                    st.plotly_chart(fig_sub, use_container_width=True)
-                else:
-                    st.info("No hay datos para mostrar.")
+                fig_sub = px.treemap(
+                    subdim_counts,
+                    path=['subdim'],
+                    values='count',
+                    title=f'Recomendaciones por Subdimensión{title_suffix}',
+                    color='subdim'
+                )
+                st.plotly_chart(fig_sub, use_container_width=True)
+            else:
+                st.info("No hay datos para mostrar.")
 
             # --- Download ---
             st.markdown("### 📥 Descargar Resultados")
