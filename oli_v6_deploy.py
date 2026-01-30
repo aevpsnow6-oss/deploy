@@ -7895,7 +7895,7 @@ with tab6:
                 # Enable selection
                 selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
                 
-                if selection_dim and "selection" in selection_dim and "points" in selection_dim["selection"]:
+                if isinstance(selection_dim, dict) and "selection" in selection_dim and "points" in selection_dim["selection"]:
                      points = selection_dim["selection"]["points"]
                      if points:
                          # Try to get the label from different potential keys
