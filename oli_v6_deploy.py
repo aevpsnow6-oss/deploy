@@ -8669,14 +8669,15 @@ with tab6:
                      pbar_deep = st.progress(0, text="Analizando...")
                      completed_count = 0
                      
-                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                          futures = [executor.submit(run_row_analysis, arg) for arg in args_list]
                          for future in concurrent.futures.as_completed(futures):
                              idx, result, _ = future.result()
                              if result:
                                 results_map[idx] = result
                              completed_count += 1
-                             pbar_deep.progress(completed_count / len(args_list), text=f"{completed_count}/{len(args_list)}")
+                             # Update progress every time, but with higher concurrency it will feel 'batched'
+                             pbar_deep.progress(completed_count / len(args_list), text=f"Analizando... {completed_count}/{len(args_list)}")
                      
                      pbar_deep.empty()
                      analysis_cache.save()
