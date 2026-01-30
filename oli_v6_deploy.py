@@ -191,6 +191,58 @@ def generate_executive_summary(recommendations_text, max_output_tokens=3000):
     except Exception as e:
         return f"Error generando el resumen: {str(e)}"
 
+def verify_match_with_llm(rec_text, candidates, api_key):
+    """
+    Uses LLM to verify which of the candidates is the best match for the recommendation.
+    candidates: list of dicts {'dimension':..., 'subdim':..., 'definition':...}
+    Returns: index of the best match in candidates list, or -1 if none fit well.
+    """
+    if not api_key: 
+        return 0 # Fallback to top 1 if no key
+        
+    candidates_str = ""
+    for i, c in enumerate(candidates):
+        # We assume 'texto_merged' acts as the definition/description
+        candidates_str += f"Option {i+1}:\nCategory: {c['dimension']} - {c['subdim']}\nDefinition/Context: {c['texto_merged']}\n\n"
+        
+    system_prompt = """You are an expert in classifying development project recommendations.
+    You will be given a 'Recommendation' and a list of 'Options' (categories with definitions).
+    Your task is to select the Option that BEST fits the Recommendation based on the definition.
+    
+    CRITICAL INSTRUCTIONS:
+    1. Read the Recommendation and the Definitions carefully.
+    2. Do NOT rely solely on keyword matching (e.g. 'Pensions' -> 'Finance' is WRONG unless it talks about financing).
+    3. Look for the underlying action and topic described in the definition.
+    4. Return ONLY the number of the best option (1, 2, or 3).
+    5. If none of them fit reasonably well, return 0.
+    """
+    
+    user_prompt = f"Recommendation: \"{rec_text}\"\n\n{candidates_str}\n\nWhich option is the best fit? (Return just the number)"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.0, # Deterministic
+            max_tokens=5
+        )
+        content = response.choices[0].message.content.strip()
+        # Parse number
+        import re
+        match = re.search(r'\d+', content)
+        if match:
+            val = int(match.group())
+            if 1 <= val <= len(candidates):
+                return val - 1 # 0-indexed
+            else:
+                return -1 # None or 0
+        return 0 # Fallback to Top 1 if parse fails? Or -1? Let's fallback to Top 1 (0) to be safe unless explicit rejection 
+    except:
+        return 0 # Fallback to Top 1 on error
+
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
 import pickle
 from typing import List, Dict, Any
