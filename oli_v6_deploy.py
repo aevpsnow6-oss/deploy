@@ -211,13 +211,14 @@ def verify_match_with_llm(rec_text, candidates, api_key):
     
     CRITICAL INSTRUCTIONS:
     1. Read the Recommendation and the Definitions carefully.
-    2. Do NOT rely solely on keyword matching (e.g. 'Pensions' -> 'Finance' is WRONG unless it talks about financing).
-    3. Look for the underlying action and topic described in the definition.
-    4. Return ONLY the number of the best option (1, 2, or 3).
-    5. If none of them fit reasonably well, return 0.
+    2. **STRICT SEMANTIC MATCH**: The recommendation must describe the *same action* and *same object* as the definition.
+    3. **IGNORE SUPERFICIAL KEYWORDS**: Do not select an option just because it shares a word (e.g., "Pensions") if the *context* is different (e.g., "Political backing" vs "Financial funding").
+    4. **REQUIREMENT CHECK**: If a definition requires a specific mechanism (e.g., "Financing", "Legislation", "Training"), the recommendation MUST explicitly mention it.
+    5. Return ONLY the number of the best option (1, 2, 3...).
+    6. If none of them fit reasonably well, return 0.
     """
     
-    user_prompt = f"Recommendation: \"{rec_text}\"\n\n{candidates_str}\n\nWhich option is the best fit? (Return just the number)"
+    user_prompt = f"Recommendation: \"{rec_text}\"\n\n{candidates_str}\n\nWhich option is the best fit? (Return just the number, e.g. 1)"
 
     try:
         response = client.chat.completions.create(
@@ -227,7 +228,7 @@ def verify_match_with_llm(rec_text, candidates, api_key):
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.0, # Deterministic
-            max_tokens=5
+            max_tokens=6
         )
         content = response.choices[0].message.content.strip()
         # Parse number
@@ -239,7 +240,7 @@ def verify_match_with_llm(rec_text, candidates, api_key):
                 return val - 1 # 0-indexed
             else:
                 return -1 # None or 0
-        return 0 # Fallback to Top 1 if parse fails? Or -1? Let's fallback to Top 1 (0) to be safe unless explicit rejection 
+        return 0 # Fallback to Top 1 if parse fails
     except:
         return 0 # Fallback to Top 1 on error
 
@@ -8042,15 +8043,21 @@ with tab6:
                     rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
                     similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
                     
-                    # Get Top 3 indices for context
-                    # Even if verifying, we start with top 3 candidates from embeddings
-                    top_k_indices = np.argsort(similarities)[-3:][::-1]
+                    # Get Top Matches for context
+                    # Even if verifying, we start with top candidates from embeddings
+                    
+                    if use_llm_verification:
+                        top_n_candidates = 10
+                    else:
+                        top_n_candidates = 3
+                        
+                    top_k_indices = np.argsort(similarities)[-top_n_candidates:][::-1]
                     
                     best_idx = top_k_indices[0] # Default to embedding top 1
                     
                     # LLM Verification (Reranking)
                     if use_llm_verification:
-                        # Construct candidates list
+                        # Construct candidates list (Top 10)
                         candidates = []
                         for k in top_k_indices:
                              candidates.append(ref_metadata[k])
