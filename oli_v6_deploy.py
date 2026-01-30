@@ -7675,10 +7675,47 @@ with tab6:
             st.error(f"Error cargando los archivos de datos: {e}")
             return None, None
 
-    rec_df_world, frame_df_world = load_world_data()
+    
+    # --- Data Source Selection ---
+    st.markdown("### Fuente de Datos")
+    data_source = st.radio("Selecciona origen de las recomendaciones:", 
+                          ["Archivos Predeterminados (World)", "Cargar Archivo Propio (.xlsx)"], 
+                          horizontal=True,
+                          key="data_source_radio")
+    
+    rec_df_world = None
+    frame_df_world = None
+    
+    # helper to just get frame (reusing cached function for now)
+    _, frame_default = load_world_data()
+    frame_df_world = frame_default
+
+    if data_source == "Archivos Predeterminados (World)":
+        rec_default, _ = load_world_data()
+        rec_df_world = rec_default
+        
+        if rec_df_world is None:
+             st.warning("⚠️ No se encontró el archivo 'Recommendations_World.xlsx' por defecto.")
+
+    else:
+        uploaded_file = st.file_uploader("Sube tu archivo de recomendaciones (Excel):", type=["xlsx"], key="custom_rec_upload")
+        if uploaded_file:
+            try:
+                rec_df_world = pd.read_excel(uploaded_file)
+                # Validation
+                if 'Recommendation description' not in rec_df_world.columns:
+                    st.error("❌ El archivo debe contener una columna llamada 'Recommendation description'.")
+                    rec_df_world = None
+                else:
+                    st.success(f"Archivo cargado correctamente: {len(rec_df_world)} filas.")
+            except Exception as e:
+                st.error(f"Error al leer el archivo: {e}")
+        else:
+            st.info("Esperando archivo...")
 
     if rec_df_world is None or frame_df_world is None:
-        st.warning("⚠️ No se encontraron los archivos 'Recommendations_World.xlsx' y/o 'Frame_Recommendations_English.xlsx' en el directorio. Por favor cárgalos para usar esta funcionalidad.")
+        if frame_df_world is None:
+             st.warning("⚠️ No se encontró el archivo 'Frame_Recommendations_English.xlsx'. es necesario para la clasificación.")
     else:
         
         # --- DATA PREP: Extract Year ---
