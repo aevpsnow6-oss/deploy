@@ -8006,10 +8006,13 @@ with tab6:
                     secondary_dims = []
                     secondary_subdims = []
                     
+                    similarity_threshold = 0.60
+                    
                     for k_idx in top_k_indices[1:]:
-                        match_k = ref_metadata[k_idx]
-                        secondary_dims.append(match_k['dimension'])
-                        secondary_subdims.append(match_k['subdim'])
+                        if similarities[k_idx] >= similarity_threshold:
+                            match_k = ref_metadata[k_idx]
+                            secondary_dims.append(match_k['dimension'])
+                            secondary_subdims.append(match_k['subdim'])
                         
                     vals['Otras dimensiones'] = "; ".join(secondary_dims)
                     vals['Otras subdimensiones'] = "; ".join(secondary_subdims)
