@@ -7601,6 +7601,10 @@ with tab5:
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
 # Tab 6: Clasificación de Recomendaciones (World)
+
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
+# Tab 6: Clasificación de Recomendaciones (World)
 with tab6:
     st.header("Clasificación de Recomendaciones (World)")
     st.info("""
@@ -7609,12 +7613,52 @@ with tab6:
     Esta herramienta permite clasificar automáticamente las recomendaciones contenidas en el archivo `Recommendations_World.xlsx` 
     asignándolas a las subdimensiones definidas en el marco de trabajo `Frame_Recommendations_English.xlsx`.
 
+    **Optimizaciones:**
+    1.  **Filtrado Previo:** Filtra por región/país antes de procesar para ahorrar costos y tiempo.
+    2.  **Caché Persistente:** Los embeddings se guardan localmente para no regenerarlos en futuras ejecuciones.
+    3.  **Deduplicación:** Textos idénticos se procesan una sola vez.
+
     **Funcionamiento:**
     1.  Carga los datos de recomendaciones y el marco de referencia.
     2.  Calcula la similitud semántica (usando OpenAI Embeddings) entre cada recomendación y las definiciones de subdimensiones.
     3.  Asigna la subdimensión más relevante.
     4.  Visualiza la distribución mediante Treemaps interactivos.
     """)
+
+    # --- Persistent Cache Class ---
+    class EmbeddingsCache:
+        def __init__(self, cache_file="embeddings_cache.pkl"):
+            self.cache_file = cache_file
+            self.cache = {}
+            self.load_cache()
+
+        def load_cache(self):
+            if os.path.exists(self.cache_file):
+                try:
+                    with open(self.cache_file, 'rb') as f:
+                        self.cache = pickle.load(f)
+                except Exception:
+                    self.cache = {}
+
+        def save_cache(self):
+            try:
+                with open(self.cache_file, 'wb') as f:
+                    pickle.dump(self.cache, f)
+            except Exception:
+                pass
+
+        def get(self, text):
+            return self.cache.get(text)
+
+        def set(self, text, embedding):
+            self.cache[text] = embedding
+
+        def save(self):
+            self.save_cache()
+
+    # Initialize cache in session state if not exists
+    if 'embeddings_cache_obj' not in st.session_state:
+        st.session_state['embeddings_cache_obj'] = EmbeddingsCache()
 
     # --- Load Data ---
     @st.cache_data
@@ -7637,8 +7681,10 @@ with tab6:
         st.warning("⚠️ No se encontraron los archivos 'Recommendations_World.xlsx' y/o 'Frame_Recommendations_English.xlsx' en el directorio. Por favor cárgalos para usar esta funcionalidad.")
     else:
         
-        # --- Filters ---
-        st.markdown("### Filtros de Visualización")
+        # --- Filters (PRE-PROCESSING) ---
+        st.markdown("### 1. Filtros de Selección")
+        st.caption("Selecciona los filtros para definir el subconjunto de datos a clasificar. Esto optimiza el tiempo y costo de procesamiento.")
+        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -7659,37 +7705,53 @@ with tab6:
                 st.warning("Columna 'Country(ies)' no encontrada.")
                 selected_countries = []
 
+        # Apply filtering for processing
+        filtered_rec_df = rec_df_world.copy()
+        start_count = len(filtered_rec_df)
+        
+        if selected_regions:
+            filtered_rec_df = filtered_rec_df[filtered_rec_df['Region(s)'].isin(selected_regions)]
+        
+        if selected_countries:
+            filtered_rec_df = filtered_rec_df[filtered_rec_df['Country(ies)'].isin(selected_countries)]
+            
+        end_count = len(filtered_rec_df)
+        
+        st.markdown(f"**Registros seleccionados:** {end_count} de {start_count}")
+
         # --- Classification Logic ---
         
         # Persistent state for classified data
         if 'classified_world_df' not in st.session_state:
             st.session_state['classified_world_df'] = None
 
-        def classify_recommendations(target_df, reference_df):
+        def classify_recommendations(target_df, reference_df, cache_obj):
             """
             Classifies recommendations in target_df based on similarity to texts in reference_df.
+            Uses persistent cache and deduplication.
             """
             
+            progress_bar = st.progress(0, text="Iniciando proceso...")
+
             # 1. Embed Reference Frame
             ref_embeddings = []
             ref_metadata = []
-            
-            progress_bar = st.progress(0, text="Generando embeddings del marco de referencia...")
             
             # Check if we have 'texto_merged'
             if 'texto_merged' not in reference_df.columns:
                 st.error("El archivo Frame debe tener la columna 'texto_merged'.")
                 return None
 
-            # Generate embeddings for Frame
-            frame_embeddings = []
-            
-            # Use a simpler loop to be robust
+            # Generate embeddings for Frame (with cache)
             for idx, row in reference_df.iterrows():
-                
                 text = str(row['texto_merged'])
-                # Use the existing helper function
-                emb = get_embedding_with_retry(text) 
+                
+                # Try cache first
+                emb = cache_obj.get(text)
+                if emb is None:
+                    emb = get_embedding_with_retry(text) 
+                    if emb is not None:
+                        cache_obj.set(text, emb)
                 
                 if emb is not None:
                     ref_embeddings.append(emb)
@@ -7699,9 +7761,10 @@ with tab6:
                         'texto_merged': text
                     })
                 
-                # Update progress
-                progress_val = (idx + 1) / len(reference_df)
+                progress_val = 0.1 * (idx + 1) / len(reference_df)
                 progress_bar.progress(progress_val, text=f"Procesando marco de referencia {idx+1}/{len(reference_df)}")
+            
+            cache_obj.save() # Save frame embeddings
             
             if not ref_embeddings:
                 st.error("No se pudieron generar embeddings para el marco de referencia.")
@@ -7709,66 +7772,99 @@ with tab6:
 
             ref_embeddings = np.array(ref_embeddings)
             
-            # 2. Classify Recommendations
-            classified_rows = []
-            total_recs = len(target_df)
-            
-            progress_bar.progress(0, text="Clasificando recomendaciones...")
-            
-            # Normalize frame embeddings for cosine similarity
+            # Normalize frame embeddings
             ref_norms = np.linalg.norm(ref_embeddings, axis=1, keepdims=True)
             ref_embeddings_norm = ref_embeddings / (ref_norms + 1e-10)
-
-            # Process in batches to avoid UI freezing
-            batch_size = 10 
             
-            for i in range(0, total_recs, batch_size):
-                batch = target_df.iloc[i:i+batch_size]
-                
-                for idx, row in batch.iterrows():
-                    rec_text = str(row.get('Recommendation description', ''))
-                    if not rec_text or pd.isna(rec_text):
-                        continue
-                        
-                    rec_emb = get_embedding_with_retry(rec_text)
+            # 2. Embed Unique Recommendations (Deduplication)
+            start_time = time.time()
+            total_recs = len(target_df)
+            
+            # Identify unique texts to embed
+            unique_texts = target_df['Recommendation description'].dropna().unique()
+            unique_embeddings = {}
+            
+            new_embeddings_count = 0
+            
+            # Embed unique texts
+            BATCH_SIZE = 20
+            for i in range(0, len(unique_texts), BATCH_SIZE):
+                batch_texts = unique_texts[i:i+BATCH_SIZE]
+                for text in batch_texts:
+                    text_str = str(text)
+                    # Try cache
+                    emb = cache_obj.get(text_str)
+                    if emb is None:
+                        emb = get_embedding_with_retry(text_str)
+                        if emb is not None:
+                            cache_obj.set(text_str, emb)
+                            new_embeddings_count += 1
                     
-                    if rec_emb is not None:
-                        # Cosine similarity
-                        rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
-                        
-                        # Dot product of (1, D) and (N, D).T -> (1, N)
-                        similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
-                        
-                        best_idx = np.argmax(similarities)
-                        best_match = ref_metadata[best_idx]
-                        
-                        classified_rows.append({
-                            'Recommendation description': rec_text,
-                            'Recommendation ID': row.get('Recommendation ID', ''),
-                            'Region(s)': row.get('Region(s)', ''),
-                            'Country(ies)': row.get('Country(ies)', ''),
-                            'assigned_dimension': best_match['dimension'],
-                            'assigned_subdim': best_match['subdim'],
-                            'matched_frame_text': best_match['texto_merged'],
-                            'similarity_score': similarities[best_idx]
-                        })
+                    if emb is not None:
+                        unique_embeddings[text_str] = emb
                 
-                # Update progress
-                current_progress = min((i + batch_size) / total_recs, 1.0)
-                progress_bar.progress(current_progress, text=f"Clasificando {min(i + batch_size, total_recs)}/{total_recs}")
+                progress_pct = 0.1 + (0.4 * (i + len(batch_texts)) / len(unique_texts))
+                progress_bar.progress(progress_pct, text=f"Generando embeddings únicos: {min(i+len(batch_texts), len(unique_texts))}/{len(unique_texts)}")
+                
+                # Save cache periodically
+                if new_embeddings_count > 50:
+                    cache_obj.save()
+                    new_embeddings_count = 0
+
+            cache_obj.save() # Final save
+
+            # 3. Classify Rows (Match)
+            classified_rows = []
+            
+            # Vectorized matching is hard if we iterate rows, but we can iterate unique embeddings.
+            # Let's stick to iterating rows but lookup embedding from map (fast)
+            
+            progress_bar.progress(0.5, text="Asignando clasificaciones...")
+            
+            for i, (idx, row) in enumerate(target_df.iterrows()):
+                rec_text = str(row.get('Recommendation description', ''))
+                
+                if rec_text in unique_embeddings:
+                    rec_emb = unique_embeddings[rec_text]
+                    
+                    # Cosine similarity
+                    rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
+                    similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
+                    best_idx = np.argmax(similarities)
+                    best_match = ref_metadata[best_idx]
+                    
+                    classified_rows.append({
+                        'Recommendation description': rec_text,
+                        'Recommendation ID': row.get('Recommendation ID', ''),
+                        'Region(s)': row.get('Region(s)', ''),
+                        'Country(ies)': row.get('Country(ies)', ''),
+                        'assigned_dimension': best_match['dimension'],
+                        'assigned_subdim': best_match['subdim'],
+                        'matched_frame_text': best_match['texto_merged'],
+                        'similarity_score': similarities[best_idx]
+                    })
+                
+                if i % 100 == 0:
+                     progress_bar.progress(0.5 + (0.5 * (i + 1) / total_recs), text=f"Clasificando registros {i+1}/{total_recs}")
 
             progress_bar.empty()
             return pd.DataFrame(classified_rows)
 
         # Button to run classification
-        if st.button("🚀 Iniciar Clasificación (Esto puede tardar y consumir créditos)", key="start_classification_tab6"):
-            with st.spinner("Ejecutando clasificación..."):
-                classified_df = classify_recommendations(rec_df_world, frame_df_world)
-                if classified_df is not None and not classified_df.empty:
-                    st.session_state['classified_world_df'] = classified_df
-                    st.success(f"¡Clasificación completada! {len(classified_df)} recomendaciones procesadas.")
-                else:
-                    st.error("Hubo un problema durante la clasificación.")
+        st.markdown("### 2. Ejecución")
+        if start_count == 0:
+            st.warning("El archivo de recomendaciones está vacío.")
+        elif end_count == 0:
+             st.warning("No hay registros que coincidan con los filtros seleccionados. Ajusta los filtros.")
+        else:
+            if st.button("🚀 Iniciar Clasificación", key="start_classification_tab6"):
+                with st.spinner("Ejecutando clasificación optimizada..."):
+                    classified_df = classify_recommendations(filtered_rec_df, frame_df_world, st.session_state['embeddings_cache_obj'])
+                    if classified_df is not None and not classified_df.empty:
+                        st.session_state['classified_world_df'] = classified_df
+                        st.success(f"¡Clasificación completada! {len(classified_df)} recomendaciones procesadas.")
+                    else:
+                        st.error("Hubo un problema durante la clasificación.")
 
         # --- Visualization ---
         df_viz = st.session_state['classified_world_df']
@@ -7777,80 +7873,61 @@ with tab6:
             st.markdown("---")
             st.subheader("📊 Visualización de Resultados")
             
-            # --- Apply Filters ---
-            mask = pd.Series([True] * len(df_viz))
+            col_viz1, col_viz2 = st.columns(2)
             
-            if selected_regions:
-                 mask &= df_viz['Region(s)'].isin(selected_regions)
+            # --- Treemap 1: Dimension ---
+            dim_counts = df_viz['assigned_dimension'].value_counts().reset_index()
+            dim_counts.columns = ['dimension', 'count']
             
-            if selected_countries:
-                 mask &= df_viz['Country(ies)'].isin(selected_countries)
+            fig_dim = px.treemap(
+                dim_counts,
+                path=['dimension'],
+                values='count',
+                title='Recomendaciones por Dimensión',
+                color='dimension'
+            )
             
-            df_filtered = df_viz[mask]
+            selected_dim_label = None
             
-            if df_filtered.empty:
-                st.warning("No hay datos para mostrar con los filtros seleccionados.")
-            else:
-                col_viz1, col_viz2 = st.columns(2)
+            with col_viz1:
+                st.markdown("#### Por Dimensión")
+                st.caption("Selecciona una dimensión para filtrar el gráfico de la derecha.")
+                # Enable selection
+                selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
                 
-                # --- Treemap 1: Dimension ---
-                dim_counts = df_filtered['assigned_dimension'].value_counts().reset_index()
-                dim_counts.columns = ['dimension', 'count']
-                
-                fig_dim = px.treemap(
-                    dim_counts,
-                    path=['dimension'],
-                    values='count',
-                    title='Recomendaciones por Dimensión',
-                    color='dimension'
-                )
-                
-                selected_dim_label = None
-                
-                with col_viz1:
-                    st.markdown("#### Por Dimensión")
-                    st.caption("Selecciona una dimensión para filtrar el gráfico de la derecha.")
-                    # Enable selection
-                    selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
-                    
-                    if selection_dim and "selection" in selection_dim and "points" in selection_dim["selection"]:
-                         points = selection_dim["selection"]["points"]
-                         if points:
-                             # Try to get the label from different potential keys
-                             pt = points[0]
-                             selected_dim_label = pt.get('label') or pt.get('x') or pt.get('id')
+                if selection_dim and "selection" in selection_dim and "points" in selection_dim["selection"]:
+                     points = selection_dim["selection"]["points"]
+                     if points:
+                         # Try to get the label from different potential keys
+                         pt = points[0]
+                         selected_dim_label = pt.get('label') or pt.get('x') or pt.get('id')
 
-                # --- Treemap 2: Subdim ---
-                with col_viz2:
-                    st.markdown("#### Por Subdimensión")
+            # --- Treemap 2: Subdim ---
+            with col_viz2:
+                st.markdown("#### Por Subdimensión")
+                
+                df_sub = df_viz.copy()
+                title_suffix = ""
+                
+                if selected_dim_label:
+                    if selected_dim_label in df_sub['assigned_dimension'].unique():
+                        df_sub = df_sub[df_sub['assigned_dimension'] == selected_dim_label]
+                        title_suffix = f" ({selected_dim_label})"
+                
+                if not df_sub.empty:
+                    subdim_counts = df_sub['assigned_subdim'].value_counts().reset_index()
+                    subdim_counts.columns = ['subdim', 'count']
                     
-                    df_sub = df_filtered.copy()
-                    title_suffix = ""
-                    
-                    if selected_dim_label:
-                        # Filter data based on selection from first chart
-                        # Note: plotly treemap labels might match the dimension name
-                        if selected_dim_label in df_sub['assigned_dimension'].unique():
-                            df_sub = df_sub[df_sub['assigned_dimension'] == selected_dim_label]
-                            title_suffix = f" ({selected_dim_label})"
-                        else:
-                             # If label doesn't match a dimension directly (maybe it's a value or something else), ignore or debug
-                             pass
-                    
-                    if not df_sub.empty:
-                        subdim_counts = df_sub['assigned_subdim'].value_counts().reset_index()
-                        subdim_counts.columns = ['subdim', 'count']
-                        
-                        fig_sub = px.treemap(
-                            subdim_counts,
-                            path=['subdim'],
-                            values='count',
-                            title=f'Recomendaciones por Subdimensión{title_suffix}',
-                            color='subdim'
-                        )
-                        st.plotly_chart(fig_sub, use_container_width=True)
-                    else:
-                        st.info("No hay datos para mostrar.")
+                    fig_sub = px.treemap(
+                        subdim_counts,
+                        path=['subdim'],
+                        values='count',
+                        title=f'Recomendaciones por Subdimensión{title_suffix}',
+                        color='subdim'
+                    )
+                    st.plotly_chart(fig_sub, use_container_width=True)
+                else:
+                    st.info("No hay datos para mostrar.")
 
             # --- Download ---
             st.markdown("### 📥 Descargar Resultados")
@@ -7859,10 +7936,7 @@ with tab6:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 # Save Full Result
-                df_viz.to_excel(writer, index=False, sheet_name='Clasificación Completa')
-                # Save Filtered Result
-                if not df_filtered.empty:
-                    df_filtered.to_excel(writer, index=False, sheet_name='Vista Filtrada')
+                df_viz.to_excel(writer, index=False, sheet_name='Clasificación')
             
             processed_data = output.getvalue()
             
@@ -7872,4 +7946,3 @@ with tab6:
                 file_name="Recomendaciones_Clasificadas.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
