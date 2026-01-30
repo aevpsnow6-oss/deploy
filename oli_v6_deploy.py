@@ -8577,320 +8577,196 @@ with tab6:
                 else:
                     st.info("Columna 'Evaluation document type' no disponible.")
 
-        # --- SECCION 3: ANÁLISIS PROFUNDO (NUEVA) ---
+        # --- SECCION 3: HERRAMIENTAS AVANZADAS DE IA (NUEVA) ---
         st.markdown("---")
-        st.subheader("📝 3. Análisis Profundo de Planes de Acción (IA)")
-        st.info("Esta sección utiliza GPT-4o para analizar la **coherencia**, **calidad** y **atención** de los planes de acción frente a las recomendaciones. También evalúa la **innovación** de la recomendación.")
+        st.subheader("🤖 3. Herramientas Avanzadas de IA")
+        st.info("Utiliza herramientas de Inteligencia Artificial para analizar en profundidad o resumir las recomendaciones filtradas.")
 
-        # --- Filters for Deep Analysis (Replicated) ---
+        # --- Shared Filters for AI Tools ---
         st.markdown("##### 1. Definir Subconjunto para Análisis")
         
-        df_deep_filtered = df_filtered_viz.copy()
-        deep_filters = {}
+        df_ai_base = df_filtered_viz.copy()
+        ai_filters = {}
         
-        with st.expander("🔎 Filtros Específicos para Análisis", expanded=True):
-             c_d1, c_d2 = st.columns(2)
+        with st.expander("🔎 Filtros Globales para Análisis AI", expanded=True):
+             c_ai1, c_ai2 = st.columns(2)
              
-             with c_d1:
+             with c_ai1:
                   if 'Region(s)' in df_viz.columns:
                       opts = sorted([str(x) for x in df_viz['Region(s)'].unique() if pd.notna(x)])
-                      deep_filters['Region(s)'] = st.multiselect("Región:", opts, key="deep_region")
+                      ai_filters['Region(s)'] = st.multiselect("Región:", opts, key="ai_region")
                   
                   if 'Country(ies)' in df_viz.columns:
                        opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
-                       deep_filters['Country(ies)'] = st.multiselect("País:", opts, key="deep_country")
+                       ai_filters['Country(ies)'] = st.multiselect("País:", opts, key="ai_country")
                   
                   if 'Evaluation theme(s)' in df_viz.columns:
                       opts = sorted([str(x) for x in df_viz['Evaluation theme(s)'].unique() if pd.notna(x)])
-                      deep_filters['Evaluation theme(s)'] = st.multiselect("Temática Eval:", opts, key="deep_eval_theme")
+                      ai_filters['Evaluation theme(s)'] = st.multiselect("Temática Eval:", opts, key="ai_eval_theme")
 
-             with c_d2:
+             with c_ai2:
                   if 'Year' in df_viz.columns:
                       opts = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x)])
-                      deep_filters['Year'] = st.multiselect("Año:", opts, key="deep_year")
+                      ai_filters['Year'] = st.multiselect("Año:", opts, key="ai_year")
                   
                   if 'Management response' in df_viz.columns:
                       opts = sorted([str(x) for x in df_viz['Management response'].unique() if pd.notna(x)])
-                      deep_filters['Management response'] = st.multiselect("Resp. Gestión:", opts, key="deep_mgmt")
+                      ai_filters['Management response'] = st.multiselect("Resp. Gestión:", opts, key="ai_mgmt")
                   
                   if 'assigned_dimension' in df_viz.columns:
                       opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
-                      deep_filters['assigned_dimension'] = st.multiselect("Dimensión:", opts, key="deep_dim")
+                      ai_filters['assigned_dimension'] = st.multiselect("Dimensión:", opts, key="ai_dim")
 
         # Apply Filters
-        for col, vals in deep_filters.items():
-            if vals and col in df_deep_filtered.columns:
-                df_deep_filtered = df_deep_filtered[df_deep_filtered[col].isin(vals)]
+        for col, vals in ai_filters.items():
+            if vals and col in df_ai_base.columns:
+                df_ai_base = df_ai_base[df_ai_base[col].isin(vals)]
         
-        # Filter for Action Plans
-        total_selected = len(df_deep_filtered)
-        if 'Action plan' in df_deep_filtered.columns:
-            # Keep rows with valid Action Plan (not NA and not empty string)
-            df_deep_filtered = df_deep_filtered[df_deep_filtered['Action plan'].notna() & (df_deep_filtered['Action plan'].astype(str).str.strip() != "")]
+        st.write(f"**Total Registros Filtrados:** {len(df_ai_base)}")
         
-        valid_plans = len(df_deep_filtered)
+        st.markdown("---")
         
-        st.write(f"**Total Seleccionado:** {total_selected} | **Con Plan de Acción (Válidos para análisis):** {valid_plans}")
-
-        with st.expander("Configuración Avanzada", expanded=False):
-            deep_model = st.selectbox("Modelo:", ["gpt-4o-mini", "gpt-4o"], index=0, help="gpt-4o-mini es más rápido y barato. gpt-4o es más preciso.")
-            limit_rows_deep = st.number_input("Límite de recomendaciones a analizar (0 = Sin límite):", min_value=0, value=50, step=10, help="Limitar para pruebas rápidas.")
-
-        if st.button("🧠 Iniciar Análisis Profundo", key="btn_deep_analysis"):
-             # Get filtered data (deduplicated for analysis to avoid re-running same recs)
-             id_col_deep = 'Recommendation ID' if 'Recommendation ID' in df_deep_filtered.columns else 'Recommendation description'
-             df_deep_input = df_deep_filtered.drop_duplicates(subset=[id_col_deep]).copy()
-             
-             if limit_rows_deep > 0:
-                 df_deep_input = df_deep_input.head(limit_rows_deep)
-             
-             if df_deep_input.empty:
-                 st.warning("No hay datos para analizar.")
-             else:
-                 st.markdown(f"**Analizando {len(df_deep_input)} recomendaciones únicas...**")
-                 
-                 # Initialize Cache
-                 analysis_cache = AnalysisCache()
-                 
-                 # Prepare Args
-                 args_list = []
-                 for idx, row in df_deep_input.iterrows():
-                     rec = str(row.get('Recommendation description', ''))
-                     plan = str(row.get('Action plan', ''))
-                     comments = str(row.get('Comments', '')) if 'Comments' in row else ""
-                     args_list.append((idx, rec, plan, comments, openai_api_key, analysis_cache))
-                 
-                 # Results container
-                 results_map = {}
-                 
-                 # Progress Bar
-                 pbar_deep = st.progress(0, text="Iniciando análisis...")
-                 
-                 # Run Parallel
-                 completed_count = 0
-                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                     # Submit all
-                     futures = [executor.submit(run_row_analysis, arg) for arg in args_list]
-                     
-                     for future in concurrent.futures.as_completed(futures):
-                         idx, result, from_cache = future.result()
-                         if result:
-                            results_map[idx] = result
-                         
-                         completed_count += 1
-                         pbar_deep.progress(completed_count / len(args_list), text=f"Analizando... {completed_count}/{len(args_list)}")
-                 
-                 pbar_deep.empty()
-                 analysis_cache.save()
-                 
-                 # Merge Results back to DataFrame
-                 # Convert results_map to DataFrame
-                 analysis_list = []
-                 for idx, res in results_map.items():
-                     res['original_index'] = idx
-                     analysis_list.append(res)
-                 
-                 if analysis_list:
-                     df_analysis_results = pd.DataFrame(analysis_list)
-                     df_analysis_results.set_index('original_index', inplace=True)
-                     
-                     # Join with original input
-                     df_final_deep = df_deep_input.join(df_analysis_results)
-                     
-                     # Post-processing: Convert lists to strings for display/export
-                     list_cols = ['extracted_actions_from_rec', 'actions_proposed_in_plan', 'rejection_difficulty_classification', 'tags', 'rec_additional_tags']
-                     for col in list_cols:
-                         if col in df_final_deep.columns:
-                             df_final_deep[col] = df_final_deep[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
-
-                     st.session_state['deep_analysis_df'] = df_final_deep
-                     st.success("Análisis completado.")
+        # --- Dual Action Buttons ---
+        col_deep, col_summ = st.columns(2)
+        
+        # --- LEFT: Deep Analysis ---
+        with col_deep:
+            st.markdown("#### 🧠 Análisis Profundo")
+            st.caption("Evalúa coherencia, calidad e innovación de planes de acción.")
+            
+            # Prepare Deep Data
+            df_deep_ready = df_ai_base.copy()
+            if 'Action plan' in df_deep_ready.columns:
+                df_deep_ready = df_deep_ready[df_deep_ready['Action plan'].notna() & (df_deep_ready['Action plan'].astype(str).str.strip() != "")]
+            valid_deep_count = len(df_deep_ready)
+            
+            st.metric("Válidos (con Plan)", valid_deep_count)
+            
+            with st.expander("Configuración"):
+                deep_model = st.selectbox("Modelo:", ["gpt-4o-mini", "gpt-4o"], index=0, key="deep_model_sel")
+                limit_rows_deep = st.number_input("Límite (0=Todos):", min_value=0, value=50, step=10, key="deep_limit")
+            
+            if st.button("🚀 Iniciar Análisis", key="btn_run_deep"):
+                 if df_deep_ready.empty:
+                     st.warning("No hay datos válidos.")
                  else:
-                     st.error("No se generaron resultados.")
+                     id_col_deep = 'Recommendation ID' if 'Recommendation ID' in df_deep_ready.columns else 'Recommendation description'
+                     df_deep_input = df_deep_ready.drop_duplicates(subset=[id_col_deep]).copy()
+                     if limit_rows_deep > 0:
+                         df_deep_input = df_deep_input.head(limit_rows_deep)
+                    
+                     st.info(f"Procesando {len(df_deep_input)} recomendaciones...")
+                     
+                     analysis_cache = AnalysisCache()
+                     args_list = []
+                     for idx, row in df_deep_input.iterrows():
+                         rec = str(row.get('Recommendation description', ''))
+                         plan = str(row.get('Action plan', ''))
+                         comments = str(row.get('Comments', '')) if 'Comments' in row else ""
+                         args_list.append((idx, rec, plan, comments, openai_api_key, analysis_cache))
+                     
+                     results_map = {}
+                     pbar_deep = st.progress(0, text="Analizando...")
+                     completed_count = 0
+                     
+                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                         futures = [executor.submit(run_row_analysis, arg) for arg in args_list]
+                         for future in concurrent.futures.as_completed(futures):
+                             idx, result, _ = future.result()
+                             if result:
+                                results_map[idx] = result
+                             completed_count += 1
+                             pbar_deep.progress(completed_count / len(args_list), text=f"{completed_count}/{len(args_list)}")
+                     
+                     pbar_deep.empty()
+                     analysis_cache.save()
+                     
+                     analysis_list = []
+                     for idx, res in results_map.items():
+                         res['original_index'] = idx
+                         analysis_list.append(res)
+                     
+                     if analysis_list:
+                         df_res = pd.DataFrame(analysis_list)
+                         df_res.set_index('original_index', inplace=True)
+                         df_final_deep = df_deep_input.join(df_res)
+                         
+                         list_cols = ['extracted_actions_from_rec', 'actions_proposed_in_plan', 'rejection_difficulty_classification', 'tags', 'rec_additional_tags']
+                         for col in list_cols:
+                             if col in df_final_deep.columns:
+                                 df_final_deep[col] = df_final_deep[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
+                         
+                         st.session_state['deep_analysis_df'] = df_final_deep
+                         st.success("¡Análisis completado!")
 
-        # Display Results if available
-        if 'deep_analysis_df' in st.session_state:
-            df_res = st.session_state['deep_analysis_df']
+        # --- RIGHT: Summary Generation ---
+        with col_summ:
+            st.markdown("#### ✨ Resumen Ejecutivo")
+            st.caption("Genera una síntesis narrativa de los hallazgos.")
             
-            st.markdown("### Resultados del Análisis")
+            st.metric("Total a Resumir", len(df_ai_base))
             
-            # Key Metrics Distribution
-            col1, col2, col3, col4 = st.columns(4)
-            if 'coherence_score' in df_res.columns:
-                col1.metric("Coherencia Promedio", f"{df_res['coherence_score'].mean():.2f}")
-            if 'plan_quality_score' in df_res.columns:
-                col2.metric("Calidad Plan Promedio", f"{df_res['plan_quality_score'].mean():.2f}")
-            if 'rec_innovation_score' in df_res.columns:
-                # Value counts for categorical
-                pass
+            with st.expander("Configuración"):
+                max_tokens_val = st.slider("Longitud (Tokens):", 500, 4000, 3000, 100, key="summ_len")
             
-            # Show Dataframe
-            st.dataframe(df_res[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'difficulty_types', 'tags']], use_container_width=True)
-            
-            # Export
-            # Create Excel in memory
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_res.to_excel(writer, index=False, sheet_name='Deep_Analysis')
-            processed_data = output.getvalue()
-            
-            st.download_button(
-                label="📥 Descargar Reporte de Análisis Completo (.xlsx)",
-                data=processed_data,
-                file_name="analisis_profundo_planes.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            
-            # Visualizations
-            st.subheader("Visualizaciones")
-            if 'coherence_score' in df_res.columns:
-                fig_hist = px.histogram(df_res, x="coherence_score", nbins=10, title="Distribución de Coherencia")
-                st.plotly_chart(fig_hist)
-                
-            if 'rec_innovation_score' in df_res.columns:
-                 fig_pie = px.pie(df_res, names='rec_innovation_score', title="Nivel de Innovación de Recomendaciones")
-                 st.plotly_chart(fig_pie)
-
-            # --- Download ---
-            st.markdown("### 📥 Descargar Resultados")
-            
-            # Create Excel for download
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # Save Full Result
-                df_viz.to_excel(writer, index=False, sheet_name='Clasificación')
-            
-            processed_data = output.getvalue()
-            
-            st.download_button(
-                label="Descargar Clasificación en Excel",
-                data=processed_data,
-                file_name="Recomendaciones_Clasificadas.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-            # --- Summary Generation Section ---
-            st.markdown("---")
-            st.header("📝 Generación de Resumen Ejecutivo")
-            st.caption("Filtra un subconjunto específico de recomendaciones y genera un resumen exhaustivo con IA.")
-
-            # --- Filters for Summary (Replicated) ---
-            # Using st.expander to keep it clean, utilizing df_viz (which has classification info)
-            st.markdown("##### 1. Definir Subconjunto para Resumen")
-            
-            # Helper to create filters
-            df_summ = df_viz.copy()
-            # Filters state for summary
-            summary_filters = {}
-            
-            with st.expander("🔎 Filtros para Resumen", expanded=True):
-                 c_s1, c_s2 = st.columns(2)
-                 
-                 with c_s1:
-                      # Location
-                      if 'Region(s)' in df_viz.columns:
-                          opts = sorted([str(x) for x in df_viz['Region(s)'].unique() if pd.notna(x)])
-                          summary_filters['Region(s)'] = st.multiselect("Región:", opts, key="summ_region")
-                      
-                      if 'Country(ies)' in df_viz.columns:
-                           # Cascade logic could be complex here, lets simplify to just list available in current df_viz
-                           opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
-                           summary_filters['Country(ies)'] = st.multiselect("País:", opts, key="summ_country")
-                      
-                      # Thematic
-                      if 'Evaluation theme(s)' in df_viz.columns:
-                          opts = sorted([str(x) for x in df_viz['Evaluation theme(s)'].unique() if pd.notna(x)])
-                          summary_filters['Evaluation theme(s)'] = st.multiselect("Temática Eval:", opts, key="summ_eval_theme")
-
-                 with c_s2:
-                      # Managment
-                      if 'Year' in df_viz.columns:
-                          opts = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x)])
-                          summary_filters['Year'] = st.multiselect("Año:", opts, key="summ_year") # Multiselect for specific years is better for summary scope
-                      
-                      if 'Management response' in df_viz.columns:
-                          opts = sorted([str(x) for x in df_viz['Management response'].unique() if pd.notna(x)])
-                          summary_filters['Management response'] = st.multiselect("Resp. Gestión:", opts, key="summ_mgmt")
-                      
-                      # Classification
-                      if 'assigned_dimension' in df_viz.columns:
-                          opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
-                          summary_filters['assigned_dimension'] = st.multiselect("Dimensión:", opts, key="summ_dim")
-
-            # Apply Summary Filters
-            for col, vals in summary_filters.items():
-                if vals and col in df_summ.columns:
-                    df_summ = df_summ[df_summ[col].isin(vals)]
-            
-            st.markdown(f"**Registros a resumir:** {len(df_summ)}")
-            
-            # --- Output Settings ---
-            col_summ_set1, col_summ_set2 = st.columns([2, 1])
-            
-            with col_summ_set1:
-                 # Slider for Max Tokens
-                 max_tokens_val = st.slider(
-                     "Longitud Aproximada del Resumen (Tokens):", 
-                     min_value=500, 
-                     max_value=4000, 
-                     value=3000, 
-                     step=100,
-                     key="summary_max_tokens_slider"
-                 )
-                 st.caption("Nota: El límite de palabras es aproximado y depende del modelo y la complejidad del texto. Un valor más alto permite descripciones más detalladas.")
-            
-            # --- Generation ---
-            if st.button("✨ Generar Resumen con IA"):
-                if df_summ.empty:
-                    st.warning("No hay registros seleccionados para resumir.")
+            if st.button("📝 Generar Resumen Global", key="btn_run_summ"):
+                if df_ai_base.empty:
+                    st.warning("No hay datos.")
                 else:
-                    with st.spinner("Leyendo recomendaciones, respuestas de gestión y comentarios... (Generando resumen...)"):
+                    with st.spinner("Generando resumen..."):
+                        id_col_summ = 'Recommendation ID' if 'Recommendation ID' in df_ai_base.columns else 'Recommendation description'
+                        df_summ_unique = df_ai_base.drop_duplicates(subset=[id_col_summ])
                         
-                        # Deduplicate for Summary
-                        id_col_summ = 'Recommendation ID' if 'Recommendation ID' in df_summ.columns else 'Recommendation description'
-                        df_summ_unique = df_summ.drop_duplicates(subset=[id_col_summ])
-
-                        # Concatenate text with richer context
-                        combined_text_list = []
+                        text_list = []
                         for idx, row in df_summ_unique.iterrows():
                              desc = str(row.get('Recommendation description', ''))
-                             mgmt = str(row.get('Management response', '')) if 'Management response' in df_summ.columns and pd.notna(row.get('Management response')) else "No disponible"
-                             comments = str(row.get('Comments', '')) if 'Comments' in df_summ.columns and pd.notna(row.get('Comments')) else "No disponible"
-                             action = str(row.get('Action plan', '')) if 'Action plan' in df_summ.columns and pd.notna(row.get('Action plan')) else "No disponible"
-                             
-                             item_text = f"--- Recomendación ---\nDescripción: {desc}\nRespuesta de Gestión: {mgmt}\nComentarios: {comments}\nPlan de Acción: {action}\n"
-                             combined_text_list.append(item_text)
-
-                        combined_text = "\n".join(combined_text_list)
+                             mgmt = str(row.get('Management response', '')) if 'Management response' in row else "N/A"
+                             comments = str(row.get('Comments', '')) if 'Comments' in row else "N/A"
+                             action = str(row.get('Action plan', '')) if 'Action plan' in row else "N/A"
+                             text_list.append(f"--- Rec ---\nDesc: {desc}\nResp: {mgmt}\nCom: {comments}\nPlan: {action}\n")
                         
-                        summary_text = generate_executive_summary(combined_text, max_output_tokens=max_tokens_val)
+                        full_text = "\n".join(text_list)
+                        summary_text = generate_executive_summary(full_text, max_output_tokens=max_tokens_val)
                         st.session_state['summary_result'] = summary_text
+                        st.success("¡Resumen generado!")
+
+        # --- Display Results Areas (Full Width) ---
+        
+        # 1. Deep Analysis Results
+        if 'deep_analysis_df' in st.session_state:
+            st.markdown("---")
+            st.subheader("📊 Resultados: Análisis Profundo")
+            df_final_deep = st.session_state['deep_analysis_df']
             
-            # Display Result
-            if st.session_state['summary_result']:
-                st.markdown("---")
-                st.markdown("#### 📄 Resumen Ejecutivo Generado")
-                st.markdown(st.session_state['summary_result'])
-                
-                # --- Download Summary + Data ---
-                st.markdown("#### 📥 Descargar Paquete")
-                
-                output_summ = BytesIO()
-                with pd.ExcelWriter(output_summ, engine='xlsxwriter') as writer:
-                    # Sheet 1: Filtered Data
-                    df_summ.to_excel(writer, index=False, sheet_name='Datos del Resumen')
-                    
-                    # Sheet 2: The Summary Text
-                    # Create a simple DF for the text
-                    df_text = pd.DataFrame({'Resumen Ejecutivo': [st.session_state['summary_result']]})
-                    df_text.to_excel(writer, index=False, sheet_name='Texto Resumen')
-                
-                processed_summ = output_summ.getvalue()
-                
-                st.download_button(
-                    label="Descargar Resumen + Datos (.xlsx)",
-                    data=processed_summ,
-                    file_name="Resumen_Ejecutivo_Recomendaciones.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_summary_btn"
-                )
+            c_m1, c_m2 = st.columns(2)
+            c_m1.metric("Coherencia Prom.", f"{df_final_deep['coherence_score'].mean():.2f}")
+            c_m2.metric("Calidad Plan Prom.", f"{df_final_deep['plan_quality_score'].mean():.2f}")
+            
+            st.dataframe(df_final_deep[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'difficulty_types', 'tags']], use_container_width=True)
+            
+            # Export Deep
+            out_deep = BytesIO()
+            with pd.ExcelWriter(out_deep, engine='xlsxwriter') as writer:
+                df_final_deep.to_excel(writer, index=False, sheet_name='Analisis_Profundo')
+            
+            st.download_button("📥 Descargar Reporte Análisis (.xlsx)", out_deep.getvalue(), "analisis_profundo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+            # Visualizations Deep
+            if 'coherence_score' in df_final_deep.columns:
+                fig_d1 = px.histogram(df_final_deep, x="coherence_score", nbins=10, title="Distribución de Coherencia")
+                st.plotly_chart(fig_d1)
+
+        # 2. Summary Results
+        if 'summary_result' in st.session_state:
+            st.markdown("---")
+            st.subheader("📄 Resultados: Resumen Ejecutivo")
+            st.markdown(st.session_state['summary_result'])
+            
+            # Export Summary
+            out_summ = BytesIO()
+            with pd.ExcelWriter(out_summ, engine='xlsxwriter') as writer:
+                # Save filtering data
+                df_ai_base.to_excel(writer, index=False, sheet_name='Datos Base')
+                pd.DataFrame({'Resumen': [st.session_state['summary_result']]}).to_excel(writer, index=False, sheet_name='Resumen')
+            
+            st.download_button("📥 Descargar Resumen + Datos (.xlsx)", out_summ.getvalue(), "resumen_ejecutivo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
