@@ -8582,14 +8582,64 @@ with tab6:
         st.subheader("📝 3. Análisis Profundo de Planes de Acción (IA)")
         st.info("Esta sección utiliza GPT-4o para analizar la **coherencia**, **calidad** y **atención** de los planes de acción frente a las recomendaciones. También evalúa la **innovación** de la recomendación.")
 
-        with st.expander("Configuración de Análisis Profundo", expanded=False):
+        # --- Filters for Deep Analysis (Replicated) ---
+        st.markdown("##### 1. Definir Subconjunto para Análisis")
+        
+        df_deep_filtered = df_filtered_viz.copy()
+        deep_filters = {}
+        
+        with st.expander("🔎 Filtros Específicos para Análisis", expanded=True):
+             c_d1, c_d2 = st.columns(2)
+             
+             with c_d1:
+                  if 'Region(s)' in df_viz.columns:
+                      opts = sorted([str(x) for x in df_viz['Region(s)'].unique() if pd.notna(x)])
+                      deep_filters['Region(s)'] = st.multiselect("Región:", opts, key="deep_region")
+                  
+                  if 'Country(ies)' in df_viz.columns:
+                       opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
+                       deep_filters['Country(ies)'] = st.multiselect("País:", opts, key="deep_country")
+                  
+                  if 'Evaluation theme(s)' in df_viz.columns:
+                      opts = sorted([str(x) for x in df_viz['Evaluation theme(s)'].unique() if pd.notna(x)])
+                      deep_filters['Evaluation theme(s)'] = st.multiselect("Temática Eval:", opts, key="deep_eval_theme")
+
+             with c_d2:
+                  if 'Year' in df_viz.columns:
+                      opts = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x)])
+                      deep_filters['Year'] = st.multiselect("Año:", opts, key="deep_year")
+                  
+                  if 'Management response' in df_viz.columns:
+                      opts = sorted([str(x) for x in df_viz['Management response'].unique() if pd.notna(x)])
+                      deep_filters['Management response'] = st.multiselect("Resp. Gestión:", opts, key="deep_mgmt")
+                  
+                  if 'assigned_dimension' in df_viz.columns:
+                      opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
+                      deep_filters['assigned_dimension'] = st.multiselect("Dimensión:", opts, key="deep_dim")
+
+        # Apply Filters
+        for col, vals in deep_filters.items():
+            if vals and col in df_deep_filtered.columns:
+                df_deep_filtered = df_deep_filtered[df_deep_filtered[col].isin(vals)]
+        
+        # Filter for Action Plans
+        total_selected = len(df_deep_filtered)
+        if 'Action plan' in df_deep_filtered.columns:
+            # Keep rows with valid Action Plan (not NA and not empty string)
+            df_deep_filtered = df_deep_filtered[df_deep_filtered['Action plan'].notna() & (df_deep_filtered['Action plan'].astype(str).str.strip() != "")]
+        
+        valid_plans = len(df_deep_filtered)
+        
+        st.write(f"**Total Seleccionado:** {total_selected} | **Con Plan de Acción (Válidos para análisis):** {valid_plans}")
+
+        with st.expander("Configuración Avanzada", expanded=False):
             deep_model = st.selectbox("Modelo:", ["gpt-4o-mini", "gpt-4o"], index=0, help="gpt-4o-mini es más rápido y barato. gpt-4o es más preciso.")
             limit_rows_deep = st.number_input("Límite de recomendaciones a analizar (0 = Sin límite):", min_value=0, value=50, step=10, help="Limitar para pruebas rápidas.")
 
         if st.button("🧠 Iniciar Análisis Profundo", key="btn_deep_analysis"):
              # Get filtered data (deduplicated for analysis to avoid re-running same recs)
-             id_col_deep = 'Recommendation ID' if 'Recommendation ID' in df_filtered_viz.columns else 'Recommendation description'
-             df_deep_input = df_filtered_viz.drop_duplicates(subset=[id_col_deep]).copy()
+             id_col_deep = 'Recommendation ID' if 'Recommendation ID' in df_deep_filtered.columns else 'Recommendation description'
+             df_deep_input = df_deep_filtered.drop_duplicates(subset=[id_col_deep]).copy()
              
              if limit_rows_deep > 0:
                  df_deep_input = df_deep_input.head(limit_rows_deep)
