@@ -148,7 +148,47 @@ def find_recommendations_by_term_matching(query, doc_texts, structured_embedding
         st.error(f"Error en la coincidencia de términos: {str(e)}")
         return []
 
-# ============= DOCX PARSING FUNCTIONS =============
+# Function to generate executive summary using LLM
+def generate_executive_summary(recommendations_text):
+    """
+    Generates an executive summary from a list of recommendations using OpenAI.
+    """
+    if not recommendations_text:
+        return "No hay recomendaciones para resumir."
+
+    # Truncate to avoid context limit (approx 120k chars is safe for gpt-4o-mini's 128k tokens, keeping room for output)
+    # Using existing helper
+    truncated_input = truncate_to_token_limit(recommendations_text, max_tokens=100000, encoding_obj=encoding)
+
+    system_prompt = """Eres un asistente experto en análisis de evaluaciones de proyectos de desarrollo. 
+    Tu tarea es generar un Resumen Ejecutivo exhaustivo, informativo y detallado basado en las recomendaciones proporcionadas.
+    
+    El resumen debe:
+    1. Identificar los temas principales y patrones recurrentes.
+    2. Resaltar las acciones críticas sugeridas.
+    3. Estar estructurado con títulos claros y puntos clave (bullet points).
+    4. Ser profesional y directo.
+    5. Estar en Español.
+    """
+    
+    user_prompt = f"Aquí están las recomendaciones para resumir:\n\n{truncated_input}\n\nPor favor, genera el Resumen Ejecutivo ahora."
+
+    if not openai_api_key:
+        return "Error: No se encontró la clave API de OpenAI."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", # Cost-effective model
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=4000
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generando el resumen: {str(e)}"
 
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
 import pickle
@@ -8308,3 +8348,106 @@ with tab6:
                 file_name="Recomendaciones_Clasificadas.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+            # --- Summary Generation Section ---
+            st.markdown("---")
+            st.header("📝 Generación de Resumen Ejecutivo")
+            st.caption("Filtra un subconjunto específico de recomendaciones y genera un resumen exhaustivo con IA.")
+
+            # --- Filters for Summary (Replicated) ---
+            # Using st.expander to keep it clean, utilizing df_viz (which has classification info)
+            st.markdown("##### 1. Definir Subconjunto para Resumen")
+            
+            # Helper to create filters
+            df_summ = df_viz.copy()
+            # Filters state for summary
+            summary_filters = {}
+            
+            with st.expander("🔎 Filtros para Resumen", expanded=True):
+                 c_s1, c_s2 = st.columns(2)
+                 
+                 with c_s1:
+                      # Location
+                      if 'Region(s)' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['Region(s)'].unique() if pd.notna(x)])
+                          summary_filters['Region(s)'] = st.multiselect("Región:", opts, key="summ_region")
+                      
+                      if 'Country(ies)' in df_viz.columns:
+                           # Cascade logic could be complex here, lets simplify to just list available in current df_viz
+                           opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
+                           summary_filters['Country(ies)'] = st.multiselect("País:", opts, key="summ_country")
+                      
+                      # Thematic
+                      if 'Evaluation theme(s)' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['Evaluation theme(s)'].unique() if pd.notna(x)])
+                          summary_filters['Evaluation theme(s)'] = st.multiselect("Temática Eval:", opts, key="summ_eval_theme")
+
+                 with c_s2:
+                      # Managment
+                      if 'Year' in df_viz.columns:
+                          opts = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x)])
+                          summary_filters['Year'] = st.multiselect("Año:", opts, key="summ_year") # Multiselect for specific years is better for summary scope
+                      
+                      if 'Management response' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['Management response'].unique() if pd.notna(x)])
+                          summary_filters['Management response'] = st.multiselect("Resp. Gestión:", opts, key="summ_mgmt")
+                      
+                      # Classification
+                      if 'assigned_dimension' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
+                          summary_filters['assigned_dimension'] = st.multiselect("Dimensión:", opts, key="summ_dim")
+
+            # Apply Summary Filters
+            for col, vals in summary_filters.items():
+                if vals and col in df_summ.columns:
+                    df_summ = df_summ[df_summ[col].isin(vals)]
+            
+            st.markdown(f"**Registros a resumir:** {len(df_summ)}")
+            
+            # --- Generation ---
+            st.markdown("##### 2. Generar y Descargar")
+            
+            if 'summary_result' not in st.session_state:
+                st.session_state['summary_result'] = None
+            
+            if st.button("✨ Generar Resumen con IA"):
+                if df_summ.empty:
+                    st.warning("No hay registros seleccionados para resumir.")
+                else:
+                    with st.spinner("Leyendo recomendaciones y generando resumen... (esto puede tardar unos segundos)"):
+                        # Concatenate text
+                        # Ensure we get strings
+                        texts = df_summ['Recommendation description'].astype(str).tolist()
+                        combined_text = "\n\n".join(texts)
+                        
+                        summary_text = generate_executive_summary(combined_text)
+                        st.session_state['summary_result'] = summary_text
+            
+            # Display Result
+            if st.session_state['summary_result']:
+                st.markdown("---")
+                st.markdown("#### 📄 Resumen Ejecutivo Generado")
+                st.markdown(st.session_state['summary_result'])
+                
+                # --- Download Summary + Data ---
+                st.markdown("#### 📥 Descargar Paquete")
+                
+                output_summ = BytesIO()
+                with pd.ExcelWriter(output_summ, engine='xlsxwriter') as writer:
+                    # Sheet 1: Filtered Data
+                    df_summ.to_excel(writer, index=False, sheet_name='Datos del Resumen')
+                    
+                    # Sheet 2: The Summary Text
+                    # Create a simple DF for the text
+                    df_text = pd.DataFrame({'Resumen Ejecutivo': [st.session_state['summary_result']]})
+                    df_text.to_excel(writer, index=False, sheet_name='Texto Resumen')
+                
+                processed_summ = output_summ.getvalue()
+                
+                st.download_button(
+                    label="Descargar Resumen + Datos (.xlsx)",
+                    data=processed_summ,
+                    file_name="Resumen_Ejecutivo_Recomendaciones.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_summary_btn"
+                )
