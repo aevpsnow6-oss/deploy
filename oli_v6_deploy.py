@@ -149,7 +149,7 @@ def find_recommendations_by_term_matching(query, doc_texts, structured_embedding
         return []
 
 # Function to generate executive summary using LLM
-def generate_executive_summary(recommendations_text):
+def generate_executive_summary(recommendations_text, max_output_tokens=3000):
     """
     Generates an executive summary from a list of recommendations using OpenAI.
     """
@@ -161,17 +161,18 @@ def generate_executive_summary(recommendations_text):
     truncated_input = truncate_to_token_limit(recommendations_text, max_tokens=100000, encoding_obj=encoding)
 
     system_prompt = """Eres un asistente experto en análisis de evaluaciones de proyectos de desarrollo. 
-    Tu tarea es generar un Resumen Ejecutivo exhaustivo, informativo y detallado basado en las recomendaciones proporcionadas.
+    Tu tarea es generar un Resumen Ejecutivo exhaustivo, informativo y detallado basado en las recomendaciones, respuestas de gestión y planes de acción proporcionados.
     
     El resumen debe:
     1. Identificar los temas principales y patrones recurrentes.
     2. Resaltar las acciones críticas sugeridas.
-    3. Estar estructurado con títulos claros y puntos clave (bullet points).
-    4. Ser profesional y directo.
-    5. Estar en Español.
+    3. Incorporar la perspectiva de la respuesta de gestión si está disponible.
+    4. Estar estructurado con títulos claros y puntos clave (bullet points).
+    5. Ser profesional y directo.
+    6. Estar en Español.
     """
     
-    user_prompt = f"Aquí están las recomendaciones para resumir:\n\n{truncated_input}\n\nPor favor, genera el Resumen Ejecutivo ahora."
+    user_prompt = f"Aquí están los datos de las recomendaciones (incluyendo descripción, respuesta de gestión, comentarios, etc.):\n\n{truncated_input}\n\nPor favor, genera el Resumen Ejecutivo ahora."
 
     if not openai_api_key:
         return "Error: No se encontró la clave API de OpenAI."
@@ -184,7 +185,7 @@ def generate_executive_summary(recommendations_text):
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
-            max_tokens=4000
+            max_tokens=max_output_tokens
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -8404,23 +8405,42 @@ with tab6:
             
             st.markdown(f"**Registros a resumir:** {len(df_summ)}")
             
+            # --- Output Settings ---
+            col_summ_set1, col_summ_set2 = st.columns([2, 1])
+            
+            with col_summ_set1:
+                 # Slider for Max Tokens
+                 max_tokens_val = st.slider(
+                     "Longitud Aproximada del Resumen (Tokens):", 
+                     min_value=500, 
+                     max_value=4000, 
+                     value=3000, 
+                     step=100,
+                     key="summary_max_tokens_slider"
+                 )
+                 st.caption("Nota: El límite de palabras es aproximado y depende del modelo y la complejidad del texto. Un valor más alto permite descripciones más detalladas.")
+            
             # --- Generation ---
-            st.markdown("##### 2. Generar y Descargar")
-            
-            if 'summary_result' not in st.session_state:
-                st.session_state['summary_result'] = None
-            
             if st.button("✨ Generar Resumen con IA"):
                 if df_summ.empty:
                     st.warning("No hay registros seleccionados para resumir.")
                 else:
-                    with st.spinner("Leyendo recomendaciones y generando resumen... (esto puede tardar unos segundos)"):
-                        # Concatenate text
-                        # Ensure we get strings
-                        texts = df_summ['Recommendation description'].astype(str).tolist()
-                        combined_text = "\n\n".join(texts)
+                    with st.spinner("Leyendo recomendaciones, respuestas de gestión y comentarios... (Generando resumen...)"):
                         
-                        summary_text = generate_executive_summary(combined_text)
+                        # Concatenate text with richer context
+                        combined_text_list = []
+                        for idx, row in df_summ.iterrows():
+                             desc = str(row.get('Recommendation description', ''))
+                             mgmt = str(row.get('Management response', '')) if 'Management response' in df_summ.columns and pd.notna(row.get('Management response')) else "No disponible"
+                             comments = str(row.get('Comments', '')) if 'Comments' in df_summ.columns and pd.notna(row.get('Comments')) else "No disponible"
+                             action = str(row.get('Action plan', '')) if 'Action plan' in df_summ.columns and pd.notna(row.get('Action plan')) else "No disponible"
+                             
+                             item_text = f"--- Recomendación ---\nDescripción: {desc}\nRespuesta de Gestión: {mgmt}\nComentarios: {comments}\nPlan de Acción: {action}\n"
+                             combined_text_list.append(item_text)
+
+                        combined_text = "\n".join(combined_text_list)
+                        
+                        summary_text = generate_executive_summary(combined_text, max_output_tokens=max_tokens_val)
                         st.session_state['summary_result'] = summary_text
             
             # Display Result
