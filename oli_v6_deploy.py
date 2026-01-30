@@ -1780,11 +1780,12 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
                                          "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
-                                         "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción"])
+                                         "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción",
+                                         "Clasificación de Recomendaciones (World)"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -7586,6 +7587,7 @@ with tab5:
                     font=dict(size=28),
                     legend_font_size=28
                 )
+
                 st.plotly_chart(fig4, use_container_width=True)
     
                 # Add the advanced visualization section
@@ -7594,4 +7596,280 @@ with tab5:
                 st.warning("No hay datos disponibles para los filtros seleccionados.")
         else:
             st.warning("No hay datos disponibles para los filtros seleccionados.")
+
+
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
+# Tab 6: Clasificación de Recomendaciones (World)
+with tab6:
+    st.header("Clasificación de Recomendaciones (World)")
+    st.info("""
+    **🌍 Clasificación Inteligente de Recomendaciones**
+
+    Esta herramienta permite clasificar automáticamente las recomendaciones contenidas en el archivo `Recommendations_World.xlsx` 
+    asignándolas a las subdimensiones definidas en el marco de trabajo `Frame_Recommendations_English.xlsx`.
+
+    **Funcionamiento:**
+    1.  Carga los datos de recomendaciones y el marco de referencia.
+    2.  Calcula la similitud semántica (usando OpenAI Embeddings) entre cada recomendación y las definiciones de subdimensiones.
+    3.  Asigna la subdimensión más relevante.
+    4.  Visualiza la distribución mediante Treemaps interactivos.
+    """)
+
+    # --- Load Data ---
+    @st.cache_data
+    def load_world_data():
+        try:
+            # Check if files exist
+            if not os.path.exists('Recommendations_World.xlsx') or not os.path.exists('Frame_Recommendations_English.xlsx'):
+                return None, None
+            
+            rec_df = pd.read_excel('Recommendations_World.xlsx')
+            frame_df = pd.read_excel('Frame_Recommendations_English.xlsx')
+            return rec_df, frame_df
+        except Exception as e:
+            st.error(f"Error cargando los archivos de datos: {e}")
+            return None, None
+
+    rec_df_world, frame_df_world = load_world_data()
+
+    if rec_df_world is None or frame_df_world is None:
+        st.warning("⚠️ No se encontraron los archivos 'Recommendations_World.xlsx' y/o 'Frame_Recommendations_English.xlsx' en el directorio. Por favor cárgalos para usar esta funcionalidad.")
+    else:
+        
+        # --- Filters ---
+        st.markdown("### Filtros de Visualización")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Region Filter
+            if 'Region(s)' in rec_df_world.columns:
+                regions = sorted([str(x) for x in rec_df_world['Region(s)'].unique() if not pd.isna(x)])
+                selected_regions = st.multiselect("Región(es):", options=regions, default=[], key="tab6_region_filter")
+            else:
+                st.warning("Columna 'Region(s)' no encontrada.")
+                selected_regions = []
+
+        with col2:
+            # Country Filter
+            if 'Country(ies)' in rec_df_world.columns:
+                countries = sorted([str(x) for x in rec_df_world['Country(ies)'].unique() if not pd.isna(x)])
+                selected_countries = st.multiselect("País(es):", options=countries, default=[], key="tab6_country_filter")
+            else:
+                st.warning("Columna 'Country(ies)' no encontrada.")
+                selected_countries = []
+
+        # --- Classification Logic ---
+        
+        # Persistent state for classified data
+        if 'classified_world_df' not in st.session_state:
+            st.session_state['classified_world_df'] = None
+
+        def classify_recommendations(target_df, reference_df):
+            """
+            Classifies recommendations in target_df based on similarity to texts in reference_df.
+            """
+            
+            # 1. Embed Reference Frame
+            ref_embeddings = []
+            ref_metadata = []
+            
+            progress_bar = st.progress(0, text="Generando embeddings del marco de referencia...")
+            
+            # Check if we have 'texto_merged'
+            if 'texto_merged' not in reference_df.columns:
+                st.error("El archivo Frame debe tener la columna 'texto_merged'.")
+                return None
+
+            # Generate embeddings for Frame
+            frame_embeddings = []
+            
+            # Use a simpler loop to be robust
+            for idx, row in reference_df.iterrows():
+                
+                text = str(row['texto_merged'])
+                # Use the existing helper function
+                emb = get_embedding_with_retry(text) 
+                
+                if emb is not None:
+                    ref_embeddings.append(emb)
+                    ref_metadata.append({
+                        'dimension': row.get('dimension', 'Unknown'),
+                        'subdim': row.get('subdim', 'Unknown'),
+                        'texto_merged': text
+                    })
+                
+                # Update progress
+                progress_val = (idx + 1) / len(reference_df)
+                progress_bar.progress(progress_val, text=f"Procesando marco de referencia {idx+1}/{len(reference_df)}")
+            
+            if not ref_embeddings:
+                st.error("No se pudieron generar embeddings para el marco de referencia.")
+                return None
+
+            ref_embeddings = np.array(ref_embeddings)
+            
+            # 2. Classify Recommendations
+            classified_rows = []
+            total_recs = len(target_df)
+            
+            progress_bar.progress(0, text="Clasificando recomendaciones...")
+            
+            # Normalize frame embeddings for cosine similarity
+            ref_norms = np.linalg.norm(ref_embeddings, axis=1, keepdims=True)
+            ref_embeddings_norm = ref_embeddings / (ref_norms + 1e-10)
+
+            # Process in batches to avoid UI freezing
+            batch_size = 10 
+            
+            for i in range(0, total_recs, batch_size):
+                batch = target_df.iloc[i:i+batch_size]
+                
+                for idx, row in batch.iterrows():
+                    rec_text = str(row.get('Recommendation description', ''))
+                    if not rec_text or pd.isna(rec_text):
+                        continue
+                        
+                    rec_emb = get_embedding_with_retry(rec_text)
+                    
+                    if rec_emb is not None:
+                        # Cosine similarity
+                        rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
+                        
+                        # Dot product of (1, D) and (N, D).T -> (1, N)
+                        similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
+                        
+                        best_idx = np.argmax(similarities)
+                        best_match = ref_metadata[best_idx]
+                        
+                        classified_rows.append({
+                            'Recommendation description': rec_text,
+                            'Recommendation ID': row.get('Recommendation ID', ''),
+                            'Region(s)': row.get('Region(s)', ''),
+                            'Country(ies)': row.get('Country(ies)', ''),
+                            'assigned_dimension': best_match['dimension'],
+                            'assigned_subdim': best_match['subdim'],
+                            'matched_frame_text': best_match['texto_merged'],
+                            'similarity_score': similarities[best_idx]
+                        })
+                
+                # Update progress
+                current_progress = min((i + batch_size) / total_recs, 1.0)
+                progress_bar.progress(current_progress, text=f"Clasificando {min(i + batch_size, total_recs)}/{total_recs}")
+
+            progress_bar.empty()
+            return pd.DataFrame(classified_rows)
+
+        # Button to run classification
+        if st.button("🚀 Iniciar Clasificación (Esto puede tardar y consumir créditos)", key="start_classification_tab6"):
+            with st.spinner("Ejecutando clasificación..."):
+                classified_df = classify_recommendations(rec_df_world, frame_df_world)
+                if classified_df is not None and not classified_df.empty:
+                    st.session_state['classified_world_df'] = classified_df
+                    st.success(f"¡Clasificación completada! {len(classified_df)} recomendaciones procesadas.")
+                else:
+                    st.error("Hubo un problema durante la clasificación.")
+
+        # --- Visualization ---
+        df_viz = st.session_state['classified_world_df']
+        
+        if df_viz is not None:
+            st.markdown("---")
+            st.subheader("📊 Visualización de Resultados")
+            
+            # --- Apply Filters ---
+            mask = pd.Series([True] * len(df_viz))
+            
+            if selected_regions:
+                 mask &= df_viz['Region(s)'].isin(selected_regions)
+            
+            if selected_countries:
+                 mask &= df_viz['Country(ies)'].isin(selected_countries)
+            
+            df_filtered = df_viz[mask]
+            
+            if df_filtered.empty:
+                st.warning("No hay datos para mostrar con los filtros seleccionados.")
+            else:
+                col_viz1, col_viz2 = st.columns(2)
+                
+                # --- Treemap 1: Dimension ---
+                dim_counts = df_filtered['assigned_dimension'].value_counts().reset_index()
+                dim_counts.columns = ['dimension', 'count']
+                
+                fig_dim = px.treemap(
+                    dim_counts,
+                    path=['dimension'],
+                    values='count',
+                    title='Recomendaciones por Dimensión',
+                    color='dimension'
+                )
+                
+                selected_dim_label = None
+                
+                with col_viz1:
+                    st.markdown("#### Por Dimensión")
+                    st.caption("Selecciona una dimensión para filtrar el gráfico de la derecha.")
+                    # Enable selection
+                    selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
+                    
+                    if selection_dim and "selection" in selection_dim and "points" in selection_dim["selection"]:
+                         points = selection_dim["selection"]["points"]
+                         if points:
+                             # Try to get the label from different potential keys
+                             pt = points[0]
+                             selected_dim_label = pt.get('label') or pt.get('x') or pt.get('id')
+
+                # --- Treemap 2: Subdim ---
+                with col_viz2:
+                    st.markdown("#### Por Subdimensión")
+                    
+                    df_sub = df_filtered.copy()
+                    title_suffix = ""
+                    
+                    if selected_dim_label:
+                        # Filter data based on selection from first chart
+                        # Note: plotly treemap labels might match the dimension name
+                        if selected_dim_label in df_sub['assigned_dimension'].unique():
+                            df_sub = df_sub[df_sub['assigned_dimension'] == selected_dim_label]
+                            title_suffix = f" ({selected_dim_label})"
+                        else:
+                             # If label doesn't match a dimension directly (maybe it's a value or something else), ignore or debug
+                             pass
+                    
+                    if not df_sub.empty:
+                        subdim_counts = df_sub['assigned_subdim'].value_counts().reset_index()
+                        subdim_counts.columns = ['subdim', 'count']
+                        
+                        fig_sub = px.treemap(
+                            subdim_counts,
+                            path=['subdim'],
+                            values='count',
+                            title=f'Recomendaciones por Subdimensión{title_suffix}',
+                            color='subdim'
+                        )
+                        st.plotly_chart(fig_sub, use_container_width=True)
+                    else:
+                        st.info("No hay datos para mostrar.")
+
+            # --- Download ---
+            st.markdown("### 📥 Descargar Resultados")
+            
+            # Create Excel for download
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Save Full Result
+                df_viz.to_excel(writer, index=False, sheet_name='Clasificación Completa')
+                # Save Filtered Result
+                if not df_filtered.empty:
+                    df_filtered.to_excel(writer, index=False, sheet_name='Vista Filtrada')
+            
+            processed_data = output.getvalue()
+            
+            st.download_button(
+                label="Descargar Clasificación en Excel",
+                data=processed_data,
+                file_name="Recomendaciones_Clasificadas.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
