@@ -8006,7 +8006,7 @@ with tab6:
                     secondary_dims = []
                     secondary_subdims = []
                     
-                    similarity_threshold = 0.60
+                    similarity_threshold = 0.30
                     
                     for k_idx in top_k_indices[1:]:
                         if similarities[k_idx] >= similarity_threshold:
