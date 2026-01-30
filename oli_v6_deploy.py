@@ -7681,45 +7681,113 @@ with tab6:
         st.warning("⚠️ No se encontraron los archivos 'Recommendations_World.xlsx' y/o 'Frame_Recommendations_English.xlsx' en el directorio. Por favor cárgalos para usar esta funcionalidad.")
     else:
         
+        # --- DATA PREP: Extract Year ---
+        if 'Recommendation date' in rec_df_world.columns:
+            # Try parsing with existing format or coerse
+            rec_df_world['Recommendation date'] = pd.to_datetime(rec_df_world['Recommendation date'], errors='coerce')
+            rec_df_world['Year'] = rec_df_world['Recommendation date'].dt.year
+            # Fill NaNs with a placeholder if needed, or leave as NaN
+            # rec_df_world['Year'] = rec_df_world['Year'].fillna(0).astype(int)
+        
         # --- Filters (PRE-PROCESSING) ---
         st.markdown("### 1. Filtros de Selección")
         st.caption("Selecciona los filtros para definir el subconjunto de datos a clasificar. Esto optimiza el tiempo y costo de procesamiento.")
         
-        col1, col2 = st.columns(2)
+        # Initialize filter selection dictionaries
+        filters = {}
         
-        with col1:
-            # Region Filter
-            if 'Region(s)' in rec_df_world.columns:
-                regions = sorted([str(x) for x in rec_df_world['Region(s)'].unique() if not pd.isna(x)])
-                selected_regions = st.multiselect("Región(es):", options=regions, default=[], key="tab6_region_filter")
-            else:
-                st.warning("Columna 'Region(s)' no encontrada.")
-                selected_regions = []
-
-        with col2:
-            # Country Filter (Cascading)
-            if 'Country(ies)' in rec_df_world.columns:
-                # Filter countries based on selected regions
-                available_countries_df = rec_df_world.copy()
-                if selected_regions:
-                    if 'Region(s)' in available_countries_df.columns:
-                        available_countries_df = available_countries_df[available_countries_df['Region(s)'].isin(selected_regions)]
+        # --- Group 1: Ubicación y Tiempo ---
+        with st.expander("📍 Ubicación y Tiempo", expanded=True):
+            col_grp1_1, col_grp1_2 = st.columns(2)
+            
+            with col_grp1_1:
+                # Region Filter
+                regions = sorted([str(x) for x in rec_df_world['Region(s)'].unique() if not pd.isna(x)]) if 'Region(s)' in rec_df_world.columns else []
+                filters['Region(s)'] = st.multiselect("Región(es):", options=regions, default=[], key="tab6_region_filter")
                 
-                countries = sorted([str(x) for x in available_countries_df['Country(ies)'].unique() if not pd.isna(x)])
-                selected_countries = st.multiselect("País(es):", options=countries, default=[], key="tab6_country_filter")
-            else:
-                st.warning("Columna 'Country(ies)' no encontrada.")
-                selected_countries = []
+                # Admin Unit
+                if 'Recommendation administrative unit' in rec_df_world.columns:
+                    admin_units = sorted([str(x) for x in rec_df_world['Recommendation administrative unit'].unique() if not pd.isna(x)])
+                    filters['Recommendation administrative unit'] = st.multiselect("Unidad Administrativa:", options=admin_units, default=[], key="tab6_admin_unit")
+            
+            with col_grp1_2:
+                # Country Filter (Cascading)
+                available_countries_df = rec_df_world.copy()
+                if filters['Region(s)']:
+                     if 'Region(s)' in available_countries_df.columns:
+                        available_countries_df = available_countries_df[available_countries_df['Region(s)'].isin(filters['Region(s)'])]
+                
+                countries = sorted([str(x) for x in available_countries_df['Country(ies)'].unique() if not pd.isna(x)]) if 'Country(ies)' in available_countries_df.columns else []
+                filters['Country(ies)'] = st.multiselect("País(es):", options=countries, default=[], key="tab6_country_filter")
+                
+                # Year Filter
+                if 'Year' in rec_df_world.columns:
+                    years = sorted([int(x) for x in rec_df_world['Year'].unique() if not pd.isna(x)])
+                    filters['Year'] = st.multiselect("Año:", options=years, default=[], key="tab6_year_filter")
 
-        # Apply filtering for processing
+        # --- Group 2: Temática y Técnica ---
+        with st.expander("📚 Temática y Técnica", expanded=False):
+            col_grp2_1, col_grp2_2 = st.columns(2)
+            
+            with col_grp2_1:
+                if 'Evaluation theme(s)' in rec_df_world.columns:
+                    themes = sorted([str(x) for x in rec_df_world['Evaluation theme(s)'].unique() if not pd.isna(x)])
+                    filters['Evaluation theme(s)'] = st.multiselect("Temática de Evaluación:", options=themes, default=[], key="tab6_eval_theme")
+                
+                if 'Recommendation theme' in rec_df_world.columns:
+                    rec_themes = sorted([str(x) for x in rec_df_world['Recommendation theme'].unique() if not pd.isna(x)])
+                    filters['Recommendation theme'] = st.multiselect("Temática de Recomendación:", options=rec_themes, default=[], key="tab6_rec_theme")
+
+                if 'Technical unit(s)' in rec_df_world.columns:
+                    tech_units = sorted([str(x) for x in rec_df_world['Technical unit(s)'].unique() if not pd.isna(x)])
+                    filters['Technical unit(s)'] = st.multiselect("Unidad Técnica:", options=tech_units, default=[], key="tab6_tech_unit")
+
+            with col_grp2_2:
+                if 'Funding source(s)' in rec_df_world.columns:
+                    fundings = sorted([str(x) for x in rec_df_world['Funding source(s)'].unique() if not pd.isna(x)])
+                    filters['Funding source(s)'] = st.multiselect("Fuente de Financiamiento:", options=fundings, default=[], key="tab6_funding")
+                
+                if 'Evaluation nature' in rec_df_world.columns:
+                    natures = sorted([str(x) for x in rec_df_world['Evaluation nature'].unique() if not pd.isna(x)])
+                    filters['Evaluation nature'] = st.multiselect("Naturaleza de Evaluación:", options=natures, default=[], key="tab6_eval_nature")
+                
+                if 'Evaluation type' in rec_df_world.columns:
+                    types = sorted([str(x) for x in rec_df_world['Evaluation type'].unique() if not pd.isna(x)])
+                    filters['Evaluation type'] = st.multiselect("Tipo de Evaluación:", options=types, default=[], key="tab6_eval_type")
+
+        # --- Group 3: Gestión y Respuesta ---
+        with st.expander("⚙️ Gestión y Respuesta", expanded=False):
+             col_grp3_1, col_grp3_2 = st.columns(2)
+             
+             with col_grp3_1:
+                 if 'Evaluation timing' in rec_df_world.columns:
+                    timings = sorted([str(x) for x in rec_df_world['Evaluation timing'].unique() if not pd.isna(x)])
+                    filters['Evaluation timing'] = st.multiselect("Momento de Evaluación:", options=timings, default=[], key="tab6_eval_timing")
+
+                 if 'Progress' in rec_df_world.columns:
+                    progresses = sorted([str(x) for x in rec_df_world['Progress'].unique() if not pd.isna(x)])
+                    filters['Progress'] = st.multiselect("Progreso:", options=progresses, default=[], key="tab6_progress")
+
+             with col_grp3_2:
+                 if 'Management response' in rec_df_world.columns:
+                     responses = sorted([str(x) for x in rec_df_world['Management response'].unique() if not pd.isna(x)])
+                     filters['Management response'] = st.multiselect("Respuesta de Administración:", options=responses, default=[], key="tab6_mgmt_response")
+                 
+                 # Optional: Evaluation document type if needed
+                 if 'Evaluation document type' in rec_df_world.columns:
+                     doc_types = sorted([str(x) for x in rec_df_world['Evaluation document type'].unique() if not pd.isna(x)])
+                     filters['Evaluation document type'] = st.multiselect("Tipo de Documento:", options=doc_types, default=[], key="tab6_doc_type")
+
+
+        # Apply ALL filters
+        start_count = len(rec_df_world)
         filtered_rec_df = rec_df_world.copy()
-        start_count = len(filtered_rec_df)
         
-        if selected_regions:
-            filtered_rec_df = filtered_rec_df[filtered_rec_df['Region(s)'].isin(selected_regions)]
-        
-        if selected_countries:
-            filtered_rec_df = filtered_rec_df[filtered_rec_df['Country(ies)'].isin(selected_countries)]
+        for col_name, selected_values in filters.items():
+            if selected_values and col_name in filtered_rec_df.columns:
+                # Handle Year specifically if it's float/int comparison issues, but isin handles standard types well
+                filtered_rec_df = filtered_rec_df[filtered_rec_df[col_name].isin(selected_values)]
+
             
         end_count = len(filtered_rec_df)
         
@@ -7819,36 +7887,60 @@ with tab6:
 
             cache_obj.save() # Final save
 
-            # 3. Classify Rows (Match)
+            # 3. Classify Rows (Match) - Top 3
             classified_rows = []
             
-            # Vectorized matching is hard if we iterate rows, but we can iterate unique embeddings.
-            # Let's stick to iterating rows but lookup embedding from map (fast)
-            
-            progress_bar.progress(0.5, text="Asignando clasificaciones...")
+            progress_bar.progress(0.5, text="Asignando clasificaciones (Top 3)...")
             
             for i, (idx, row) in enumerate(target_df.iterrows()):
                 rec_text = str(row.get('Recommendation description', ''))
                 
+                # Default values
+                vals = {
+                    'assigned_dimension': 'Unclassified',
+                    'assigned_subdim': 'Unclassified',
+                    'matched_frame_text': '',
+                    'similarity_score': 0.0,
+                    'Otras dimensiones': '',
+                    'Otras subdimensiones': ''
+                }
+
                 if rec_text in unique_embeddings:
                     rec_emb = unique_embeddings[rec_text]
                     
                     # Cosine similarity
                     rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
                     similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
-                    best_idx = np.argmax(similarities)
+                    
+                    # Get Top 3 indices
+                    top_k_indices = np.argsort(similarities)[-3:][::-1]
+                    
+                    # Process Top 1 (Main Match)
+                    best_idx = top_k_indices[0]
                     best_match = ref_metadata[best_idx]
                     
-                    classified_rows.append({
-                        'Recommendation description': rec_text,
-                        'Recommendation ID': row.get('Recommendation ID', ''),
-                        'Region(s)': row.get('Region(s)', ''),
-                        'Country(ies)': row.get('Country(ies)', ''),
-                        'assigned_dimension': best_match['dimension'],
-                        'assigned_subdim': best_match['subdim'],
-                        'matched_frame_text': best_match['texto_merged'],
-                        'similarity_score': similarities[best_idx]
-                    })
+                    vals['assigned_dimension'] = best_match['dimension']
+                    vals['assigned_subdim'] = best_match['subdim']
+                    vals['matched_frame_text'] = best_match['texto_merged']
+                    vals['similarity_score'] = similarities[best_idx]
+                    
+                    # Process Top 2 & 3 (Alternatives)
+                    secondary_dims = []
+                    secondary_subdims = []
+                    
+                    for k_idx in top_k_indices[1:]:
+                        match_k = ref_metadata[k_idx]
+                        secondary_dims.append(match_k['dimension'])
+                        secondary_subdims.append(match_k['subdim'])
+                        
+                    vals['Otras dimensiones'] = "; ".join(secondary_dims)
+                    vals['Otras subdimensiones'] = "; ".join(secondary_subdims)
+                
+                # Merge original row data with new classification data
+                # We want to keep ALL original columns
+                row_dict = row.to_dict()
+                row_dict.update(vals)
+                classified_rows.append(row_dict)
                 
                 if i % 100 == 0:
                      progress_bar.progress(0.5 + (0.5 * (i + 1) / total_recs), text=f"Clasificando registros {i+1}/{total_recs}")
@@ -7912,6 +8004,7 @@ with tab6:
                 title='Recomendaciones por Dimensión',
                 color='dimension'
             )
+            fig_dim.update_traces(textinfo="label+value", textfont_size=20)
             
             # Enable selection (kept for interactivity, syncing with variable)
             selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
@@ -7956,6 +8049,7 @@ with tab6:
                     title=f'Recomendaciones por Subdimensión{title_suffix}',
                     color='subdim'
                 )
+                fig_sub.update_traces(textinfo="label+value", textfont_size=20)
                 st.plotly_chart(fig_sub, use_container_width=True)
             else:
                 st.info("No hay datos para mostrar.")
