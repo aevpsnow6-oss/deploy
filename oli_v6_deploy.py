@@ -8105,8 +8105,19 @@ with tab6:
                          df_filtered_viz = df_filtered_viz[df_filtered_viz['assigned_dimension'].isin(sel_dim_global)]
 
 
-            st.markdown(f"**Registros visualizados:** {len(df_filtered_viz)} de {len(df_viz)}")
+            # Count Unique Recommendations
+            # Use 'Recommendation ID' if available, otherwise 'Recommendation description'
+            id_col = 'Recommendation ID' if 'Recommendation ID' in df_filtered_viz.columns else 'Recommendation description'
+            unique_count = df_filtered_viz[id_col].nunique()
+            
+            st.markdown(f"**Registros visualizados:** {len(df_filtered_viz)} | **Recomendaciones Únicas:** {unique_count}")
+            st.warning("⚠️ Nota: El número de registros puede ser mayor que el número de recomendaciones únicas debido a que algunas recomendaciones tienen múltiples atributos (ej. múltiples temas), generando filas duplicadas en el archivo original.")
+
             st.markdown("---") 
+            
+            # Helper to get deduplicated DF for strict counts
+            # We use this for Treemaps and Single-Value Evolution
+            df_viz_dedup = df_filtered_viz.drop_duplicates(subset=[id_col]).copy() 
 
             
             # --- Chart Logic (Updated to use df_filtered_viz) ---
@@ -8130,14 +8141,15 @@ with tab6:
             st.markdown("#### Por Dimensión")
             st.caption("Selecciona una dimensión en el gráfico para ver detalles (opcional).")
             
-            dim_counts = df_filtered_viz['assigned_dimension'].value_counts().reset_index()
+            # USE DEDUPLICATED DATA FOR TREEMAPS
+            dim_counts = df_viz_dedup['assigned_dimension'].value_counts().reset_index()
             dim_counts.columns = ['dimension', 'count']
             
             fig_dim = px.treemap(
                 dim_counts,
                 path=['dimension'],
                 values='count',
-                title='Recomendaciones por Dimensión',
+                title='Recomendaciones Únicas por Dimensión',
                 color='dimension'
             )
             fig_dim.update_traces(textinfo="label+value", textfont_size=20)
@@ -8156,7 +8168,8 @@ with tab6:
             # --- Treemap 2: Subdim ---
             st.markdown("#### Por Subdimensión")
             
-            df_sub = df_filtered_viz.copy()
+            # USE DEDUPLICATED DATA FOR TREEMAPS
+            df_sub = df_viz_dedup.copy()
             title_suffix = ""
             
             if selected_dim_label:
@@ -8172,7 +8185,7 @@ with tab6:
                     subdim_counts,
                     path=['subdim'],
                     values='count',
-                    title=f'Recomendaciones por Subdimensión{title_suffix}',
+                    title=f'Recomendaciones Únicas por Subdimensión{title_suffix}',
                     color='subdim'
                 )
                 fig_sub.update_traces(textinfo="label+value", textfont_size=20)
@@ -8242,93 +8255,93 @@ with tab6:
             
             # 0. Por País
             with tabs[0]:
-                 if 'Country(ies)' in df_filtered_viz.columns:
-                     plot_evolution(df_filtered_viz, 'Country(ies)', "País")
+                 if 'Country(ies)' in df_viz_dedup.columns:
+                     plot_evolution(df_viz_dedup, 'Country(ies)', "País")
                  else:
                      st.info("Columna 'Country(ies)' no disponible.")
 
             # 1. Por Unidad Admin
             with tabs[1]:
-                 if 'Recommendation administrative unit' in df_filtered_viz.columns:
-                     plot_evolution(df_filtered_viz, 'Recommendation administrative unit', "Unidad Administrativa")
+                 if 'Recommendation administrative unit' in df_viz_dedup.columns:
+                     plot_evolution(df_viz_dedup, 'Recommendation administrative unit', "Unidad Administrativa")
                  else:
                      st.info("Columna 'Recommendation administrative unit' no disponible.")
 
             # 2. Por Dimensión
             with tabs[2]:
-                 plot_evolution(df_filtered_viz, 'assigned_dimension', "Dimensión")
+                 plot_evolution(df_viz_dedup, 'assigned_dimension', "Dimensión")
 
             # 3. Por Subdimensión
             with tabs[3]:
-                 plot_evolution(df_filtered_viz, 'assigned_subdim', "Subdimensión")
+                 plot_evolution(df_viz_dedup, 'assigned_subdim', "Subdimensión")
                  
-            # 4. Resp. Gestión (Management response)
+            # 4. Resp. Gestión (Management response) - Single value usually
             with tabs[4]:
-                if 'Management response' in df_filtered_viz.columns:
-                    plot_evolution(df_filtered_viz, 'Management response', "Respuesta de Gestión")
+                if 'Management response' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Management response', "Respuesta de Gestión")
                 else:
                     st.info("Columna 'Management response' no disponible.")
             
-            # 5. Temática Eval. (Evaluation theme(s))
+            # 5. Temática Eval. (Evaluation theme(s)) - MULTI VALUE (Keep duplicates to show frequency)
             with tabs[5]:
                 if 'Evaluation theme(s)' in df_filtered_viz.columns:
                     plot_evolution(df_filtered_viz, 'Evaluation theme(s)', "Temática de Evaluación")
                 else:
                     st.info("Columna 'Evaluation theme(s)' no disponible.")
 
-            # 6. Temática Rec. (Recommendation theme)
+            # 6. Temática Rec. (Recommendation theme) - MULTI VALUE (Keep duplicates)
             with tabs[6]:
                 if 'Recommendation theme' in df_filtered_viz.columns:
                     plot_evolution(df_filtered_viz, 'Recommendation theme', "Temática de Recomendación")
                 else:
                     st.info("Columna 'Recommendation theme' no disponible.")
 
-            # 7. Unidad Técnica (Technical unit(s))
+            # 7. Unidad Técnica (Technical unit(s)) - MULTI VALUE ? (Likely yes if it has (s))
             with tabs[7]:
                 if 'Technical unit(s)' in df_filtered_viz.columns:
                     plot_evolution(df_filtered_viz, 'Technical unit(s)', "Unidad Técnica")
                 else:
                     st.info("Columna 'Technical unit(s)' no disponible.")
 
-            # 8. Fuente Fondo (Funding source(s))
+            # 8. Fuente Fondo (Funding source(s)) - MULTI VALUE
             with tabs[8]:
                 if 'Funding source(s)' in df_filtered_viz.columns:
                     plot_evolution(df_filtered_viz, 'Funding source(s)', "Fuente de Financiamiento")
                 else:
                     st.info("Columna 'Funding source(s)' no disponible.")
 
-            # 9. Naturaleza (Evaluation nature)
+            # 9. Naturaleza (Evaluation nature) - Single
             with tabs[9]:
-                if 'Evaluation nature' in df_filtered_viz.columns:
-                    plot_evolution(df_filtered_viz, 'Evaluation nature', "Naturaleza de Evaluación")
+                if 'Evaluation nature' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation nature', "Naturaleza de Evaluación")
                 else:
                     st.info("Columna 'Evaluation nature' no disponible.")
             
-            # 10. Tipo Eval. (Evaluation type)
+            # 10. Tipo Eval. (Evaluation type) - Single
             with tabs[10]:
-                if 'Evaluation type' in df_filtered_viz.columns:
-                    plot_evolution(df_filtered_viz, 'Evaluation type', "Tipo de Evaluación")
+                if 'Evaluation type' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation type', "Tipo de Evaluación")
                 else:
                     st.info("Columna 'Evaluation type' no disponible.")
 
-            # 11. Momento (Evaluation timing)
+            # 11. Momento (Evaluation timing) - Single
             with tabs[11]:
-                if 'Evaluation timing' in df_filtered_viz.columns:
-                    plot_evolution(df_filtered_viz, 'Evaluation timing', "Momento de Evaluación")
+                if 'Evaluation timing' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation timing', "Momento de Evaluación")
                 else:
                     st.info("Columna 'Evaluation timing' no disponible.")
 
-            # 12. Progreso (Progress)
+            # 12. Progreso (Progress) - Single
             with tabs[12]:
-                if 'Progress' in df_filtered_viz.columns:
-                    plot_evolution(df_filtered_viz, 'Progress', "Progreso")
+                if 'Progress' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Progress', "Progreso")
                 else:
                     st.info("Columna 'Progress' no disponible.")
 
-            # 13. Tipo Doc. (Evaluation document type)
+            # 13. Tipo Doc. (Evaluation document type) - Single
             with tabs[13]:
-                if 'Evaluation document type' in df_filtered_viz.columns:
-                    plot_evolution(df_filtered_viz, 'Evaluation document type', "Tipo de Documento")
+                if 'Evaluation document type' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation document type', "Tipo de Documento")
                 else:
                     st.info("Columna 'Evaluation document type' no disponible.")
 
@@ -8427,9 +8440,13 @@ with tab6:
                 else:
                     with st.spinner("Leyendo recomendaciones, respuestas de gestión y comentarios... (Generando resumen...)"):
                         
+                        # Deduplicate for Summary
+                        id_col_summ = 'Recommendation ID' if 'Recommendation ID' in df_summ.columns else 'Recommendation description'
+                        df_summ_unique = df_summ.drop_duplicates(subset=[id_col_summ])
+
                         # Concatenate text with richer context
                         combined_text_list = []
-                        for idx, row in df_summ.iterrows():
+                        for idx, row in df_summ_unique.iterrows():
                              desc = str(row.get('Recommendation description', ''))
                              mgmt = str(row.get('Management response', '')) if 'Management response' in df_summ.columns and pd.notna(row.get('Management response')) else "No disponible"
                              comments = str(row.get('Comments', '')) if 'Comments' in df_summ.columns and pd.notna(row.get('Comments')) else "No disponible"
