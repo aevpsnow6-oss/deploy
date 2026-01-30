@@ -8644,7 +8644,7 @@ with tab6:
             
             with st.expander("Configuración"):
                 deep_model = st.selectbox("Modelo:", ["gpt-4o-mini", "gpt-4o"], index=0, key="deep_model_sel")
-                limit_rows_deep = st.number_input("Límite (0=Todos):", min_value=0, value=50, step=10, key="deep_limit")
+                limit_rows_deep = st.number_input("Límite (0=Todos):", min_value=0, value=0, step=10, key="deep_limit")
             
             if st.button("🚀 Iniciar Análisis", key="btn_run_deep"):
                  if df_deep_ready.empty:
@@ -8655,7 +8655,7 @@ with tab6:
                      if limit_rows_deep > 0:
                          df_deep_input = df_deep_input.head(limit_rows_deep)
                     
-                     st.info(f"Procesando {len(df_deep_input)} recomendaciones...")
+                     st.info(f"Procesando all {len(df_deep_input)} recomendaciones..." if limit_rows_deep == 0 else f"Procesando {len(df_deep_input)} recomendaciones...")
                      
                      analysis_cache = AnalysisCache()
                      args_list = []
@@ -8753,9 +8753,45 @@ with tab6:
             st.download_button("📥 Descargar Reporte Análisis (.xlsx)", out_deep.getvalue(), "analisis_profundo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
             # Visualizations Deep
+            st.markdown("##### 📈 Distribución de Métricas Clave")
+            
+            col_v1, col_v2 = st.columns(2)
+            
             if 'coherence_score' in df_final_deep.columns:
-                fig_d1 = px.histogram(df_final_deep, x="coherence_score", nbins=10, title="Distribución de Coherencia")
-                st.plotly_chart(fig_d1)
+                with col_v1:
+                    fig_d1 = px.histogram(df_final_deep, x="coherence_score", nbins=10, title="Distribución de Coherencia", color_discrete_sequence=['#636EFA'])
+                    st.plotly_chart(fig_d1, use_container_width=True)
+            
+            if 'plan_quality_score' in df_final_deep.columns:
+                 with col_v2:
+                    fig_d2 = px.histogram(df_final_deep, x="plan_quality_score", nbins=10, title="Distribución de Calidad del Plan", color_discrete_sequence=['#EF553B'])
+                    st.plotly_chart(fig_d2, use_container_width=True)
+            
+            col_v3, col_v4 = st.columns(2)
+            
+            if 'attention_level_score' in df_final_deep.columns:
+                 with col_v3:
+                    fig_d3 = px.histogram(df_final_deep, x="attention_level_score", nbins=10, title="Nivel de Atención", color_discrete_sequence=['#00CC96'])
+                    st.plotly_chart(fig_d3, use_container_width=True)
+
+            if 'rec_innovation_score' in df_final_deep.columns:
+                 with col_v4:
+                     # Categorical
+                     fig_pie = px.pie(df_final_deep, names='rec_innovation_score', title="Nivel de Innovación", hole=0.3)
+                     st.plotly_chart(fig_pie, use_container_width=True)
+            
+            st.markdown("##### 🚦 Factibilidad e Impacto")
+            col_v5, col_v6 = st.columns(2)
+            
+            if 'rec_operational_feasibility' in df_final_deep.columns:
+                with col_v5:
+                    fig_feas = px.histogram(df_final_deep, x='rec_operational_feasibility', title="Factibilidad Operativa", color='rec_operational_feasibility')
+                    st.plotly_chart(fig_feas, use_container_width=True)
+            
+            if 'rec_expected_impact' in df_final_deep.columns:
+                with col_v6:
+                     fig_imp = px.histogram(df_final_deep, x='rec_expected_impact', title="Impacto Esperado", color='rec_expected_impact')
+                     st.plotly_chart(fig_imp, use_container_width=True)
 
         # 2. Summary Results
         if 'summary_result' in st.session_state:
