@@ -7697,9 +7697,15 @@ with tab6:
                 selected_regions = []
 
         with col2:
-            # Country Filter
+            # Country Filter (Cascading)
             if 'Country(ies)' in rec_df_world.columns:
-                countries = sorted([str(x) for x in rec_df_world['Country(ies)'].unique() if not pd.isna(x)])
+                # Filter countries based on selected regions
+                available_countries_df = rec_df_world.copy()
+                if selected_regions:
+                    if 'Region(s)' in available_countries_df.columns:
+                        available_countries_df = available_countries_df[available_countries_df['Region(s)'].isin(selected_regions)]
+                
+                countries = sorted([str(x) for x in available_countries_df['Country(ies)'].unique() if not pd.isna(x)])
                 selected_countries = st.multiselect("País(es):", options=countries, default=[], key="tab6_country_filter")
             else:
                 st.warning("Columna 'Country(ies)' no encontrada.")
@@ -7901,6 +7907,27 @@ with tab6:
                          # Try to get the label from different potential keys
                          pt = points[0]
                          selected_dim_label = pt.get('label') or pt.get('x') or pt.get('id')
+                
+                # Explicit Visual Filter for Dimension
+                st.markdown("---") 
+                available_dims = sorted(df_viz['assigned_dimension'].unique())
+                # If a selection was made on the chart, use it as default if possible, otherwise permit manual override
+                index_dim = 0
+                if selected_dim_label and selected_dim_label in available_dims:
+                    index_dim = available_dims.index(selected_dim_label)
+                
+                # We use a selectbox for explicit control
+                manual_dim = st.selectbox(
+                    "O filtrar Subdimensión por Dimensión manualmente:", 
+                    options=["Todos"] + available_dims, 
+                    index=0 if not selected_dim_label else index_dim + 1,
+                    key="manual_dim_filter"
+                )
+                
+                if manual_dim != "Todos":
+                    selected_dim_label = manual_dim
+                elif not selection_dim: # If "Todos" and no chart selection, reset
+                     selected_dim_label = None
 
             # --- Treemap 2: Subdim ---
             with col_viz2:
