@@ -8743,7 +8743,7 @@ with tab6:
                 c_m1.metric("Coherencia Prom.", f"{df_final_deep['coherence_score'].mean():.2f}")
                 c_m2.metric("Calidad Plan Prom.", f"{df_final_deep['plan_quality_score'].mean():.2f}")
                 
-                st.dataframe(df_final_deep[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'difficulty_types', 'tags']], use_container_width=True)
+                st.dataframe(df_final_deep[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'rejection_difficulty_classification', 'tags']], use_container_width=True)
                 
                 # Export Deep
                 out_deep = BytesIO()
