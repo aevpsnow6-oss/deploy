@@ -7972,13 +7972,73 @@ with tab6:
             st.subheader("📊 Visualización de Resultados")
             
             
-            # --- Visual Filters ---
-            available_dims = sorted(df_viz['assigned_dimension'].unique())
+            # --- Visual Filters (Post-Classification) ---
+            st.markdown("### 🔎 Filtros Visuales")
+            st.warning("Estos filtros afectan solo a los gráficos y tablas a continuación, sin re-ejecutar la clasificación.")
+            
+            # Prepare filter options (based on current results to be safe)
+            # Create a localized copy for filtering
+            df_filtered_viz = df_viz.copy()
+
+            # 1. Year Slider (Range)
+            if 'Year' in df_viz.columns:
+                 # Handle NaNs or zeros logic 
+                 valid_years = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x) and x > 1900])
+                 if valid_years:
+                     min_year, max_year = min(valid_years), max(valid_years)
+                     year_range = st.slider(
+                         "Intervalo de Años:",
+                         min_value=min_year,
+                         max_value=max_year,
+                         value=(min_year, max_year),
+                         key="viz_year_slider"
+                     )
+                     df_filtered_viz = df_filtered_viz[
+                         (df_filtered_viz['Year'] >= year_range[0]) & 
+                         (df_filtered_viz['Year'] <= year_range[1])
+                     ]
+
+            # 2. Metadata Filters (multiselects) - Grouped
+            with st.expander("Más Filtros Visuales (Metadatos)", expanded=False):
+                col_vf1, col_vf2, col_vf3 = st.columns(3)
+                
+                with col_vf1:
+                    # Admin Unit
+                    if 'Recommendation administrative unit' in df_filtered_viz.columns:
+                         opts = sorted([str(x) for x in df_viz['Recommendation administrative unit'].unique() if pd.notna(x)])
+                         sel_admin = st.multiselect("Unidad Admin:", options=opts, key="viz_admin_unit")
+                         if sel_admin:
+                             df_filtered_viz = df_filtered_viz[df_filtered_viz['Recommendation administrative unit'].isin(sel_admin)]
+
+                with col_vf2:
+                    # Country
+                    if 'Country(ies)' in df_filtered_viz.columns:
+                         opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
+                         sel_country = st.multiselect("País:", options=opts, key="viz_country")
+                         if sel_country:
+                             df_filtered_viz = df_filtered_viz[df_filtered_viz['Country(ies)'].isin(sel_country)]
+
+                with col_vf3:
+                    # Dimension (Pre-filter for everything?? Or just let the treemap handle it? User asked for filters)
+                    # Let's add Dimension here too affects everything
+                    opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
+                    sel_dim_global = st.multiselect("Dimensión:", options=opts, key="viz_dim_global")
+                    if sel_dim_global:
+                         df_filtered_viz = df_filtered_viz[df_filtered_viz['assigned_dimension'].isin(sel_dim_global)]
+
+
+            st.markdown(f"**Registros visualizados:** {len(df_filtered_viz)} de {len(df_viz)}")
+            st.markdown("---") 
+
+            
+            # --- Chart Logic (Updated to use df_filtered_viz) ---
+            
+            # --- Treemap 1: Dimension ---
+            available_dims = sorted(df_filtered_viz['assigned_dimension'].unique())
             
             # We use a selectbox for explicit control (MOVED TO TOP)
-            # Default index logic must handle if nothing selected initially
             manual_dim = st.selectbox(
-                "Filtrar Subdimensión por Dimensión:", 
+                "Filtrar Subdimensión por Dimensión (Treemaps):", 
                 options=["Todos"] + available_dims, 
                 index=0,
                 key="manual_dim_filter_top"
@@ -7988,13 +8048,11 @@ with tab6:
             if manual_dim != "Todos":
                 selected_dim_label = manual_dim
             
-            st.markdown("---")
-            
             # --- Treemap 1: Dimension ---
             st.markdown("#### Por Dimensión")
             st.caption("Selecciona una dimensión en el gráfico para ver detalles (opcional).")
             
-            dim_counts = df_viz['assigned_dimension'].value_counts().reset_index()
+            dim_counts = df_filtered_viz['assigned_dimension'].value_counts().reset_index()
             dim_counts.columns = ['dimension', 'count']
             
             fig_dim = px.treemap(
@@ -8006,17 +8064,7 @@ with tab6:
             )
             fig_dim.update_traces(textinfo="label+value", textfont_size=20)
             
-            # Enable selection (kept for interactivity, syncing with variable)
             selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
-            
-            # Additional logic: if user clicks chart, override manual filter? 
-            # User asked for filter on top. Let's prioritize the TOP filter, but if they click, maybe update?
-            # Streamlit widgets don't easily bi-directionally sync without complex callbacks. 
-            # To keep it simple and stable as requested:
-            # We will rely primarily on the Dropdown on top. 
-            # If the user clicks the chart, we can try to respect it if the dropdown is "Todos", 
-            # OR just strictly use the dropdown as the "master" filter as requested ("filters to be on top").
-            # Let's make the dropdown the primary control. 
             
             if isinstance(selection_dim, dict) and "selection" in selection_dim and "points" in selection_dim["selection"]:
                  points = selection_dim["selection"]["points"]
@@ -8030,7 +8078,7 @@ with tab6:
             # --- Treemap 2: Subdim ---
             st.markdown("#### Por Subdimensión")
             
-            df_sub = df_viz.copy()
+            df_sub = df_filtered_viz.copy()
             title_suffix = ""
             
             if selected_dim_label:
@@ -8053,6 +8101,84 @@ with tab6:
                 st.plotly_chart(fig_sub, use_container_width=True)
             else:
                 st.info("No hay datos para mostrar.")
+
+            st.markdown("---")
+            
+            # --- Evolution Plots (New) ---
+            st.subheader("📈 Evolución Temporal")
+            
+            evo_toggle = st.radio("Tipo de Gráfico:", ["Absoluto", "Porcentaje (100%)"], horizontal=True, key="evo_chart_type")
+            is_percent = (evo_toggle == "Porcentaje (100%)")
+            barnorm = 'percent' if is_percent else None
+            
+            tab_evo1, tab_evo2, tab_evo3, tab_evo4 = st.tabs(["Por País", "Por Unidad Admin", "Por Dimensión", "Por Subdimensión"])
+            
+            # Helper to plot evolution
+            def plot_evolution(df_in, cat_col, title_prefix):
+                if 'Year' not in df_in.columns or df_in.empty:
+                    st.info("No hay datos de Año para mostrar evolución.")
+                    return
+                    
+                # Filter out bad years (0, nan)
+                df_clean = df_in[df_in['Year'] > 1900].copy()
+                if df_clean.empty:
+                     st.info("No hay datos válidos de año.")
+                     return
+
+                # Check cardinality
+                unique_vals = df_clean[cat_col].nunique()
+                if unique_vals > 20: 
+                     st.warning(f"Hay muchos valores únicos ({unique_vals}) en {cat_col}. Se muestran los Top 20.")
+                     top_20 = df_clean[cat_col].value_counts().nlargest(20).index
+                     df_clean = df_clean[df_clean[cat_col].isin(top_20)]
+
+                # Group
+                df_grouped = df_clean.groupby(['Year', cat_col]).size().reset_index(name='count')
+                
+                fig = px.bar(
+                    df_grouped, 
+                    x="Year", 
+                    y="count", 
+                    color=cat_col, 
+                    title=f"Evolución de {title_prefix}",
+                    barmode='stack', # Always stack
+                )
+                
+                # Apply 100% stack if requested. Plotly express 'barnorm' param in px.bar does this easily
+                # Re-do with barnorm logic if easier or update layout
+                if is_percent:
+                     # Calculate percentages manually or use barnorm? 
+                     # px.bar argument 'barnorm'='percent' works great.
+                     # Let's recreate fig to be clean
+                     fig = px.bar(
+                        df_grouped, 
+                        x="Year", 
+                        y="count", 
+                        color=cat_col, 
+                        title=f"Evolución de {title_prefix} (%)",
+                        barmode='relative', # relative + barnorm = 100%
+                    )
+                     fig.update_layout(barnorm='percent')
+                
+                st.plotly_chart(fig, use_container_width=True)
+
+            with tab_evo1:
+                 if 'Country(ies)' in df_filtered_viz.columns:
+                     plot_evolution(df_filtered_viz, 'Country(ies)', "País")
+                 else:
+                     st.info("Columna 'Country(ies)' no disponible.")
+
+            with tab_evo2:
+                 if 'Recommendation administrative unit' in df_filtered_viz.columns:
+                     plot_evolution(df_filtered_viz, 'Recommendation administrative unit', "Unidad Administrativa")
+                 else:
+                     st.info("Columna 'Recommendation administrative unit' no disponible.")
+
+            with tab_evo3:
+                 plot_evolution(df_filtered_viz, 'assigned_dimension', "Dimensión")
+
+            with tab_evo4:
+                 plot_evolution(df_filtered_viz, 'assigned_subdim', "Subdimensión")
 
             # --- Download ---
             st.markdown("### 📥 Descargar Resultados")
