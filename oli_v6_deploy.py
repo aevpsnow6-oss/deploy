@@ -7929,7 +7929,7 @@ with tab6:
         if 'classified_world_df' not in st.session_state:
             st.session_state['classified_world_df'] = None
 
-        def classify_recommendations(target_df, reference_df, cache_obj):
+        def classify_recommendations(target_df, reference_df, cache_obj, use_llm_verification=False):
             """
             Classifies recommendations in target_df based on similarity to texts in reference_df.
             Uses persistent cache and deduplication.
@@ -8017,10 +8017,10 @@ with tab6:
 
             cache_obj.save() # Final save
 
-            # 3. Classify Rows (Match) - Top 3
+        # 3. Classify Rows (Match) - Top 3
             classified_rows = []
             
-            progress_bar.progress(0.5, text="Asignando clasificaciones (Top 3)...")
+            progress_bar.progress(0.5, text="Asignando clasificaciones (Top 3) " + ("y verificando con LLM..." if use_llm_verification else "..."))
             
             for i, (idx, row) in enumerate(target_df.iterrows()):
                 rec_text = str(row.get('Recommendation description', ''))
@@ -8042,11 +8042,27 @@ with tab6:
                     rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
                     similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
                     
-                    # Get Top 3 indices
+                    # Get Top 3 indices for context
+                    # Even if verifying, we start with top 3 candidates from embeddings
                     top_k_indices = np.argsort(similarities)[-3:][::-1]
                     
-                    # Process Top 1 (Main Match)
-                    best_idx = top_k_indices[0]
+                    best_idx = top_k_indices[0] # Default to embedding top 1
+                    
+                    # LLM Verification (Reranking)
+                    if use_llm_verification:
+                        # Construct candidates list
+                        candidates = []
+                        for k in top_k_indices:
+                             candidates.append(ref_metadata[k])
+                        
+                        # Call LLM
+                        verified_idx = verify_match_with_llm(rec_text, candidates, openai_api_key)
+                        
+                        if verified_idx >= 0 and verified_idx < len(top_k_indices):
+                            best_idx = top_k_indices[verified_idx]
+                        # Else fallback to embedding best_idx (0)
+                    
+                    # Assign Best Match (Verified or Embedding)
                     best_match = ref_metadata[best_idx]
                     
                     vals['assigned_dimension'] = best_match['dimension']
@@ -8055,12 +8071,19 @@ with tab6:
                     vals['similarity_score'] = similarities[best_idx]
                     
                     # Process Top 2 & 3 (Alternatives)
+                    # Note: If LLM picked #2, then #1 and #3 become alternatives.
+                    # For simplicity, we stick to the Embedding Ranking for "Others" 
+                    # OR we could just list the other 2 from the Top 3 set.
+                    # Let's simple: List the *other* indices from top_k_indices that are NOT best_idx
+                    
                     secondary_dims = []
                     secondary_subdims = []
                     
-                    similarity_threshold = 0.30
+                    similarity_threshold = 0.60
                     
-                    for k_idx in top_k_indices[1:]:
+                    for k_idx in top_k_indices:
+                        if k_idx == best_idx: continue # Skip the chosen one
+                        
                         if similarities[k_idx] >= similarity_threshold:
                             match_k = ref_metadata[k_idx]
                             secondary_dims.append(match_k['dimension'])
@@ -8075,7 +8098,7 @@ with tab6:
                 row_dict.update(vals)
                 classified_rows.append(row_dict)
                 
-                if i % 100 == 0:
+                if i % 10 == 0: # Update faster if slow LLM
                      progress_bar.progress(0.5 + (0.5 * (i + 1) / total_recs), text=f"Clasificando registros {i+1}/{total_recs}")
 
             progress_bar.empty()
@@ -8083,6 +8106,10 @@ with tab6:
 
         # Button to run classification
         st.markdown("### 2. Ejecución")
+        
+        # LLM Verification Toggle
+        use_llm_chk = st.checkbox("✅ Usar Verificación con LLM (Alta Precisión, Más Lento)", value=False, help="Si se activa, el sistema usará IA para leer las definiciones y corregir la clasificación (ej. distinguir 'Pensiones' financiera de 'Pensiones' política).")
+
         if start_count == 0:
             st.warning("El archivo de recomendaciones está vacío.")
         elif end_count == 0:
@@ -8090,7 +8117,7 @@ with tab6:
         else:
             if st.button("🚀 Iniciar Clasificación", key="start_classification_tab6"):
                 with st.spinner("Ejecutando clasificación optimizada..."):
-                    classified_df = classify_recommendations(filtered_rec_df, frame_df_world, st.session_state['embeddings_cache_obj'])
+                    classified_df = classify_recommendations(filtered_rec_df, frame_df_world, st.session_state['embeddings_cache_obj'], use_llm_verification=use_llm_chk)
                     if classified_df is not None and not classified_df.empty:
                         st.session_state['classified_world_df'] = classified_df
                         st.success(f"¡Clasificación completada! {len(classified_df)} recomendaciones procesadas.")
