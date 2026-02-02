@@ -5670,7 +5670,7 @@ OPENAI_MODEL = "gpt-5-mini"  # GPT-5 mini model with reasoning
 def load_appraisal_questions():
     """Load and cache appraisal questions from Excel file"""
     try:
-        df = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
+        df = pd.read_excel('./Appraisal Checklist_2025 es-419.xlsx', sheet_name='rubric')
         if 'Pregunta_Realizada' not in df.columns:
             return None, "La columna 'Pregunta_Realizada' no se encontró en el archivo de Excel."
         
@@ -6710,6 +6710,14 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
         
         excel_buffer.seek(0)
         zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
+
+        # Add original template if available
+        try:
+            with open('./Appraisal Checklist_2025 es-419.xlsx', 'rb') as f:
+                template_data = f.read()
+                zipf.writestr(f"{filename_base}_rubric_template.xlsx", template_data)
+        except FileNotFoundError:
+            pass
         
         # Add summary report
         summary = f"""
@@ -6748,12 +6756,13 @@ with tab1:
         st.stop()
     
     # Download button for the rubric file (directly on page, no expander)
+    # Download button for the rubric file (directly on page, no expander)
     try:
-        with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
+        with open('./Appraisal Checklist_2025 es-419.xlsx', 'rb') as f:
             st.download_button(
                 label="📥 Descargar archivo rúbrica de Valoración preliminar",
                 data=f,
-                file_name="APPRAISAL_rubric.xlsx",
+                file_name="Appraisal Checklist_2025 es-419.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_appraisal_rubric"
             )
@@ -7007,21 +7016,52 @@ with tab1:
     df_with_sections['_section'] = df_with_sections['Pregunta_Realizada'].apply(extract_section_number)
     df_with_sections['_subsection'] = df_with_sections['Pregunta_Realizada'].apply(extract_subsection_number)
     
+    # Section Names Mapping
+    SECTION_NAMES = {
+        1: "Pertinencia",
+        2: "Apropiación y sostenibilidad",
+        3: "Gestión orientada a los resultados",
+        4: "Transparencia y rendición de cuentas",
+        5: "Presentación de la propuesta"
+    }
+
     all_sections = sorted(df_with_sections['_section'].dropna().unique())
-    all_subsections = sorted(df_with_sections['_subsection'].dropna().unique(), 
-                            key=lambda x: parse_subsection_for_sorting(x) if pd.notna(x) else (999, 999))
     
     # Create two columns for filters
     col_filter1, col_filter2 = st.columns(2)
     
     with col_filter1:
+        # Format section options with names
+        section_options = [f"{int(s)}. {SECTION_NAMES.get(int(s), 'Sección ' + str(int(s)))}" for s in all_sections]
+        
         selected_sections_filter = st.multiselect(
             "Selecciona Secciones:",
-            options=[f"Sección {int(s)}" for s in all_sections],
+            options=section_options,
             key="filter_sections_tab1",
             help="Selecciona una o más secciones para analizar"
         )
     
+    # Extract section numbers from filter selections
+    filtered_section_nums = []
+    if selected_sections_filter:
+        for s in selected_sections_filter:
+            try:
+                # Extract number from "1. Name" format
+                filtered_section_nums.append(int(s.split('.')[0]))
+            except:
+                pass
+
+    # Filter available subsections based on selected sections
+    if filtered_section_nums:
+        # Show only subsections belonging to selected sections
+        available_subsections_df = df_with_sections[df_with_sections['_section'].isin(filtered_section_nums)]
+    else:
+        # Show all subsections if no section is selected
+        available_subsections_df = df_with_sections
+        
+    all_subsections = sorted(available_subsections_df['_subsection'].dropna().unique(), 
+                            key=lambda x: parse_subsection_for_sorting(x) if pd.notna(x) else (999, 999))
+
     with col_filter2:
         selected_subsections_filter = st.multiselect(
             "Selecciona Subsecciones:",
@@ -7030,9 +7070,8 @@ with tab1:
             help="Selecciona una o más subsecciones para analizar"
         )
     
-    # Extract section numbers from filter selections
-    filtered_section_nums = [int(s.split()[-1]) for s in selected_sections_filter] if selected_sections_filter else None
-    filtered_subsection_ids = [s.split()[-1] for s in selected_subsections_filter] if selected_subsections_filter else None
+    # Extract subsection IDs
+    filtered_subsection_ids = [s.replace("Subsección ", "") for s in selected_subsections_filter] if selected_subsections_filter else None
     
     # Processing button
     st.markdown("---")
