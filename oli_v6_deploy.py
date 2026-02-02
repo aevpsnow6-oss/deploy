@@ -4887,7 +4887,7 @@ with tab3:
             criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[2])
     
     # Define dimension order
-    dimension_order = ['Diseño', 'Implementación', 'Evaluación']
+    dimension_order = ['Diseño', 'Implementación', 'Pre-Cierre']
     
     # Helper to extract criterio number for sorting (e.g., "1. Participación..." -> 1)
     def get_criterio_order(criterio_name):
@@ -4930,7 +4930,7 @@ with tab3:
                 "convenios y otros documentos de ejecución; los resultados orientan ajustes y fortalecen la trazabilidad "
                 "de decisiones."
             ),
-            "Evaluación": (
+            "Pre-Cierre": (
                 "Aplica una revisión ex post (idealmente en el último trimestre de un proyecto) para verificar qué "
                 "elementos efectivamente aseguran la continuidad de resultados y documentar lecciones. Si se aplica "
                 "antes del cierre, algunos puntajes serán referenciales (“lo esperado”); en todos los casos, el diagnóstico "
