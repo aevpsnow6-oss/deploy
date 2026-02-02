@@ -5675,17 +5675,17 @@ def load_appraisal_questions():
             return None, "La columna 'Pregunta_Realizada' no se encontró en el archivo de Excel."
         
         # Replace first 3 characters of Pregunta_Realizada with Tema numbering
-        # if 'Tema' in df.columns:
-        df['Pregunta_Realizada'] = df.apply(
-            lambda row: str(row['Tema']) + ' ' + str(row['Pregunta_Realizada'])[3:].strip() 
-            if pd.notna(row['Tema']) and pd.notna(row['Pregunta_Realizada']) and len(str(row['Pregunta_Realizada'])) > 3
-            else row['Pregunta_Realizada'], 
-            axis=1
-        )
+        if 'Tema' in df.columns:
+            df['Pregunta_Realizada'] = df.apply(
+                lambda row: str(row['Tema']) + ' ' + str(row['Pregunta_Realizada'])[3:].strip() 
+                if pd.notna(row['Tema']) and pd.notna(row['Pregunta_Realizada']) and len(str(row['Pregunta_Realizada'])) > 3
+                else row['Pregunta_Realizada'], 
+                axis=1
+            )
         
         return df, None
     except FileNotFoundError:
-        return None, "No se encontró el archivo APPRAISAL_rubric.xlsx. Asegúrate de que exista en el directorio de la aplicación."
+        return None, "No se encontró el archivo Appraisal Checklist_2025 es-419.xlsx. Asegúrate de que exista en el directorio de la aplicación."
     except Exception as e:
         return None, f"Error al cargar el archivo de preguntas: {str(e)}"
 
