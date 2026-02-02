@@ -5157,7 +5157,14 @@ Debes aplicar lógica de umbrales estricta:
    - Diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
    - Cada forma debe ser DISTINTA y VERIFICABLE en el documento
 
-3. **APLICA LÓGICA DE UMBRALES** según los niveles de la rúbrica:
+3. **FILTRO DE EVIDENCIA Y TIEMPO VERBAL (CRÍTICO):**
+   - **SOLO cuenta la participación efectiva** (lo que YA ocurrió o está ocurriendo).
+   - **NO CUENTES** participaciones futuras, hipotéticas o esperadas ("participará", "se espera que", "se invitará", "futura colaboración").
+   - **SOLO acepta verbos en PASADO** ("participó", "asistió", "validó") **o PRESENTE** ("participa", "es miembro de").
+   - Si el texto dice "se consultará a X" -> NO CUENTA.
+   - Si el texto dice "X participó en la consulta" -> SÍ CUENTA.
+
+4. **APLICA LÓGICA DE UMBRALES** según los niveles de la rúbrica:
    - Si el nivel requiere "AL MENOS 2 mandantes en AL MENOS 2 formas":
      * CUENTA cuántos mandantes tienen 2 o más formas de participación
      * Si al menos 2 mandantes alcanzan ese umbral → cumple el nivel
