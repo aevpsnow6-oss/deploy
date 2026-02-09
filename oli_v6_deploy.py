@@ -3501,7 +3501,21 @@ with tab2:
     # Process and Evaluate button
     st.markdown("---")
     st.markdown("### ⚙️ Procesamiento y Evaluación")
-
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
     def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
         """Analyze document against criterion with retry logic"""
         import time
@@ -5293,6 +5307,21 @@ with tab3:
     # Process and Evaluate button
     st.markdown("---")
     st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
     if st.button('🚀 Procesar y Evaluar', key="prodoc_process_button_tab3", type="primary"):
         # Check prerequisites
         if not st.session_state.get('document_extracted_tab3', False):
@@ -7523,6 +7552,21 @@ with tab1:
     # Processing button
     st.markdown("---")
     st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
     if st.button('🔍 Analizar documento', key="appraisal_process_button", type="primary"):
         # Check prerequisites
         if not st.session_state.get('document_extracted_tab1', False):
