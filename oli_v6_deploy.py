@@ -2640,6 +2640,14 @@ with tab2:
     **¿Para qué usar este diagnóstico?**
     Este diagnóstico en formato EXCEL sirve para **revisar propuestas**, **verificar aspectos puntuales** de informes de evaluación o de ejecución, **comprobar coherencia** con P&B, DWCP y marcos UNSDCF, **elaborar notas técnicas con sustento** y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
+    
+    # Important requirements reminder
+    st.warning("""
+    **⚠️ Recordatorio importante:**
+    - Los documentos deben estar formateados con **estilos de encabezado de Word** (Heading 1, Heading 2, etc.) para que las secciones se identifiquen correctamente
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Solo se aceptan archivos en formato **.docx**
+    """)
 
     # Read rubrics from Excel files as in megaparse_example.py
     import pandas as pd
@@ -3072,6 +3080,29 @@ with tab2:
 
     # Document upload
     st.markdown("### 📄 Carga de Documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    - Esto es especialmente importante para evaluaciones y PRODOCs que deben tener una estructura clara con secciones bien definidas
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que el documento esté guardado correctamente antes de subirlo
+    - Verifica que todas las secciones importantes tengan encabezados antes de procesar
+    """)
+    
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
 
     # Initialize session state for selections and results persistence
@@ -3200,6 +3231,12 @@ with tab2:
                 st.markdown("### 🔍 Selección de Secciones para Evaluación")
                 st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
                 
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales.")
+                
                 # Initialize selected sections if not exists
                 if 'selected_sections_tab2' not in st.session_state:
                     st.session_state['selected_sections_tab2'] = list(header_1_values)
@@ -3291,6 +3328,14 @@ with tab2:
                         estimated_tokens = len(encoding.encode(selected_text))
                     else:
                         estimated_tokens = total_selected_words * 1.2  # Rough estimate
+                    
+                    # Warn if approaching limit
+                    if estimated_tokens > 100000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.warning(f"⚠️ **Advertencia de límite de contexto:** Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). El sistema procesa hasta 110,000 tokens (aproximadamente 150-200 páginas). Si el documento excede este límite, será truncado automáticamente.")
+                    elif estimated_tokens > 80000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.info(f"ℹ️ Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). Estás dentro del límite de 110,000 tokens (aproximadamente 150-200 páginas).")
                     
                     st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
                               f"{total_selected_words:,} palabras | "
@@ -3901,6 +3946,32 @@ with tab4:
     if 'doc_chat_docs' not in st.session_state:
         st.session_state['doc_chat_docs'] = []
 
+    # Warning box about document requirements for chat
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formatos aceptados:**
+    - Archivos **.docx** (Word 2007 o posterior)
+    - Archivos **.txt** (texto plano)
+    - Puedes subir **múltiples archivos** (hasta 200MB en total)
+    
+    **📝 Para documentos Word (.docx):**
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente.
+    - Para documentos grandes, el sistema usa RAG (Retrieval Augmented Generation) automáticamente
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos muy grandes (>100K caracteres, aproximadamente >40 páginas) se procesan con RAG para mejor eficiencia
+    - Documentos pequeños se procesan con contexto completo (más eficiente)
+    - Documentos que excedan el límite máximo serán truncados automáticamente
+    
+    **✅ Mejores prácticas:**
+    - Para documentos Word: usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que los documentos estén guardados correctamente antes de subirlos
+    """)
+    
     uploaded_files = st.file_uploader("Sube uno o más archivos DOCX o TXT para chatear:", type=["docx", "txt"], accept_multiple_files=True)
     if 'doc_chat_docs' not in st.session_state:
         st.session_state['doc_chat_docs'] = []
@@ -4657,6 +4728,29 @@ with tab3:
 
     # Document upload
     st.markdown("### 📄 Carga de Documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos PRODOC:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento PRODOC debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del PRODOC deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    - Los PRODOCs deben tener una estructura clara con secciones bien definidas (Marco Lógico, Presupuesto, Cronograma, etc.)
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales del PRODOC
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que todas las secciones importantes (Marco Lógico, Presupuesto, etc.) tengan encabezados claros
+    - Verifica que el documento esté guardado correctamente antes de subirlo
+    """)
+    
     uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader_tab3")
     
     # Document Extraction Section
@@ -4768,6 +4862,12 @@ with tab3:
                 st.markdown("### 🔍 Selección de Secciones para Evaluación")
                 st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
                 
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento PRODOC tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento PRODOC. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales como Marco Lógico, Presupuesto, Cronograma, etc.")
+                
                 # Initialize selected sections if not exists
                 if 'selected_sections_tab3' not in st.session_state:
                     st.session_state['selected_sections_tab3'] = list(header_1_values)
@@ -4857,6 +4957,14 @@ with tab3:
                         estimated_tokens = len(encoding.encode(selected_text))
                     else:
                         estimated_tokens = total_selected_words * 1.2
+                    
+                    # Warn if approaching limit
+                    if estimated_tokens > 100000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.warning(f"⚠️ **Advertencia de límite de contexto:** Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). El sistema procesa hasta 110,000 tokens (aproximadamente 150-200 páginas). Si el documento excede este límite, será truncado automáticamente.")
+                    elif estimated_tokens > 80000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.info(f"ℹ️ Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). Estás dentro del límite de 110,000 tokens (aproximadamente 150-200 páginas).")
                     
                     st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
                               f"{total_selected_words:,} palabras | "
@@ -6803,6 +6911,27 @@ with tab1:
     
     # Document upload
     st.subheader("📄 Carga de documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que el documento esté guardado correctamente antes de subirlo
+    """)
+    
     uploaded_file = st.file_uploader(
         "Sube un DOCX para la evaluación:",
         type=["docx"],
@@ -6918,6 +7047,12 @@ with tab1:
                 # Section selector
                 st.markdown("### 🔍 Selección de Secciones para Evaluación")
                 st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales.")
                 
                 # Initialize selected sections if not exists
                 if 'selected_sections_tab1' not in st.session_state:
