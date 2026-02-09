@@ -4630,7 +4630,7 @@ with tab3:
         required_cols = ['Dimensión', 'Criterio', 'Indicador']
         missing_cols = [col for col in required_cols if col not in df_rubric_prodoc.columns]
         if missing_cols:
-            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")s
+            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")
             st.info(f"Columnas disponibles: {list(df_rubric_prodoc.columns)}")
         
         # Helper function to extract numeric prefix for sorting (e.g., "1.1" -> (1, 1), "2.3" -> (2, 3))
