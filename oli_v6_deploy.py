@@ -2022,7 +2022,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de P
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
                                         #  "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción",
-                                         "Clasificación de Recomendaciones (World)"])
+                                         "Clasificación de Recomendaciones"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -8066,7 +8066,7 @@ with tab1:
 #--------------------------#-------------------------------#
 # Tab 6: Clasificación de Recomendaciones (World)
 with tab5:
-    st.header("Clasificación de Recomendaciones (World)")
+    st.header("Clasificación de Recomendaciones")
     st.info("""
     **🌍 Clasificación Inteligente de Recomendaciones**
 
