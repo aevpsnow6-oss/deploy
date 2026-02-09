@@ -4688,7 +4688,7 @@ with tab3:
         
         # Download button for the rubric file (directly on page, no expander)
         try:
-            with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
+            with open('./Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx', 'rb') as f:
                 st.download_button(
                     label="📥 Descargar archivo rúbrica de Sostenibilidad del proyecto",
                     data=f,
