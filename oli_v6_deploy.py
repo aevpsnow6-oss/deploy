@@ -3222,6 +3222,22 @@ with tab2:
         if st.session_state.get('document_extracted_tab2', False) and not file_changed:
             st.success("✅ Documento extraído con éxito")
             
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab2_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab2"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
             sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
             
             if not sections_df.empty:
@@ -4852,6 +4868,22 @@ with tab3:
         # Show extraction results if document is extracted
         if st.session_state.get('document_extracted_tab3', False) and not file_changed:
             st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab3_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab3"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
             
             sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
             
@@ -7085,6 +7117,22 @@ with tab1:
         # Show extraction results if document is extracted
         if st.session_state.get('document_extracted_tab1', False) and not file_changed:
             st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab1', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab1_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab1"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
             
             sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
             
