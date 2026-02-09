@@ -5265,12 +5265,45 @@ Debes aplicar lógica de umbrales estricta:
    - Diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
    - Cada forma debe ser DISTINTA y VERIFICABLE en el documento
 
-3. **FILTRO DE EVIDENCIA Y TIEMPO VERBAL (CRÍTICO):**
-   - **SOLO cuenta la participación efectiva** (lo que YA ocurrió o está ocurriendo).
-   - **NO CUENTES** participaciones futuras, hipotéticas o esperadas ("participará", "se espera que", "se invitará", "futura colaboración").
-   - **SOLO acepta verbos en PASADO** ("participó", "asistió", "validó") **o PRESENTE** ("participa", "es miembro de").
-   - Si el texto dice "se consultará a X" -> NO CUENTA.
-   - Si el texto dice "X participó en la consulta" -> SÍ CUENTA.
+3. **FILTRO DE EVIDENCIA Y TIEMPO VERBAL (CRÍTICO - DEBE APLICARSE ESTRICTAMENTE):**
+   
+   **REGLA ABSOLUTA: SOLO PARTICIPACIÓN FACTUAL, PASADA O PRESENTE**
+   
+   - **SOLO cuenta participación que YA OCURRIÓ o ESTÁ OCURRIENDO** (hechos verificables, acciones concretas realizadas).
+   - **NUNCA CUENTES** participaciones futuras, prometidas, planificadas, hipotéticas o esperadas.
+   
+   **VERBOS Y EXPRESIONES QUE DEBES RECHAZAR (NO CUENTAN):**
+   - Futuro simple: "participará", "asistirá", "consultará", "se invitará", "se convocará", "se reunirá"
+   - Futuro compuesto: "habrá participado", "habrá asistido"
+   - Condicional: "participaría", "asistiría", "se consultaría"
+   - Expresiones de planificación: "se espera que", "se prevé que", "está previsto", "se planifica", "se programará"
+   - Expresiones de intención: "se pretende", "se busca", "se tiene como objetivo", "se propone"
+   - Expresiones de compromiso futuro: "se compromete a", "acordó participar" (si no hay evidencia de participación real)
+   - Marcadores temporales futuros: "en el futuro", "durante la implementación", "en las próximas fases", "posteriormente"
+   - Participaciones hipotéticas: "podría participar", "sería consultado", "tendría la oportunidad"
+   
+   **VERBOS Y EXPRESIONES QUE SÍ CUENTAN (participación factual):**
+   - Pasado simple: "participó", "asistió", "validó", "revisó", "comentó", "aprobó", "contribuyó", "colaboró"
+   - Pasado compuesto: "ha participado", "ha asistido", "ha validado"
+   - Presente: "participa", "asiste", "es miembro de", "forma parte de", "colabora en"
+   - Gerundio de acciones completadas: "habiendo participado", "habiendo asistido"
+   - Expresiones de hecho realizado: "fue consultado", "fue invitado y asistió", "se reunió con"
+   
+   **EJEMPLOS ESPECÍFICOS:**
+   - ❌ "Se consultará a los mandantes durante la implementación" -> NO CUENTA (futuro)
+   - ❌ "Se espera que los empleadores participen en el diseño" -> NO CUENTA (expectativa futura)
+   - ❌ "Los trabajadores serán invitados a las reuniones" -> NO CUENTA (futuro)
+   - ❌ "Está previsto que el gobierno valide la propuesta" -> NO CUENTA (planificación futura)
+   - ❌ "Se tiene como objetivo involucrar a los actores" -> NO CUENTA (intención futura)
+   - ✅ "El gobierno participó en la reunión de diseño del 15 de marzo" -> SÍ CUENTA (pasado factual)
+   - ✅ "Los empleadores asistieron a las consultas y proporcionaron comentarios" -> SÍ CUENTA (pasado factual)
+   - ✅ "Los trabajadores son miembros del comité de diseño" -> SÍ CUENTA (presente factual)
+   - ✅ "Los mandantes fueron consultados y validaron el marco lógico" -> SÍ CUENTA (pasado factual)
+   
+   **VERIFICACIÓN OBLIGATORIA:**
+   Antes de contar cualquier participación, pregunta: "¿Esta acción YA OCURRIÓ o está ocurriendo AHORA?" 
+   Si la respuesta es NO o es incierta → NO CUENTES.
+   Si la respuesta es SÍ y hay evidencia clara → SÍ CUENTA.
 
 4. **APLICA LÓGICA DE UMBRALES** según los niveles de la rúbrica:
    - Si el nivel requiere "AL MENOS 2 mandantes en AL MENOS 2 formas":
@@ -5317,22 +5350,36 @@ Siempre responde en español, incluso si el documento está en inglés."""
 {combined_text}
 
 **INSTRUCCIONES CRÍTICAS:**
-1. CUENTA las formas de participación para CADA mandante
-2. IDENTIFICA el umbral mínimo de formas requerido en cada nivel (ej: "al menos 2 formas")
-3. CUENTA cuántos mandantes CUMPLEN ese umbral
-4. VERIFICA si el número de mandantes que cumplen el umbral alcanza el requisito del nivel
-5. Justifica el puntaje EXPLÍCITAMENTE basándote en la lógica de umbrales
+1. **PRIMERO: APLICA EL FILTRO DE TIEMPO VERBAL** - Revisa CADA mención de participación y verifica que sea factual (pasado o presente). RECHAZA cualquier participación futura, prometida o planificada.
+2. CUENTA SOLO las formas de participación FACTUALES (pasadas o presentes) para CADA mandante
+3. IDENTIFICA el umbral mínimo de formas requerido en cada nivel (ej: "al menos 2 formas")
+4. CUENTA cuántos mandantes CUMPLEN ese umbral con participación REAL (no prometida)
+5. VERIFICA si el número de mandantes que cumplen el umbral alcanza el requisito del nivel
+6. Justifica el puntaje EXPLÍCITAMENTE basándote en la lógica de umbrales y menciona explícitamente que solo se contó participación factual
 
 **EJEMPLO DE RAZONAMIENTO CORRECTO:**
-"Nivel 4 requiere AL MENOS 2 mandantes participando en AL MENOS 2 formas cada uno.
-Gobierno participa en 3 formas (✓ cumple umbral de 2+)
-Empleadores participan en 2 formas (✓ cumple umbral de 2+)
-Trabajadores participan en 1 forma (✗ NO cumple umbral de 2+)
-Total de mandantes que cumplen umbral: 2
-Dado que 2 mandantes cumplen el umbral de 2+ formas, SÍ se alcanza el Nivel 4."
+"APLICACIÓN DEL FILTRO DE TIEMPO VERBAL: Se revisaron todas las menciones de participación. Se excluyeron las siguientes por ser futuras/planificadas: 'se consultará a los trabajadores durante la implementación', 'se espera que los empleadores participen'. Solo se contaron participaciones factuales (pasadas o presentes).
+
+CONTEO POR MANDANTE (solo participación real):
+- Gobierno: 3 formas identificadas → participó en reunión de diseño (15/03), validó marco lógico, proporcionó comentarios escritos (✓ todas factuales, cumple umbral de 2+)
+- Empleadores: 2 formas identificadas → asistieron a consulta (20/03), revisaron propuesta técnica (✓ ambas factuales, cumple umbral de 2+)
+- Trabajadores: 1 forma identificada → mencionados en documento pero sin evidencia de participación real (✗ NO cumple umbral de 2+)
+
+EVALUACIÓN DE UMBRALES:
+- Nivel 4 requiere: AL MENOS 2 mandantes en AL MENOS 2 formas cada uno
+- Mandantes que cumplen umbral de 2+ formas: Gobierno (3 formas), Empleadores (2 formas)
+- Total de mandantes que cumplen umbral: 2
+- ¿Cumple requisito de 2+ mandantes?: SÍ
+
+JUSTIFICACIÓN DEL PUNTAJE: Dado que 2 mandantes (Gobierno y Empleadores) cumplen el umbral de 2+ formas cada uno con participación REAL verificable, SÍ se alcanza el Nivel 4. Se excluyeron participaciones futuras/planificadas del conteo."
+
+**RECORDATORIO FINAL CRÍTICO:**
+- Si encuentras participaciones futuras o planificadas en el documento, MENCIONA explícitamente en tu análisis que fueron EXCLUIDAS del conteo
+- Solo incluye en "evidence" citas que demuestren participación REAL (pasada o presente)
+- Si el documento solo menciona participación futura/planificada y no hay evidencia de participación real, el puntaje debe reflejar esto (probablemente nivel 1 o 0)
 
 Proporciona tu respuesta como JSON:
-{{"analysis": "COMIENZA con el conteo por mandante, luego EVALÚA EXPLÍCITAMENTE los umbrales según cada nivel, finalmente JUSTIFICA el puntaje con la lógica de umbrales. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 que evidencia mandante y forma de participación específica", "cita 2", "etc - 5-8 citas clave como array"]}}"""
+{{"analysis": "COMIENZA indicando si aplicaste el filtro de tiempo verbal y qué participaciones fueron excluidas (si las hubo). Luego presenta el conteo por mandante SOLO con participación factual. EVALÚA EXPLÍCITAMENTE los umbrales según cada nivel. Finalmente JUSTIFICA el puntaje con la lógica de umbrales, asegurándote de mencionar que solo se contó participación real. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 que evidencia mandante y forma de participación específica REAL (pasada o presente)", "cita 2", "etc - 5-8 citas clave como array, SOLO participaciones factuales"]}}"""
 
                     else:
                         # Original prompt for non-counting rubrics
