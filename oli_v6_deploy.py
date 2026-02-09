@@ -4624,13 +4624,13 @@ with tab3:
     try:
         # Load rubric from PRODOC_rubric.xlsx
         # df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
-        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', sheet_name='rubric')
+        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx', sheet_name='rubric')
 
         # Verify required columns exist
         required_cols = ['Dimensión', 'Criterio', 'Indicador']
         missing_cols = [col for col in required_cols if col not in df_rubric_prodoc.columns]
         if missing_cols:
-            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")
+            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")s
             st.info(f"Columnas disponibles: {list(df_rubric_prodoc.columns)}")
         
         # Helper function to extract numeric prefix for sorting (e.g., "1.1" -> (1, 1), "2.3" -> (2, 3))
