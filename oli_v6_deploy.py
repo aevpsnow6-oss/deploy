@@ -3238,75 +3238,32 @@ with tab2:
                 )
                 st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
             
-            # Display all extracted headers and content
+            # Display header_1 sections and their content
             extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
             if not extraction_df.empty:
-                with st.expander("📋 Ver estructura completa extraída del documento (todos los encabezados y contenido)", expanded=False):
-                    st.markdown("**Estructura jerárquica completa del documento extraído:**")
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
                     
-                    # Group by header hierarchy
-                    current_h1 = None
-                    current_h2 = None
-                    current_h3 = None
-                    current_h4 = None
-                    current_h5 = None
-                    current_h6 = None
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
                     
-                    for idx, row in extraction_df.iterrows():
-                        # Check for header changes at each level
-                        h1 = row.get('header_1', '') if pd.notna(row.get('header_1')) else ''
-                        h2 = row.get('header_2', '') if pd.notna(row.get('header_2')) else ''
-                        h3 = row.get('header_3', '') if pd.notna(row.get('header_3')) else ''
-                        h4 = row.get('header_4', '') if pd.notna(row.get('header_4')) else ''
-                        h5 = row.get('header_5', '') if pd.notna(row.get('header_5')) else ''
-                        h6 = row.get('header_6', '') if pd.notna(row.get('header_6')) else ''
-                        content = row.get('content', '') if pd.notna(row.get('content')) else ''
-                        source_type = row.get('source_type', '')
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
                         
-                        # Display headers when they change
-                        if h1 and h1 != current_h1:
-                            current_h1 = h1
-                            current_h2 = None
-                            current_h3 = None
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"### {h1}")
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
                         
-                        if h2 and h2 != current_h2:
-                            current_h2 = h2
-                            current_h3 = None
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"#### {h2}")
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
                         
-                        if h3 and h3 != current_h3:
-                            current_h3 = h3
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"##### {h3}")
-                        
-                        if h4 and h4 != current_h4:
-                            current_h4 = h4
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"**{h4}**")
-                        
-                        if h5 and h5 != current_h5:
-                            current_h5 = h5
-                            current_h6 = None
-                            st.markdown(f"*{h5}*")
-                        
-                        if h6 and h6 != current_h6:
-                            current_h6 = h6
-                            st.markdown(f"- {h6}")
-                        
-                        # Display content (paragraphs only, not headers)
-                        if content and source_type == 'paragraph':
-                            st.text(content)
-                            st.markdown("---")
+                        st.markdown("---")
             
             sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
             
@@ -4969,75 +4926,32 @@ with tab3:
                 )
                 st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
             
-            # Display all extracted headers and content
+            # Display header_1 sections and their content
             extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
             if not extraction_df.empty:
-                with st.expander("📋 Ver estructura completa extraída del documento (todos los encabezados y contenido)", expanded=False):
-                    st.markdown("**Estructura jerárquica completa del documento extraído:**")
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
                     
-                    # Group by header hierarchy
-                    current_h1 = None
-                    current_h2 = None
-                    current_h3 = None
-                    current_h4 = None
-                    current_h5 = None
-                    current_h6 = None
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
                     
-                    for idx, row in extraction_df.iterrows():
-                        # Check for header changes at each level
-                        h1 = row.get('header_1', '') if pd.notna(row.get('header_1')) else ''
-                        h2 = row.get('header_2', '') if pd.notna(row.get('header_2')) else ''
-                        h3 = row.get('header_3', '') if pd.notna(row.get('header_3')) else ''
-                        h4 = row.get('header_4', '') if pd.notna(row.get('header_4')) else ''
-                        h5 = row.get('header_5', '') if pd.notna(row.get('header_5')) else ''
-                        h6 = row.get('header_6', '') if pd.notna(row.get('header_6')) else ''
-                        content = row.get('content', '') if pd.notna(row.get('content')) else ''
-                        source_type = row.get('source_type', '')
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
                         
-                        # Display headers when they change
-                        if h1 and h1 != current_h1:
-                            current_h1 = h1
-                            current_h2 = None
-                            current_h3 = None
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"### {h1}")
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
                         
-                        if h2 and h2 != current_h2:
-                            current_h2 = h2
-                            current_h3 = None
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"#### {h2}")
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
                         
-                        if h3 and h3 != current_h3:
-                            current_h3 = h3
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"##### {h3}")
-                        
-                        if h4 and h4 != current_h4:
-                            current_h4 = h4
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"**{h4}**")
-                        
-                        if h5 and h5 != current_h5:
-                            current_h5 = h5
-                            current_h6 = None
-                            st.markdown(f"*{h5}*")
-                        
-                        if h6 and h6 != current_h6:
-                            current_h6 = h6
-                            st.markdown(f"- {h6}")
-                        
-                        # Display content (paragraphs only, not headers)
-                        if content and source_type == 'paragraph':
-                            st.text(content)
-                            st.markdown("---")
+                        st.markdown("---")
             
             sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
             
@@ -7303,75 +7217,32 @@ with tab1:
                 )
                 st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
             
-            # Display all extracted headers and content
+            # Display header_1 sections and their content
             extraction_df = st.session_state.get('extraction_df_tab1', pd.DataFrame())
             if not extraction_df.empty:
-                with st.expander("📋 Ver estructura completa extraída del documento (todos los encabezados y contenido)", expanded=False):
-                    st.markdown("**Estructura jerárquica completa del documento extraído:**")
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
                     
-                    # Group by header hierarchy
-                    current_h1 = None
-                    current_h2 = None
-                    current_h3 = None
-                    current_h4 = None
-                    current_h5 = None
-                    current_h6 = None
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
                     
-                    for idx, row in extraction_df.iterrows():
-                        # Check for header changes at each level
-                        h1 = row.get('header_1', '') if pd.notna(row.get('header_1')) else ''
-                        h2 = row.get('header_2', '') if pd.notna(row.get('header_2')) else ''
-                        h3 = row.get('header_3', '') if pd.notna(row.get('header_3')) else ''
-                        h4 = row.get('header_4', '') if pd.notna(row.get('header_4')) else ''
-                        h5 = row.get('header_5', '') if pd.notna(row.get('header_5')) else ''
-                        h6 = row.get('header_6', '') if pd.notna(row.get('header_6')) else ''
-                        content = row.get('content', '') if pd.notna(row.get('content')) else ''
-                        source_type = row.get('source_type', '')
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
                         
-                        # Display headers when they change
-                        if h1 and h1 != current_h1:
-                            current_h1 = h1
-                            current_h2 = None
-                            current_h3 = None
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"### {h1}")
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
                         
-                        if h2 and h2 != current_h2:
-                            current_h2 = h2
-                            current_h3 = None
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"#### {h2}")
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
                         
-                        if h3 and h3 != current_h3:
-                            current_h3 = h3
-                            current_h4 = None
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"##### {h3}")
-                        
-                        if h4 and h4 != current_h4:
-                            current_h4 = h4
-                            current_h5 = None
-                            current_h6 = None
-                            st.markdown(f"**{h4}**")
-                        
-                        if h5 and h5 != current_h5:
-                            current_h5 = h5
-                            current_h6 = None
-                            st.markdown(f"*{h5}*")
-                        
-                        if h6 and h6 != current_h6:
-                            current_h6 = h6
-                            st.markdown(f"- {h6}")
-                        
-                        # Display content (paragraphs only, not headers)
-                        if content and source_type == 'paragraph':
-                            st.text(content)
-                            st.markdown("---")
+                        st.markdown("---")
             
             sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
             
