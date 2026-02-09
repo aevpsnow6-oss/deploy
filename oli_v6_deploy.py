@@ -3238,6 +3238,76 @@ with tab2:
                 )
                 st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
             
+            # Display all extracted headers and content
+            extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura completa extraída del documento (todos los encabezados y contenido)", expanded=False):
+                    st.markdown("**Estructura jerárquica completa del documento extraído:**")
+                    
+                    # Group by header hierarchy
+                    current_h1 = None
+                    current_h2 = None
+                    current_h3 = None
+                    current_h4 = None
+                    current_h5 = None
+                    current_h6 = None
+                    
+                    for idx, row in extraction_df.iterrows():
+                        # Check for header changes at each level
+                        h1 = row.get('header_1', '') if pd.notna(row.get('header_1')) else ''
+                        h2 = row.get('header_2', '') if pd.notna(row.get('header_2')) else ''
+                        h3 = row.get('header_3', '') if pd.notna(row.get('header_3')) else ''
+                        h4 = row.get('header_4', '') if pd.notna(row.get('header_4')) else ''
+                        h5 = row.get('header_5', '') if pd.notna(row.get('header_5')) else ''
+                        h6 = row.get('header_6', '') if pd.notna(row.get('header_6')) else ''
+                        content = row.get('content', '') if pd.notna(row.get('content')) else ''
+                        source_type = row.get('source_type', '')
+                        
+                        # Display headers when they change
+                        if h1 and h1 != current_h1:
+                            current_h1 = h1
+                            current_h2 = None
+                            current_h3 = None
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"### {h1}")
+                        
+                        if h2 and h2 != current_h2:
+                            current_h2 = h2
+                            current_h3 = None
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"#### {h2}")
+                        
+                        if h3 and h3 != current_h3:
+                            current_h3 = h3
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"##### {h3}")
+                        
+                        if h4 and h4 != current_h4:
+                            current_h4 = h4
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"**{h4}**")
+                        
+                        if h5 and h5 != current_h5:
+                            current_h5 = h5
+                            current_h6 = None
+                            st.markdown(f"*{h5}*")
+                        
+                        if h6 and h6 != current_h6:
+                            current_h6 = h6
+                            st.markdown(f"- {h6}")
+                        
+                        # Display content (paragraphs only, not headers)
+                        if content and source_type == 'paragraph':
+                            st.text(content)
+                            st.markdown("---")
+            
             sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
             
             if not sections_df.empty:
@@ -4884,6 +4954,76 @@ with tab3:
                     key="download_extraction_tab3"
                 )
                 st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display all extracted headers and content
+            extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura completa extraída del documento (todos los encabezados y contenido)", expanded=False):
+                    st.markdown("**Estructura jerárquica completa del documento extraído:**")
+                    
+                    # Group by header hierarchy
+                    current_h1 = None
+                    current_h2 = None
+                    current_h3 = None
+                    current_h4 = None
+                    current_h5 = None
+                    current_h6 = None
+                    
+                    for idx, row in extraction_df.iterrows():
+                        # Check for header changes at each level
+                        h1 = row.get('header_1', '') if pd.notna(row.get('header_1')) else ''
+                        h2 = row.get('header_2', '') if pd.notna(row.get('header_2')) else ''
+                        h3 = row.get('header_3', '') if pd.notna(row.get('header_3')) else ''
+                        h4 = row.get('header_4', '') if pd.notna(row.get('header_4')) else ''
+                        h5 = row.get('header_5', '') if pd.notna(row.get('header_5')) else ''
+                        h6 = row.get('header_6', '') if pd.notna(row.get('header_6')) else ''
+                        content = row.get('content', '') if pd.notna(row.get('content')) else ''
+                        source_type = row.get('source_type', '')
+                        
+                        # Display headers when they change
+                        if h1 and h1 != current_h1:
+                            current_h1 = h1
+                            current_h2 = None
+                            current_h3 = None
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"### {h1}")
+                        
+                        if h2 and h2 != current_h2:
+                            current_h2 = h2
+                            current_h3 = None
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"#### {h2}")
+                        
+                        if h3 and h3 != current_h3:
+                            current_h3 = h3
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"##### {h3}")
+                        
+                        if h4 and h4 != current_h4:
+                            current_h4 = h4
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"**{h4}**")
+                        
+                        if h5 and h5 != current_h5:
+                            current_h5 = h5
+                            current_h6 = None
+                            st.markdown(f"*{h5}*")
+                        
+                        if h6 and h6 != current_h6:
+                            current_h6 = h6
+                            st.markdown(f"- {h6}")
+                        
+                        # Display content (paragraphs only, not headers)
+                        if content and source_type == 'paragraph':
+                            st.text(content)
+                            st.markdown("---")
             
             sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
             
@@ -7133,6 +7273,76 @@ with tab1:
                     key="download_extraction_tab1"
                 )
                 st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display all extracted headers and content
+            extraction_df = st.session_state.get('extraction_df_tab1', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura completa extraída del documento (todos los encabezados y contenido)", expanded=False):
+                    st.markdown("**Estructura jerárquica completa del documento extraído:**")
+                    
+                    # Group by header hierarchy
+                    current_h1 = None
+                    current_h2 = None
+                    current_h3 = None
+                    current_h4 = None
+                    current_h5 = None
+                    current_h6 = None
+                    
+                    for idx, row in extraction_df.iterrows():
+                        # Check for header changes at each level
+                        h1 = row.get('header_1', '') if pd.notna(row.get('header_1')) else ''
+                        h2 = row.get('header_2', '') if pd.notna(row.get('header_2')) else ''
+                        h3 = row.get('header_3', '') if pd.notna(row.get('header_3')) else ''
+                        h4 = row.get('header_4', '') if pd.notna(row.get('header_4')) else ''
+                        h5 = row.get('header_5', '') if pd.notna(row.get('header_5')) else ''
+                        h6 = row.get('header_6', '') if pd.notna(row.get('header_6')) else ''
+                        content = row.get('content', '') if pd.notna(row.get('content')) else ''
+                        source_type = row.get('source_type', '')
+                        
+                        # Display headers when they change
+                        if h1 and h1 != current_h1:
+                            current_h1 = h1
+                            current_h2 = None
+                            current_h3 = None
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"### {h1}")
+                        
+                        if h2 and h2 != current_h2:
+                            current_h2 = h2
+                            current_h3 = None
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"#### {h2}")
+                        
+                        if h3 and h3 != current_h3:
+                            current_h3 = h3
+                            current_h4 = None
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"##### {h3}")
+                        
+                        if h4 and h4 != current_h4:
+                            current_h4 = h4
+                            current_h5 = None
+                            current_h6 = None
+                            st.markdown(f"**{h4}**")
+                        
+                        if h5 and h5 != current_h5:
+                            current_h5 = h5
+                            current_h6 = None
+                            st.markdown(f"*{h5}*")
+                        
+                        if h6 and h6 != current_h6:
+                            current_h6 = h6
+                            st.markdown(f"- {h6}")
+                        
+                        # Display content (paragraphs only, not headers)
+                        if content and source_type == 'paragraph':
+                            st.text(content)
+                            st.markdown("---")
             
             sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
             
