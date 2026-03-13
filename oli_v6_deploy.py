@@ -2017,12 +2017,13 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
                                          "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
                                         #  "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción",
-                                         "Clasificación de Recomendaciones"])
+                                         "Clasificación de Recomendaciones",
+                                         "Recommendation Classification"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -9203,3 +9204,849 @@ with tab5:
                     pd.DataFrame({'Resumen': [st.session_state['summary_result']]}).to_excel(writer, index=False, sheet_name='Resumen')
                 
                 st.download_button("📥 Descargar Resumen + Datos (.xlsx)", out_summ.getvalue(), "resumen_ejecutivo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+with tab6:
+    st.header("Recommendation Classification")
+    st.info("""
+    **🌍 Intelligent Recommendation Classification**
+
+    This tool automatically classifies the recommendations contained in the `Recommendations_World.xlsx` file,
+    assigning them to the subdimensions defined in the `Frame_Recommendations_English.xlsx` framework.
+
+    **Optimizations:**
+    1.  **Pre-filtering:** Filter by region/country before processing to save costs and time.
+    2.  **Persistent Cache:** Embeddings are saved locally to avoid regenerating them in future runs.
+    3.  **Deduplication:** Identical texts are processed only once.
+
+    **How it works:**
+    1.  Loads recommendation data and the reference framework.
+    2.  Calculates semantic similarity (using OpenAI Embeddings) between each recommendation and subdimension definitions.
+    3.  Assigns the most relevant subdimension.
+    4.  Visualizes the distribution using interactive Treemaps.
+    """)
+
+    # Reuse EmbeddingsCache and load_world_data defined in tab5
+    if 'embeddings_cache_obj' not in st.session_state:
+        st.session_state['embeddings_cache_obj'] = EmbeddingsCache()
+
+    # --- Data Source Selection ---
+    st.markdown("### Data Source")
+    data_source_en = st.radio("Select recommendations source:",
+                          ["Default Files (World)", "Upload Custom File (.xlsx)"],
+                          horizontal=True,
+                          key="data_source_radio_en")
+
+    rec_df_world_en = None
+    frame_df_world_en = None
+
+    _, frame_default_en = load_world_data()
+    frame_df_world_en = frame_default_en
+
+    if data_source_en == "Default Files (World)":
+        rec_default_en, _ = load_world_data()
+        rec_df_world_en = rec_default_en
+
+        if rec_df_world_en is None:
+             st.warning("⚠️ Default file 'Recommendations_World.xlsx' not found.")
+
+    else:
+        uploaded_file_en = st.file_uploader("Upload your recommendations file (Excel):", type=["xlsx"], key="custom_rec_upload_en")
+        if uploaded_file_en:
+            try:
+                rec_df_world_en = pd.read_excel(uploaded_file_en)
+                if 'Recommendation description' not in rec_df_world_en.columns:
+                    st.error("❌ The file must contain a column named 'Recommendation description'.")
+                    rec_df_world_en = None
+                else:
+                    st.success(f"File loaded successfully: {len(rec_df_world_en)} rows.")
+            except Exception as e:
+                st.error(f"Error reading the file: {e}")
+        else:
+            st.info("Waiting for file...")
+
+    if rec_df_world_en is None or frame_df_world_en is None:
+        if frame_df_world_en is None:
+             st.warning("⚠️ File 'Frame_Recommendations_English.xlsx' not found. It is required for classification.")
+    else:
+
+        # --- DATA PREP: Extract Year ---
+        if 'Recommendation date' in rec_df_world_en.columns:
+            rec_df_world_en['Recommendation date'] = pd.to_datetime(rec_df_world_en['Recommendation date'], errors='coerce')
+            rec_df_world_en['Year'] = rec_df_world_en['Recommendation date'].dt.year
+
+        # --- Filters (PRE-PROCESSING) ---
+        st.markdown("### 1. Selection Filters")
+        st.caption("Select filters to define the data subset to classify. This optimizes processing time and cost.")
+
+        filters_en = {}
+
+        # --- Group 1: Location and Time ---
+        with st.expander("📍 Location and Time", expanded=True):
+            col_grp1_1_en, col_grp1_2_en = st.columns(2)
+
+            with col_grp1_1_en:
+                regions_en = sorted([str(x) for x in rec_df_world_en['Region(s)'].unique() if not pd.isna(x)]) if 'Region(s)' in rec_df_world_en.columns else []
+                filters_en['Region(s)'] = st.multiselect("Region(s):", options=regions_en, default=[], key="tab6en_region_filter")
+
+                if 'Recommendation administrative unit' in rec_df_world_en.columns:
+                    admin_units_en = sorted([str(x) for x in rec_df_world_en['Recommendation administrative unit'].unique() if not pd.isna(x)])
+                    filters_en['Recommendation administrative unit'] = st.multiselect("Administrative Unit:", options=admin_units_en, default=[], key="tab6en_admin_unit")
+
+            with col_grp1_2_en:
+                available_countries_df_en = rec_df_world_en.copy()
+                if filters_en['Region(s)']:
+                     if 'Region(s)' in available_countries_df_en.columns:
+                        available_countries_df_en = available_countries_df_en[available_countries_df_en['Region(s)'].isin(filters_en['Region(s)'])]
+
+                countries_en = sorted([str(x) for x in available_countries_df_en['Country(ies)'].unique() if not pd.isna(x)]) if 'Country(ies)' in available_countries_df_en.columns else []
+                filters_en['Country(ies)'] = st.multiselect("Country(ies):", options=countries_en, default=[], key="tab6en_country_filter")
+
+                if 'Year' in rec_df_world_en.columns:
+                    years_en = sorted([int(x) for x in rec_df_world_en['Year'].unique() if not pd.isna(x)])
+                    filters_en['Year'] = st.multiselect("Year:", options=years_en, default=[], key="tab6en_year_filter")
+
+        # --- Group 2: Theme and Technical ---
+        with st.expander("📚 Theme and Technical", expanded=False):
+            col_grp2_1_en, col_grp2_2_en = st.columns(2)
+
+            with col_grp2_1_en:
+                if 'Evaluation theme(s)' in rec_df_world_en.columns:
+                    themes_en = sorted([str(x) for x in rec_df_world_en['Evaluation theme(s)'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation theme(s)'] = st.multiselect("Evaluation Theme:", options=themes_en, default=[], key="tab6en_eval_theme")
+
+                if 'Recommendation theme' in rec_df_world_en.columns:
+                    rec_themes_en = sorted([str(x) for x in rec_df_world_en['Recommendation theme'].unique() if not pd.isna(x)])
+                    filters_en['Recommendation theme'] = st.multiselect("Recommendation Theme:", options=rec_themes_en, default=[], key="tab6en_rec_theme")
+
+                if 'Technical unit(s)' in rec_df_world_en.columns:
+                    tech_units_en = sorted([str(x) for x in rec_df_world_en['Technical unit(s)'].unique() if not pd.isna(x)])
+                    filters_en['Technical unit(s)'] = st.multiselect("Technical Unit:", options=tech_units_en, default=[], key="tab6en_tech_unit")
+
+            with col_grp2_2_en:
+                if 'Funding source(s)' in rec_df_world_en.columns:
+                    fundings_en = sorted([str(x) for x in rec_df_world_en['Funding source(s)'].unique() if not pd.isna(x)])
+                    filters_en['Funding source(s)'] = st.multiselect("Funding Source:", options=fundings_en, default=[], key="tab6en_funding")
+
+                if 'Evaluation nature' in rec_df_world_en.columns:
+                    natures_en = sorted([str(x) for x in rec_df_world_en['Evaluation nature'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation nature'] = st.multiselect("Evaluation Nature:", options=natures_en, default=[], key="tab6en_eval_nature")
+
+                if 'Evaluation type' in rec_df_world_en.columns:
+                    types_en = sorted([str(x) for x in rec_df_world_en['Evaluation type'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation type'] = st.multiselect("Evaluation Type:", options=types_en, default=[], key="tab6en_eval_type")
+
+        # --- Group 3: Management and Response ---
+        with st.expander("⚙️ Management and Response", expanded=False):
+             col_grp3_1_en, col_grp3_2_en = st.columns(2)
+
+             with col_grp3_1_en:
+                 if 'Evaluation timing' in rec_df_world_en.columns:
+                    timings_en = sorted([str(x) for x in rec_df_world_en['Evaluation timing'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation timing'] = st.multiselect("Evaluation Timing:", options=timings_en, default=[], key="tab6en_eval_timing")
+
+                 if 'Progress' in rec_df_world_en.columns:
+                    progresses_en = sorted([str(x) for x in rec_df_world_en['Progress'].unique() if not pd.isna(x)])
+                    filters_en['Progress'] = st.multiselect("Progress:", options=progresses_en, default=[], key="tab6en_progress")
+
+             with col_grp3_2_en:
+                 if 'Management response' in rec_df_world_en.columns:
+                     responses_en = sorted([str(x) for x in rec_df_world_en['Management response'].unique() if not pd.isna(x)])
+                     filters_en['Management response'] = st.multiselect("Management Response:", options=responses_en, default=[], key="tab6en_mgmt_response")
+
+                 if 'Evaluation document type' in rec_df_world_en.columns:
+                     doc_types_en = sorted([str(x) for x in rec_df_world_en['Evaluation document type'].unique() if not pd.isna(x)])
+                     filters_en['Evaluation document type'] = st.multiselect("Document Type:", options=doc_types_en, default=[], key="tab6en_doc_type")
+
+        # Apply ALL filters
+        start_count_en = len(rec_df_world_en)
+        filtered_rec_df_en = rec_df_world_en.copy()
+
+        for col_name_en, selected_values_en in filters_en.items():
+            if selected_values_en and col_name_en in filtered_rec_df_en.columns:
+                filtered_rec_df_en = filtered_rec_df_en[filtered_rec_df_en[col_name_en].isin(selected_values_en)]
+
+        end_count_en = len(filtered_rec_df_en)
+
+        st.markdown(f"**Selected records:** {end_count_en} of {start_count_en}")
+
+        # --- Classification Logic ---
+
+        if 'classified_world_df_en' not in st.session_state:
+            st.session_state['classified_world_df_en'] = None
+
+        def classify_recommendations_en(target_df, reference_df, cache_obj, use_llm_verification=False):
+            """
+            Classifies recommendations in target_df based on similarity to texts in reference_df.
+            Uses persistent cache and deduplication.
+            """
+
+            progress_bar = st.progress(0, text="Starting process...")
+
+            # 1. Embed Reference Frame
+            ref_embeddings = []
+            ref_metadata = []
+
+            if 'texto_merged' not in reference_df.columns:
+                st.error("The Frame file must have the column 'texto_merged'.")
+                return None
+
+            for idx, row in reference_df.iterrows():
+                text = str(row['texto_merged'])
+
+                emb = cache_obj.get(text)
+                if emb is None:
+                    emb = get_embedding_with_retry(text)
+                    if emb is not None:
+                        cache_obj.set(text, emb)
+
+                if emb is not None:
+                    ref_embeddings.append(emb)
+                    ref_metadata.append({
+                        'dimension': row.get('dimension', 'Unknown'),
+                        'subdim': row.get('subdim', 'Unknown'),
+                        'texto_merged': text
+                    })
+
+                progress_val = 0.1 * (idx + 1) / len(reference_df)
+                progress_bar.progress(progress_val, text=f"Processing reference framework {idx+1}/{len(reference_df)}")
+
+            cache_obj.save()
+
+            if not ref_embeddings:
+                st.error("Could not generate embeddings for the reference framework.")
+                return None
+
+            ref_embeddings = np.array(ref_embeddings)
+
+            ref_norms = np.linalg.norm(ref_embeddings, axis=1, keepdims=True)
+            ref_embeddings_norm = ref_embeddings / (ref_norms + 1e-10)
+
+            # 2. Embed Unique Recommendations (Deduplication)
+            start_time = time.time()
+            total_recs = len(target_df)
+
+            unique_texts = target_df['Recommendation description'].dropna().unique()
+            unique_embeddings = {}
+
+            new_embeddings_count = 0
+
+            BATCH_SIZE = 20
+            for i in range(0, len(unique_texts), BATCH_SIZE):
+                batch_texts = unique_texts[i:i+BATCH_SIZE]
+                for text in batch_texts:
+                    text_str = str(text)
+                    emb = cache_obj.get(text_str)
+                    if emb is None:
+                        emb = get_embedding_with_retry(text_str)
+                        if emb is not None:
+                            cache_obj.set(text_str, emb)
+                            new_embeddings_count += 1
+
+                    if emb is not None:
+                        unique_embeddings[text_str] = emb
+
+                progress_pct = 0.1 + (0.4 * (i + len(batch_texts)) / len(unique_texts))
+                progress_bar.progress(progress_pct, text=f"Generating unique embeddings: {min(i+len(batch_texts), len(unique_texts))}/{len(unique_texts)}")
+
+                if new_embeddings_count > 50:
+                    cache_obj.save()
+                    new_embeddings_count = 0
+
+            cache_obj.save()
+
+        # 3. Classify Rows (Match) - Top 3
+            classified_rows = []
+
+            progress_bar.progress(0.5, text="Assigning classifications (Top 3) " + ("and verifying with LLM..." if use_llm_verification else "..."))
+
+            for i, (idx, row) in enumerate(target_df.iterrows()):
+                rec_text = str(row.get('Recommendation description', ''))
+
+                vals = {
+                    'assigned_dimension': 'Unclassified',
+                    'assigned_subdim': 'Unclassified',
+                    'matched_frame_text': '',
+                    'similarity_score': 0.0,
+                    'Otras dimensiones': '',
+                    'Otras subdimensiones': ''
+                }
+
+                if rec_text in unique_embeddings:
+                    rec_emb = unique_embeddings[rec_text]
+
+                    rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
+                    similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
+
+                    if use_llm_verification:
+                        top_n_candidates = 10
+                    else:
+                        top_n_candidates = 3
+
+                    top_k_indices = np.argsort(similarities)[-top_n_candidates:][::-1]
+
+                    best_idx = top_k_indices[0]
+
+                    if use_llm_verification:
+                        candidates = []
+                        for k in top_k_indices:
+                             candidates.append(ref_metadata[k])
+
+                        verified_idx = verify_match_with_llm(rec_text, candidates, openai_api_key)
+
+                        if verified_idx >= 0 and verified_idx < len(top_k_indices):
+                            best_idx = top_k_indices[verified_idx]
+
+                    best_match = ref_metadata[best_idx]
+
+                    vals['assigned_dimension'] = best_match['dimension']
+                    vals['assigned_subdim'] = best_match['subdim']
+                    vals['matched_frame_text'] = best_match['texto_merged']
+                    vals['similarity_score'] = similarities[best_idx]
+
+                    secondary_dims = []
+                    secondary_subdims = []
+
+                    similarity_threshold = 0.60
+
+                    for k_idx in top_k_indices:
+                        if k_idx == best_idx: continue
+
+                        if similarities[k_idx] >= similarity_threshold:
+                            match_k = ref_metadata[k_idx]
+                            secondary_dims.append(match_k['dimension'])
+                            secondary_subdims.append(match_k['subdim'])
+
+                    vals['Otras dimensiones'] = "; ".join(secondary_dims)
+                    vals['Otras subdimensiones'] = "; ".join(secondary_subdims)
+
+                row_dict = row.to_dict()
+                row_dict.update(vals)
+                classified_rows.append(row_dict)
+
+                if i % 10 == 0:
+                     progress_bar.progress(0.5 + (0.5 * (i + 1) / total_recs), text=f"Classifying records {i+1}/{total_recs}")
+
+            progress_bar.empty()
+            return pd.DataFrame(classified_rows)
+
+        # Button to run classification
+        st.markdown("### 2. Execution")
+
+        use_llm_chk_en = st.checkbox("✅ Use LLM Verification (High Precision, Slower)", value=False, help="If enabled, the system will use AI to read definitions and correct classification (e.g. distinguish financial 'Pensions' from policy 'Pensions').", key="tab6en_llm_chk")
+
+        if start_count_en == 0:
+            st.warning("The recommendations file is empty.")
+        elif end_count_en == 0:
+             st.warning("No records match the selected filters. Adjust the filters.")
+        else:
+            if st.button("🚀 Start Classification", key="start_classification_tab6en"):
+                with st.spinner("Running optimized classification..."):
+                    classified_df_en = classify_recommendations_en(filtered_rec_df_en, frame_df_world_en, st.session_state['embeddings_cache_obj'], use_llm_verification=use_llm_chk_en)
+                    if classified_df_en is not None and not classified_df_en.empty:
+                        st.session_state['classified_world_df_en'] = classified_df_en
+                        st.success(f"Classification complete! {len(classified_df_en)} recommendations processed.")
+                    else:
+                        st.error("There was a problem during classification.")
+
+        # --- Visualization ---
+        df_viz_en = st.session_state['classified_world_df_en']
+
+        if df_viz_en is not None:
+            st.markdown("---")
+            st.subheader("📊 Results Visualization")
+
+            # --- Visual Filters (Post-Classification) ---
+            st.markdown("### 🔎 Visual Filters")
+            st.warning("These filters only affect the charts and tables below, without re-running the classification.")
+
+            df_filtered_viz_en = df_viz_en.copy()
+
+            # 1. Year Slider (Range)
+            if 'Year' in df_viz_en.columns:
+                 valid_years_en = sorted([int(x) for x in df_viz_en['Year'].unique() if pd.notna(x) and x > 1900])
+                 if valid_years_en:
+                     min_year_en, max_year_en = min(valid_years_en), max(valid_years_en)
+                     year_range_en = st.slider(
+                         "Year Range:",
+                         min_value=min_year_en,
+                         max_value=max_year_en,
+                         value=(min_year_en, max_year_en),
+                         key="viz_year_slider_en"
+                     )
+                     df_filtered_viz_en = df_filtered_viz_en[
+                         (df_filtered_viz_en['Year'] >= year_range_en[0]) &
+                         (df_filtered_viz_en['Year'] <= year_range_en[1])
+                     ]
+
+            # 2. Metadata Filters (multiselects) - Grouped
+            with st.expander("More Visual Filters (Metadata)", expanded=False):
+                col_vf1_en, col_vf2_en, col_vf3_en = st.columns(3)
+
+                with col_vf1_en:
+                    if 'Recommendation administrative unit' in df_filtered_viz_en.columns:
+                         opts = sorted([str(x) for x in df_viz_en['Recommendation administrative unit'].unique() if pd.notna(x)])
+                         sel_admin_en = st.multiselect("Admin Unit:", options=opts, key="viz_admin_unit_en")
+                         if sel_admin_en:
+                             df_filtered_viz_en = df_filtered_viz_en[df_filtered_viz_en['Recommendation administrative unit'].isin(sel_admin_en)]
+
+                with col_vf2_en:
+                    if 'Country(ies)' in df_filtered_viz_en.columns:
+                         opts = sorted([str(x) for x in df_viz_en['Country(ies)'].unique() if pd.notna(x)])
+                         sel_country_en = st.multiselect("Country:", options=opts, key="viz_country_en")
+                         if sel_country_en:
+                             df_filtered_viz_en = df_filtered_viz_en[df_filtered_viz_en['Country(ies)'].isin(sel_country_en)]
+
+                with col_vf3_en:
+                    opts = sorted([str(x) for x in df_viz_en['assigned_dimension'].unique() if pd.notna(x)])
+                    sel_dim_global_en = st.multiselect("Dimension:", options=opts, key="viz_dim_global_en")
+                    if sel_dim_global_en:
+                         df_filtered_viz_en = df_filtered_viz_en[df_filtered_viz_en['assigned_dimension'].isin(sel_dim_global_en)]
+
+            # Count Unique Recommendations
+            id_col_en = 'Recommendation ID' if 'Recommendation ID' in df_filtered_viz_en.columns else 'Recommendation description'
+            unique_count_en = df_filtered_viz_en[id_col_en].nunique()
+
+            st.markdown(f"**Displayed records:** {len(df_filtered_viz_en)} | **Unique Recommendations:** {unique_count_en}")
+            st.warning("⚠️ Note: The number of records may be higher than the number of unique recommendations because some recommendations have multiple attributes (e.g. multiple themes), generating duplicate rows in the original file.")
+
+            st.markdown("---")
+
+            df_viz_dedup_en = df_filtered_viz_en.drop_duplicates(subset=[id_col_en]).copy()
+
+            # --- Treemap 1: Dimension ---
+            available_dims_en = sorted(df_filtered_viz_en['assigned_dimension'].unique())
+
+            manual_dim_en = st.selectbox(
+                "Filter Subdimension by Dimension (Treemaps):",
+                options=["All"] + available_dims_en,
+                index=0,
+                key="manual_dim_filter_top_en"
+            )
+
+            selected_dim_label_en = None
+            if manual_dim_en != "All":
+                selected_dim_label_en = manual_dim_en
+
+            # --- Treemap 1: Dimension ---
+            st.markdown("#### By Dimension")
+            st.caption("Select a dimension in the chart to see details (optional).")
+
+            dim_counts_en = df_viz_dedup_en['assigned_dimension'].value_counts().reset_index()
+            dim_counts_en.columns = ['dimension', 'count']
+
+            fig_dim_en = px.treemap(
+                dim_counts_en,
+                path=['dimension'],
+                values='count',
+                title='Unique Recommendations by Dimension',
+                color='dimension'
+            )
+            fig_dim_en.update_traces(textinfo="label+value", textfont_size=20)
+
+            selection_dim_en = st.plotly_chart(fig_dim_en, on_select="rerun", key="treemap_dim_select_en", use_container_width=True)
+
+            if isinstance(selection_dim_en, dict) and "selection" in selection_dim_en and "points" in selection_dim_en["selection"]:
+                 points_en = selection_dim_en["selection"]["points"]
+                 if points_en:
+                     pt_en = points_en[0]
+                     clicked_label_en = pt_en.get('label') or pt_en.get('x') or pt_en.get('id')
+                     if clicked_label_en and clicked_label_en in available_dims_en and manual_dim_en == "All":
+                         selected_dim_label_en = clicked_label_en
+                         st.info(f"Filter applied by chart selection: {selected_dim_label_en}")
+
+            # --- Treemap 2: Subdim ---
+            st.markdown("#### By Subdimension")
+
+            df_sub_en = df_viz_dedup_en.copy()
+            title_suffix_en = ""
+
+            if selected_dim_label_en:
+                if selected_dim_label_en in df_sub_en['assigned_dimension'].unique():
+                    df_sub_en = df_sub_en[df_sub_en['assigned_dimension'] == selected_dim_label_en]
+                    title_suffix_en = f" ({selected_dim_label_en})"
+
+            if not df_sub_en.empty:
+                subdim_counts_en = df_sub_en['assigned_subdim'].value_counts().reset_index()
+                subdim_counts_en.columns = ['subdim', 'count']
+
+                fig_sub_en = px.treemap(
+                    subdim_counts_en,
+                    path=['subdim'],
+                    values='count',
+                    title=f'Unique Recommendations by Subdimension{title_suffix_en}',
+                    color='subdim'
+                )
+                fig_sub_en.update_traces(textinfo="label+value", textfont_size=20)
+                st.plotly_chart(fig_sub_en, use_container_width=True)
+            else:
+                st.info("No data to display.")
+
+            st.markdown("---")
+
+            # --- Evolution Plots ---
+            st.subheader("📈 Temporal Evolution")
+
+            evo_toggle_en = st.radio("Chart Type:", ["Absolute", "Percentage (100%)"], horizontal=True, key="evo_chart_type_en")
+            is_percent_en = (evo_toggle_en == "Percentage (100%)")
+
+            def plot_evolution_en(df_in, cat_col, title_prefix):
+                if 'Year' not in df_in.columns or df_in.empty:
+                    st.info("No Year data to show evolution.")
+                    return
+
+                df_clean = df_in[df_in['Year'] > 1900].copy()
+                if df_clean.empty:
+                     st.info("No valid year data.")
+                     return
+
+                unique_vals = df_clean[cat_col].nunique()
+                if unique_vals > 20:
+                     st.warning(f"Too many unique values ({unique_vals}) in {cat_col}. Showing Top 20.")
+                     top_20 = df_clean[cat_col].value_counts().nlargest(20).index
+                     df_clean = df_clean[df_clean[cat_col].isin(top_20)]
+
+                df_grouped = df_clean.groupby(['Year', cat_col]).size().reset_index(name='count')
+
+                t_suffix = " (%)" if is_percent_en else ""
+
+                fig = px.bar(
+                    df_grouped,
+                    x="Year",
+                    y="count",
+                    color=cat_col,
+                    title=f"Evolution of {title_prefix}{t_suffix}",
+                    barmode='relative',
+                )
+
+                if is_percent_en:
+                     fig.update_layout(barnorm='percent')
+
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Define the tabs - Expanded List
+            tab_labels_en = [
+                "By Country", "By Admin Unit", "By Dimension", "By Subdimension",
+                "Mgmt. Response", "Eval. Theme", "Rec. Theme", "Technical Unit",
+                "Funding Source", "Nature", "Eval. Type", "Timing", "Progress", "Doc. Type"
+            ]
+
+            tabs_en = st.tabs(tab_labels_en)
+
+            # 0. By Country
+            with tabs_en[0]:
+                 if 'Country(ies)' in df_viz_dedup_en.columns:
+                     plot_evolution_en(df_viz_dedup_en, 'Country(ies)', "Country")
+                 else:
+                     st.info("Column 'Country(ies)' not available.")
+
+            # 1. By Admin Unit
+            with tabs_en[1]:
+                 if 'Recommendation administrative unit' in df_viz_dedup_en.columns:
+                     plot_evolution_en(df_viz_dedup_en, 'Recommendation administrative unit', "Administrative Unit")
+                 else:
+                     st.info("Column 'Recommendation administrative unit' not available.")
+
+            # 2. By Dimension
+            with tabs_en[2]:
+                 plot_evolution_en(df_viz_dedup_en, 'assigned_dimension', "Dimension")
+
+            # 3. By Subdimension
+            with tabs_en[3]:
+                 plot_evolution_en(df_viz_dedup_en, 'assigned_subdim', "Subdimension")
+
+            # 4. Management Response
+            with tabs_en[4]:
+                if 'Management response' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Management response', "Management Response")
+                else:
+                    st.info("Column 'Management response' not available.")
+
+            # 5. Evaluation Theme - MULTI VALUE (Keep duplicates to show frequency)
+            with tabs_en[5]:
+                if 'Evaluation theme(s)' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Evaluation theme(s)', "Evaluation Theme")
+                else:
+                    st.info("Column 'Evaluation theme(s)' not available.")
+
+            # 6. Recommendation Theme - MULTI VALUE (Keep duplicates)
+            with tabs_en[6]:
+                if 'Recommendation theme' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Recommendation theme', "Recommendation Theme")
+                else:
+                    st.info("Column 'Recommendation theme' not available.")
+
+            # 7. Technical Unit - MULTI VALUE
+            with tabs_en[7]:
+                if 'Technical unit(s)' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Technical unit(s)', "Technical Unit")
+                else:
+                    st.info("Column 'Technical unit(s)' not available.")
+
+            # 8. Funding Source - MULTI VALUE
+            with tabs_en[8]:
+                if 'Funding source(s)' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Funding source(s)', "Funding Source")
+                else:
+                    st.info("Column 'Funding source(s)' not available.")
+
+            # 9. Evaluation Nature
+            with tabs_en[9]:
+                if 'Evaluation nature' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation nature', "Evaluation Nature")
+                else:
+                    st.info("Column 'Evaluation nature' not available.")
+
+            # 10. Evaluation Type
+            with tabs_en[10]:
+                if 'Evaluation type' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation type', "Evaluation Type")
+                else:
+                    st.info("Column 'Evaluation type' not available.")
+
+            # 11. Evaluation Timing
+            with tabs_en[11]:
+                if 'Evaluation timing' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation timing', "Evaluation Timing")
+                else:
+                    st.info("Column 'Evaluation timing' not available.")
+
+            # 12. Progress
+            with tabs_en[12]:
+                if 'Progress' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Progress', "Progress")
+                else:
+                    st.info("Column 'Progress' not available.")
+
+            # 13. Document Type
+            with tabs_en[13]:
+                if 'Evaluation document type' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation document type', "Document Type")
+                else:
+                    st.info("Column 'Evaluation document type' not available.")
+
+            # --- SECTION 3: ADVANCED AI TOOLS ---
+            st.markdown("---")
+            st.subheader("🤖 3. Advanced AI Tools")
+            st.info("Use Artificial Intelligence tools to deeply analyze or summarize the filtered recommendations.")
+
+            # --- Shared Filters for AI Tools ---
+            st.markdown("##### 1. Define Subset for Analysis")
+
+            df_ai_base_en = df_filtered_viz_en.copy()
+            ai_filters_en = {}
+
+            with st.expander("🔎 Global Filters for AI Analysis", expanded=True):
+                 c_ai1_en, c_ai2_en = st.columns(2)
+
+                 with c_ai1_en:
+                      if 'Region(s)' in df_viz_en.columns:
+                          opts = sorted([str(x) for x in df_viz_en['Region(s)'].unique() if pd.notna(x)])
+                          ai_filters_en['Region(s)'] = st.multiselect("Region:", opts, key="ai_region_en")
+
+                      if 'Country(ies)' in df_viz_en.columns:
+                           opts = sorted([str(x) for x in df_viz_en['Country(ies)'].unique() if pd.notna(x)])
+                           ai_filters_en['Country(ies)'] = st.multiselect("Country:", opts, key="ai_country_en")
+
+                      if 'Evaluation theme(s)' in df_viz_en.columns:
+                           opts = sorted([str(x) for x in df_viz_en['Evaluation theme(s)'].unique() if pd.notna(x)])
+                           ai_filters_en['Evaluation theme(s)'] = st.multiselect("Eval. Theme:", opts, key="ai_eval_theme_en")
+
+                 with c_ai2_en:
+                      if 'Year' in df_viz_en.columns:
+                          opts = sorted([int(x) for x in df_viz_en['Year'].unique() if pd.notna(x)])
+                          ai_filters_en['Year'] = st.multiselect("Year:", opts, key="ai_year_en")
+
+                      if 'Management response' in df_viz_en.columns:
+                          opts = sorted([str(x) for x in df_viz_en['Management response'].unique() if pd.notna(x)])
+                          ai_filters_en['Management response'] = st.multiselect("Mgmt. Response:", opts, key="ai_mgmt_en")
+
+                      if 'assigned_dimension' in df_viz_en.columns:
+                          opts = sorted([str(x) for x in df_viz_en['assigned_dimension'].unique() if pd.notna(x)])
+                          ai_filters_en['assigned_dimension'] = st.multiselect("Dimension:", opts, key="ai_dim_en")
+
+            # Apply Filters
+            for col_ai, vals_ai in ai_filters_en.items():
+                if vals_ai and col_ai in df_ai_base_en.columns:
+                    df_ai_base_en = df_ai_base_en[df_ai_base_en[col_ai].isin(vals_ai)]
+
+            st.write(f"**Total Filtered Records:** {len(df_ai_base_en)}")
+
+            st.markdown("---")
+
+            # --- Dual Action Buttons ---
+            col_deep_en, col_summ_en = st.columns(2)
+
+            # --- LEFT: Deep Analysis ---
+            with col_deep_en:
+                st.markdown("#### 🧠 Deep Analysis")
+                st.caption("Evaluates coherence, quality and innovation of action plans.")
+
+                df_deep_ready_en = df_ai_base_en.copy()
+                if 'Action plan' in df_deep_ready_en.columns:
+                    df_deep_ready_en = df_deep_ready_en[df_deep_ready_en['Action plan'].notna() & (df_deep_ready_en['Action plan'].astype(str).str.strip() != "")]
+                valid_deep_count_en = len(df_deep_ready_en)
+
+                st.metric("Valid (with Plan)", valid_deep_count_en)
+
+                with st.expander("Configuration"):
+                    deep_model_en = st.selectbox("Model:", ["gpt-4o-mini", "gpt-4o"], index=0, key="deep_model_sel_en")
+                    limit_rows_deep_en = st.number_input("Limit (0=All):", min_value=0, value=0, step=10, key="deep_limit_en")
+
+                if st.button("🚀 Start Analysis", key="btn_run_deep_en"):
+                     if df_deep_ready_en.empty:
+                         st.warning("No valid data.")
+                     else:
+                         id_col_deep_en = 'Recommendation ID' if 'Recommendation ID' in df_deep_ready_en.columns else 'Recommendation description'
+                         df_deep_input_en = df_deep_ready_en.drop_duplicates(subset=[id_col_deep_en]).copy()
+                         if limit_rows_deep_en > 0:
+                             df_deep_input_en = df_deep_input_en.head(limit_rows_deep_en)
+
+                         st.info(f"Processing all {len(df_deep_input_en)} recommendations..." if limit_rows_deep_en == 0 else f"Processing {len(df_deep_input_en)} recommendations...")
+
+                         analysis_cache_en = AnalysisCache()
+                         args_list_en = []
+                         for idx, row in df_deep_input_en.iterrows():
+                             rec = str(row.get('Recommendation description', ''))
+                             plan = str(row.get('Action plan', ''))
+                             comments = str(row.get('Comments', '')) if 'Comments' in row else ""
+                             args_list_en.append((idx, rec, plan, comments, openai_api_key, analysis_cache_en))
+
+                         results_map_en = {}
+                         pbar_deep_en = st.progress(0, text="Analyzing...")
+                         completed_count_en = 0
+
+                         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                             futures_en = [executor.submit(run_row_analysis, arg) for arg in args_list_en]
+                             for future in concurrent.futures.as_completed(futures_en):
+                                 idx, result, _ = future.result()
+                                 if result:
+                                    results_map_en[idx] = result
+                                 completed_count_en += 1
+                                 pbar_deep_en.progress(completed_count_en / len(args_list_en), text=f"Analyzing... {completed_count_en}/{len(args_list_en)}")
+
+                         pbar_deep_en.empty()
+                         analysis_cache_en.save()
+
+                         analysis_list_en = []
+                         for idx, res in results_map_en.items():
+                             res['original_index'] = idx
+                             analysis_list_en.append(res)
+
+                         if analysis_list_en:
+                             df_res_en = pd.DataFrame(analysis_list_en)
+                             df_res_en.set_index('original_index', inplace=True)
+                             df_final_deep_en = df_deep_input_en.join(df_res_en)
+
+                             list_cols_en = ['extracted_actions_from_rec', 'actions_proposed_in_plan', 'rejection_difficulty_classification', 'tags', 'rec_additional_tags']
+                             for col in list_cols_en:
+                                 if col in df_final_deep_en.columns:
+                                     df_final_deep_en[col] = df_final_deep_en[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
+
+                             st.session_state['deep_analysis_df_en'] = df_final_deep_en
+                             st.success("Analysis complete!")
+
+            # --- RIGHT: Summary Generation ---
+            with col_summ_en:
+                st.markdown("#### ✨ Executive Summary")
+                st.caption("Generates a narrative synthesis of findings.")
+
+                st.metric("Total to Summarize", len(df_ai_base_en))
+
+                with st.expander("Configuration"):
+                    max_tokens_val_en = st.slider("Length (Tokens):", 500, 4000, 3000, 100, key="summ_len_en")
+
+                if st.button("📝 Generate Global Summary", key="btn_run_summ_en"):
+                    if df_ai_base_en.empty:
+                        st.warning("No data.")
+                    else:
+                        with st.spinner("Generating summary..."):
+                            id_col_summ_en = 'Recommendation ID' if 'Recommendation ID' in df_ai_base_en.columns else 'Recommendation description'
+                            df_summ_unique_en = df_ai_base_en.drop_duplicates(subset=[id_col_summ_en])
+
+                            text_list_en = []
+                            for idx, row in df_summ_unique_en.iterrows():
+                                 desc = str(row.get('Recommendation description', ''))
+                                 mgmt = str(row.get('Management response', '')) if 'Management response' in row else "N/A"
+                                 comments = str(row.get('Comments', '')) if 'Comments' in row else "N/A"
+                                 action = str(row.get('Action plan', '')) if 'Action plan' in row else "N/A"
+                                 text_list_en.append(f"--- Rec ---\nDesc: {desc}\nResp: {mgmt}\nCom: {comments}\nPlan: {action}\n")
+
+                            full_text_en = "\n".join(text_list_en)
+                            summary_text_en = generate_executive_summary(full_text_en, max_output_tokens=max_tokens_val_en)
+                            st.session_state['summary_result_en'] = summary_text_en
+                            st.success("Summary generated!")
+
+            # --- Display Results Areas (Full Width) ---
+
+            # 1. Deep Analysis Results
+            if 'deep_analysis_df_en' in st.session_state:
+                st.markdown("---")
+                st.subheader("📊 Results: Deep Analysis")
+                df_final_deep_en = st.session_state['deep_analysis_df_en']
+
+                c_m1_en, c_m2_en = st.columns(2)
+                c_m1_en.metric("Avg. Coherence", f"{df_final_deep_en['coherence_score'].mean():.2f}")
+                c_m2_en.metric("Avg. Plan Quality", f"{df_final_deep_en['plan_quality_score'].mean():.2f}")
+
+                st.dataframe(df_final_deep_en[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'rejection_difficulty_classification', 'tags']], use_container_width=True)
+
+                # Export Deep
+                out_deep_en = BytesIO()
+                with pd.ExcelWriter(out_deep_en, engine='xlsxwriter') as writer:
+                    df_final_deep_en.to_excel(writer, index=False, sheet_name='Deep_Analysis')
+
+                st.download_button("📥 Download Analysis Report (.xlsx)", out_deep_en.getvalue(), "deep_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+                # Visualizations Deep
+                st.markdown("##### 📈 Key Metrics Distribution")
+
+                col_v1_en, col_v2_en = st.columns(2)
+
+                if 'coherence_score' in df_final_deep_en.columns:
+                    with col_v1_en:
+                        fig_d1_en = px.histogram(df_final_deep_en, x="coherence_score", nbins=10, title="Coherence Distribution", color_discrete_sequence=['#636EFA'])
+                        st.plotly_chart(fig_d1_en, use_container_width=True)
+
+                if 'plan_quality_score' in df_final_deep_en.columns:
+                     with col_v2_en:
+                        fig_d2_en = px.histogram(df_final_deep_en, x="plan_quality_score", nbins=10, title="Plan Quality Distribution", color_discrete_sequence=['#EF553B'])
+                        st.plotly_chart(fig_d2_en, use_container_width=True)
+
+                col_v3_en, col_v4_en = st.columns(2)
+
+                if 'attention_level_score' in df_final_deep_en.columns:
+                     with col_v3_en:
+                        fig_d3_en = px.histogram(df_final_deep_en, x="attention_level_score", nbins=10, title="Attention Level", color_discrete_sequence=['#00CC96'])
+                        st.plotly_chart(fig_d3_en, use_container_width=True)
+
+                if 'rec_innovation_score' in df_final_deep_en.columns:
+                     with col_v4_en:
+                         fig_pie_en = px.pie(df_final_deep_en, names='rec_innovation_score', title="Innovation Level", hole=0.3)
+                         st.plotly_chart(fig_pie_en, use_container_width=True)
+
+                st.markdown("##### 🚦 Feasibility and Impact")
+                col_v5_en, col_v6_en = st.columns(2)
+
+                if 'rec_operational_feasibility' in df_final_deep_en.columns:
+                    with col_v5_en:
+                        fig_feas_en = px.histogram(df_final_deep_en, x='rec_operational_feasibility', title="Operational Feasibility", color='rec_operational_feasibility')
+                        st.plotly_chart(fig_feas_en, use_container_width=True)
+
+                if 'rec_expected_impact' in df_final_deep_en.columns:
+                    with col_v6_en:
+                         fig_imp_en = px.histogram(df_final_deep_en, x='rec_expected_impact', title="Expected Impact", color='rec_expected_impact')
+                         st.plotly_chart(fig_imp_en, use_container_width=True)
+
+            # 2. Summary Results
+            if 'summary_result_en' in st.session_state:
+                st.markdown("---")
+                st.subheader("📄 Results: Executive Summary")
+                st.markdown(st.session_state['summary_result_en'])
+
+                # Export Summary
+                out_summ_en = BytesIO()
+                with pd.ExcelWriter(out_summ_en, engine='xlsxwriter') as writer:
+                    df_ai_base_en.to_excel(writer, index=False, sheet_name='Base Data')
+                    pd.DataFrame({'Summary': [st.session_state['summary_result_en']]}).to_excel(writer, index=False, sheet_name='Summary')
+
+                st.download_button("📥 Download Summary + Data (.xlsx)", out_summ_en.getvalue(), "executive_summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
