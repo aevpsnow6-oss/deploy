@@ -1,8 +1,8 @@
-# Documentación Técnica: Evolución de Análisis Individual a Análisis Jerárquico
-## De Versión Simple (V4) a Análisis Multinivel (V6)
+# Documentación Técnica: Evolución del Motor de Análisis
+## De Versión Simple (V4) a Pipeline de 6 Pasadas (V6.1)
 
-**Fecha:** Diciembre 2025  
-**Objetivo:** Transformación del sistema de análisis de preguntas individuales a un análisis jerárquico de tres niveles
+**Fecha:** Marzo 2026
+**Objetivo:** Transformación del sistema de análisis de preguntas individuales a un pipeline jerárquico de 6 pasadas con evaluación crítica en cada nivel
 
 ---
 
@@ -10,11 +10,11 @@
 
 1. [Resumen Ejecutivo](#resumen-ejecutivo)
 2. [Arquitectura V4: Sistema Original](#arquitectura-v4-sistema-original)
-3. [Arquitectura V6: Sistema Mejorado](#arquitectura-v6-sistema-mejorado)
+3. [Arquitectura V6: Pipeline de 6 Pasadas](#arquitectura-v6-pipeline-de-6-pasadas)
 4. [Flujo de Datos Comparativo](#flujo-de-datos-comparativo)
-5. [Cambios Funcionales](#cambios-funcionales)
-6. [Implementación de la Jerarquía](#implementación-de-la-jerarquía)
-7. [Optimizaciones y Eficiencia](#optimizaciones-y-eficiencia)
+5. [Detección de Preguntas de Dos Partes](#detección-de-preguntas-de-dos-partes)
+6. [Gestión de Contexto con tiktoken](#gestión-de-contexto-con-tiktoken)
+7. [Cambios Funcionales](#cambios-funcionales)
 8. [Salida de Datos](#salida-de-datos)
 9. [Consideraciones de Rendimiento](#consideraciones-de-rendimiento)
 
@@ -26,17 +26,20 @@
 - **Análisis por pregunta individual**
 - Una llamada LLM por pregunta
 - Salida Excel simple con columnas planas
-- No hay síntesis de respuestas relacionadas
+- No hay síntesis ni evaluación crítica
 
-### Versión 6 (Mejorada)
-- **Análisis jerárquico de tres niveles**
-  1. Preguntas individuales (análisis base)
-  2. Subsecciones (síntesis de preguntas similares)
-  3. Secciones (síntesis de subsecciones)
-- Tres capas de síntesis LLM
-- Salida Excel estructurada con celdas fusionadas
-- Síntesis agregada de respuestas relacionadas
-- Ordenamiento ascendente completo
+### Versión 6.1 (Actual)
+- **Pipeline de 6 pasadas** con evaluación crítica en paralelo y síntesis jerárquica
+  1. Pasada 1 — Análisis individual (paralelo, ThreadPoolExecutor MAX_WORKERS=48)
+  2. Pasada 2 — Evaluación crítica individual (paralelo, ThreadPoolExecutor MAX_WORKERS=48)
+  3. Pasada 3 — Síntesis por subsección (secuencial)
+  4. Pasada 4 — Evaluación crítica de subsección (secuencial)
+  5. Pasada 5 — Síntesis por sección (secuencial)
+  6. Pasada 6 — Evaluación crítica de sección (secuencial)
+- Gestión precisa de contexto mediante `tiktoken` (límite de 110,000 tokens)
+- Detección automática de preguntas de dos partes (`parse_two_part_question`)
+- Salida: ZIP con 3 hojas Excel + plantilla de rúbrica original
+- Tiempo estimado total: 3–10 minutos dependiendo del tamaño del documento
 
 ---
 
@@ -48,7 +51,7 @@
 PREGUNTA → ANÁLISIS INDIVIDUAL → RESULTADO
   ↓              ↓                  ↓
 1.1         LLM Call            {Respuesta: Yes,
-1.2         (1500 tokens)        Razonamiento: "..."}
+1.2         (1 pasada)           Razonamiento: "..."}
 2.1
 ...
 ```
@@ -56,222 +59,143 @@ PREGUNTA → ANÁLISIS INDIVIDUAL → RESULTADO
 ### Estructura de Datos V4
 
 ```python
-# DataFrame de salida
 resultado_pregunta = {
     'Pregunta': '1.1 ¿Está documentado...?',
     'Respuesta': 'Yes',
     'Razonamiento': 'Se encontró evidencia en págs. 5-8',
-    'Evidencia': '[documento_text]',
+    'Evidencia': '[texto_documento]',
     'Status': 'Success'
 }
 ```
 
 ### Características Clave V4
 
-1. **Análisis Atomizado**
-   - Cada pregunta se analiza de forma independiente
-   - No hay relación entre respuestas de preguntas relacionadas
+1. **Análisis Atomizado** — cada pregunta se analiza de forma independiente sin relación entre preguntas.
 
-2. **Llamadas LLM**
-   ```python
-   # Un LLM call por pregunta
-   response = client.chat.completions.create(
-       model="gpt-5-mini",
-       messages=[
-           {"role": "system", "content": "Eres un analista..."},
-           {"role": "user", "content": f"Pregunta: {question}..."}
-       ],
-       max_tokens=1500
-   )
-   ```
+2. **Una pasada LLM** — `analyze_question_with_llm()` genera un JSON con `Respuesta`, `Razonamiento` y `Evidencia`.
 
-3. **Salida Simple**
-   - Tabla Excel con columnas: Pregunta | Respuesta | Razonamiento | Evidencia | Status
-   - Sin estructura jerárquica
-   - Sin síntesis agregada
+3. **Limitación de contexto basada en caracteres** — el texto del documento se truncaba usando estimación de caracteres (aprox. 4 chars/token), sin control preciso.
 
-4. **Limitaciones**
-   - No captura patrones entre preguntas relacionadas (1.1, 1.2, 1.3)
-   - No hay contexto de subsección
-   - Análisis repetitivo de temas similares
-   - Difícil identificar tendencias por área
+4. **Salida Simple** — Tabla Excel con columnas: `Pregunta | Respuesta | Razonamiento | Evidencia | Status`, sin síntesis ni jerarquía.
+
+5. **Limitaciones**
+   - No captura patrones entre preguntas relacionadas
+   - No hay evaluación de la calidad del análisis
+   - Difícil identificar tendencias por área o sección
 
 ---
 
-## Arquitectura V6: Sistema Mejorado
+## Arquitectura V6: Pipeline de 6 Pasadas
 
-### Flujo de Procesamiento (Tres Niveles)
+### Diagrama del Pipeline Completo
 
 ```
 PREGUNTAS (1.1, 1.2, 1.3, ...)
      ↓
-NIVEL 1: ANÁLISIS INDIVIDUAL (Paralelo, ThreadPoolExecutor, MAX_WORKERS=48)
+═══════════════════════════════════════════════════════════
+PASADA 1: ANÁLISIS INDIVIDUAL (Paralelo — ThreadPoolExecutor, MAX_WORKERS=48)
+  analyze_question_with_llm_tab1(question, document_text)
+  → {Respuesta, Razonamiento, Evidencia} por cada pregunta
+═══════════════════════════════════════════════════════════
      ↓
-    {Pregunta: "1.1 ¿...", Respuesta: "Yes", Razonamiento: "..."}
+═══════════════════════════════════════════════════════════
+PASADA 2: EVALUACIÓN CRÍTICA INDIVIDUAL (Paralelo — ThreadPoolExecutor, MAX_WORKERS=48)
+  analyze_question_with_critical_opinion_tab1(question, answer, reasoning, evidence, doc_text)
+  → Evaluación crítica (texto libre, máx 150 palabras) por cada pregunta
+═══════════════════════════════════════════════════════════
      ↓
-AGRUPACIÓN POR SUBSECCIÓN (1.1, 1.2, 1.3, ...)
+ Agrupación por subsección (_subsection) y sección (_section_num)
+ Ordenamiento ascendente via parse_subsection_for_sorting()
      ↓
-NIVEL 2: SÍNTESIS POR SUBSECCIÓN (Secuencial, 1-2 párrafos)
+═══════════════════════════════════════════════════════════
+PASADA 3: SÍNTESIS POR SUBSECCIÓN (Secuencial)
+  synthesize_subsection_analysis(subsection_id, subsection_questions_df)
+  → Análisis sintetizado 1-2 párrafos por subsección
+═══════════════════════════════════════════════════════════
      ↓
-    {"1.1": "Análisis de subsección 1.1...", "1.2": "Análisis de subsección 1.2..."}
+═══════════════════════════════════════════════════════════
+PASADA 4: EVALUACIÓN CRÍTICA DE SUBSECCIÓN (Secuencial)
+  synthesize_critical_evaluation_subsection(subsection_id, critical_opinions_df)
+  → Evaluación crítica sintetizada 1-2 párrafos por subsección
+═══════════════════════════════════════════════════════════
      ↓
-AGRUPACIÓN POR SECCIÓN (1.*, 2.*, 3.*, ...)
+═══════════════════════════════════════════════════════════
+PASADA 5: SÍNTESIS POR SECCIÓN (Secuencial)
+  synthesize_section_analysis(section_num, subsection_analyses_dict)
+  → Análisis sintetizado 2-3 párrafos por sección
+═══════════════════════════════════════════════════════════
      ↓
-NIVEL 3: SÍNTESIS POR SECCIÓN (Secuencial, 2-3 párrafos)
+═══════════════════════════════════════════════════════════
+PASADA 6: EVALUACIÓN CRÍTICA DE SECCIÓN (Secuencial)
+  synthesize_critical_evaluation_section(section_num, critical_subsection_dict)
+  → Evaluación crítica sintetizada 2-3 párrafos por sección
+═══════════════════════════════════════════════════════════
      ↓
-    {1: "Análisis de sección 1...", 2: "Análisis de sección 2..."}
-     ↓
-SALIDA: Excel con tres niveles + Ordenamiento Ascendente
+SALIDA: ZIP con 3 hojas Excel + rúbrica original
+  create_results_download_with_sections()
+```
+
+### Configuración Central
+
+```python
+MAX_WORKERS = 48          # Pasadas 1 y 2 (paralelas)
+OPENAI_MODEL = "gpt-5-mini"  # Todas las pasadas LLM
+TOKEN_LIMIT = 110_000     # Ventana de contexto por llamada (tiktoken cl100k_base)
 ```
 
 ### Estructura de Datos V6
 
 ```python
-# Nivel 1: Análisis Individual (igual que V4)
+# Nivel pregunta (Pasadas 1 y 2)
 resultado_pregunta = {
     'Pregunta': '1.1 ¿Está documentado...?',
     '_section_num': 1,
     '_subsection': '1.1',
     '_sort_key': (1, 1),
     'Respuesta': 'Yes',
-    'Razonamiento': 'Se encontró evidencia en págs. 5-8',
-    'Evidencia': '[documento_text]',
+    'Razonamiento': 'Se identificaron 2 partes en esta pregunta. ...',
+    'Evidencia': '[citas directas del documento]',
+    'Evaluación Crítica': 'El análisis identifica correctamente las dos partes...',
     'Status': 'Success'
 }
 
-# Nivel 2: Síntesis por Subsección
+# Nivel subsección (Pasadas 3 y 4)
 subsection_analyses = {
-    '1.1': "En el análisis de la subsección 1.1, que comprende preguntas sobre documentación...",
-    '1.2': "Respecto a la subsección 1.2, los resultados muestran...",
-    '1.3': "La subsección 1.3 presenta indicadores..."
+    '1.1': "En el análisis de la subsección 1.1, que comprende...",
+    '1.2': "Respecto a la subsección 1.2, los resultados muestran..."
+}
+critical_subsection_analyses = {
+    '1.1': "La subsección 1.1 presenta brechas en la documentación de...",
+    '1.2': "La evaluación crítica revela que subsección 1.2..."
 }
 
-# Nivel 3: Síntesis por Sección
+# Nivel sección (Pasadas 5 y 6)
 section_analyses = {
     1: "La Sección 1 demuestra un nivel de cumplimiento...",
     2: "En cuanto a la Sección 2, se observa que..."
 }
+critical_section_analyses = {
+    1: "Críticamente, la Sección 1 presenta riesgos sistémicos en...",
+    2: "La evaluación estratégica de la Sección 2 indica..."
+}
 ```
-
-### Características Clave V6
-
-1. **Análisis Jerárquico**
-   - Tres niveles de procesamiento
-   - Cada nivel agrega valor a partir del anterior
-   - Contexto multinivel disponible durante síntesis
-
-2. **Funciones de Extracción Numérica**
-   ```python
-   def extract_section_number(question_text):
-       """Extrae número de sección: "1.1 ¿Está..." → 1"""
-       match = re.search(r'(\d+)\.', question_text)
-       return int(match.group(1)) if match else None
-   
-   def extract_subsection_number(question_text):
-       """Extrae ID de subsección: "1.1 ¿Está..." → "1.1" """
-       match = re.search(r'(\d+\.\d+)', question_text)
-       return match.group(1) if match else None
-   
-   def parse_subsection_for_sorting(subsection_str):
-       """Convierte "1.1" a (1, 1) para ordenamiento numérico correcto
-          Garantiza: "1.2" < "1.10" < "1.20" (no string sorting)"""
-       parts = subsection_str.split('.')
-       return tuple(int(p) for p in parts)
-   ```
-
-3. **Síntesis por Subsección**
-   ```python
-   def synthesize_subsection_analysis(subsection_id, subsection_questions_df):
-       """
-       Genera síntesis de subsección de 1-2 párrafos
-       
-       Entrada:
-       - subsection_id: "1.1"
-       - subsection_questions_df: DataFrame con respuestas de 1.1.1, 1.1.2, 1.1.3, etc.
-       
-       Proceso:
-       1. Recopila todas las respuestas (Respuesta, Razonamiento)
-       2. Construye prompt contextual que incluye todas las preguntas
-       3. LLM sintetiza patrones comunes, inconsistencias, tendencias
-       
-       Salida:
-       - Texto de análisis (1-2 párrafos, máx 1500 tokens)
-       """
-       prompt = f"""
-       Dadas las respuestas a las siguientes preguntas relacionadas de la subsección {subsection_id}:
-       
-       {subsection_questions_summary}
-       
-       Genera un análisis conciso (1-2 párrafos) que:
-       1. Resume los patrones observados
-       2. Identifica inconsistencias si las hay
-       3. Destaca áreas de fortaleza y debilidad
-       """
-       
-       response = client.chat.completions.create(
-           model="gpt-5-mini",
-           messages=[{"role": "user", "content": prompt}],
-           max_tokens=1500,
-           reasoning_effort="minimal"
-       )
-   ```
-
-4. **Síntesis por Sección (MODIFICADA en V6)**
-   ```python
-   def synthesize_section_analysis(section_num, subsection_analyses_dict):
-       """
-       CAMBIO CLAVE: Ahora usa análisis de subsecciones, NO respuestas individuales
-       
-       Entrada V4 (Original):
-       - section_num: 1
-       - section_questions_df: Todas las preguntas de la sección 1
-       - document_text: Texto completo del documento
-       
-       Entrada V6 (Mejorada):
-       - section_num: 1
-       - subsection_analyses_dict: {
-           "1.1": "Análisis de subsección 1.1...",
-           "1.2": "Análisis de subsección 1.2...",
-           "1.3": "Análisis de subsección 1.3..."
-         }
-       
-       Ventaja: Síntesis de síntesis proporciona panorama más completo
-       """
-       
-       prompt = f"""
-       Basado en los siguientes análisis de subsecciones:
-       
-       {subsection_analyses_summary}
-       
-       Genera un análisis ejecutivo de la Sección {section_num} (2-3 párrafos) que:
-       1. Integra hallazgos de todas las subsecciones
-       2. Identifica tendencias estratégicas
-       3. Proporciona recomendaciones de alto nivel
-       """
-   ```
 
 ---
 
 ## Flujo de Datos Comparativo
 
-### V4: Flujo Lineal Simple
+### V4: Flujo Lineal
 
 ```
 ┌─────────────────────────────┐
-│ Carga de Preguntas (APPRAISAL)
+│ Carga de Preguntas (rubrica) │
 └──────────────┬──────────────┘
                ↓
 ┌─────────────────────────────┐
-│ Análisis Paralelo Individual │ (ThreadPoolExecutor, 48 workers)
-│ - Pregunta 1.1: LLM Call 1  │
-│ - Pregunta 1.2: LLM Call 2  │
-│ - Pregunta 2.1: LLM Call 3  │
-│ ... (N-1) llamadas más      │
-└──────────────┬──────────────┘
-               ↓
-┌─────────────────────────────┐
-│ DataFrame de Resultados     │ (Sin procesamiento adicional)
-│ [Pregunta|Respuesta|Razon.] │
+│ Análisis Paralelo (1 pasada)│ (ThreadPoolExecutor, 48 workers)
+│ - Pregunta 1.1 → LLM Call  │
+│ - Pregunta 1.2 → LLM Call  │
+│ - Pregunta 2.1 → LLM Call  │
 └──────────────┬──────────────┘
                ↓
 ┌─────────────────────────────┐
@@ -279,301 +203,182 @@ section_analyses = {
 └─────────────────────────────┘
 ```
 
-### V6: Flujo Jerárquico de Síntesis
+### V6.1: Flujo de 6 Pasadas
 
 ```
-┌────────────────────────────────────┐
-│ Carga de Preguntas (APPRAISAL)     │
-└──────────────┬─────────────────────┘
+┌────────────────────────────────────────┐
+│ Carga de Preguntas + Documento         │
+│ truncate_to_token_limit(doc, 110000)   │  ← tiktoken cl100k_base
+└──────────────┬─────────────────────────┘
                ↓
-┌────────────────────────────────────┐
-│ NIVEL 1: Análisis Individual        │ (ThreadPoolExecutor, 48 workers)
-│ - Pregunta 1.1.1 ─→ {Respuesta...}│
-│ - Pregunta 1.1.2 ─→ {Respuesta...}│
-│ - Pregunta 1.2.1 ─→ {Respuesta...}│
-└──────────────┬─────────────────────┘
+┌────────────────────────────────────────┐
+│ PASADA 1: Análisis Individual          │  (Paralelo, 48 workers)
+│ analyze_question_with_llm_tab1()       │
+│ - Detecta preguntas de dos partes      │
+│ - Genera Respuesta/Razonamiento/Evidencia│
+└──────────────┬─────────────────────────┘
                ↓
-┌────────────────────────────────────┐
-│ Extracción + Agrupación            │
-│ results_df['_section_num'] = 1, 1, 1... │
-│ results_df['_subsection'] = "1.1", "1.1", "1.2"... │
-│ results_df['_sort_key'] = (1,1), (1,1), (1,2)...  │
-└──────────────┬─────────────────────┘
+┌────────────────────────────────────────┐
+│ PASADA 2: Evaluación Crítica           │  (Paralelo, 48 workers)
+│ analyze_question_with_critical_tab1()  │
+│ - Verifica tratamiento de 2 partes     │
+│ - Genera columna "Evaluación Crítica"  │
+└──────────────┬─────────────────────────┘
                ↓
-┌────────────────────────────────────┐
-│ NIVEL 2: Síntesis por Subsección   │ (Loop secuencial)
-│ "1.1" → Síntesis(1.1.1, 1.1.2, ...) │ (LLM Call N+1)
-│ "1.2" → Síntesis(1.2.1, 1.2.2, ...) │ (LLM Call N+2)
-│ "1.3" → Síntesis(1.3.1, 1.3.2, ...) │ (LLM Call N+3)
-│ "2.1" → Síntesis(2.1.1, 2.1.2, ...) │ (LLM Call N+4)
-│ Progress Bar: [████████████░░] 8/10  │
-└──────────────┬─────────────────────┘
+ Extracción + Agrupación + Ordenamiento
+ results_df['_section_num'], ['_subsection'], ['_sort_key']
                ↓
-┌────────────────────────────────────┐
-│ Dict: subsection_analyses          │
-│ {"1.1": "texto análisis...",       │
-│  "1.2": "texto análisis...",       │
-│  "1.3": "texto análisis...",       │
-│  "2.1": "texto análisis..."}       │
-└──────────────┬─────────────────────┘
+┌────────────────────────────────────────┐
+│ PASADA 3: Síntesis Subsección          │  (Secuencial)
+│ synthesize_subsection_analysis()       │
+│ - max_completion_tokens=1500           │
+│ - reasoning_effort="minimal"           │
+└──────────────┬─────────────────────────┘
                ↓
-┌────────────────────────────────────┐
-│ NIVEL 3: Síntesis por Sección      │ (Loop secuencial)
-│ Sección 1 → Síntesis({1.1, 1.2, 1.3})│ (LLM Call N+5)
-│ Sección 2 → Síntesis({2.1, 2.2})   │ (LLM Call N+6)
-│ Progress Bar: [██████░░░░] 2/3      │
-└──────────────┬─────────────────────┘
+┌────────────────────────────────────────┐
+│ PASADA 4: Crítica Subsección           │  (Secuencial)
+│ synthesize_critical_evaluation_subsec()│
+│ - max_completion_tokens=1500           │
+└──────────────┬─────────────────────────┘
                ↓
-┌────────────────────────────────────┐
-│ Session State (3 niveles)          │
-│ - tab1_results_df (preguntas)      │
-│ - tab1_subsection_analyses         │
-│ - tab1_section_analyses            │
-└──────────────┬─────────────────────┘
+┌────────────────────────────────────────┐
+│ PASADA 5: Síntesis Sección             │  (Secuencial)
+│ synthesize_section_analysis()          │
+│ - max_completion_tokens=2000           │
+└──────────────┬─────────────────────────┘
                ↓
-┌────────────────────────────────────┐
-│ Excel Jerárquico (2 hojas)         │
-│ 1. "Detallado": Preguntas ordenadas │
-│ 2. "Análisis por Sección":         │
-│    ├─ Sección 1 (header azul)     │
-│    ├─ Preguntas 1.1, 1.2, ...      │
-│    ├─ Análisis 1.1 (merged)        │
-│    ├─ Preguntas 1.3, 1.4, ...      │
-│    ├─ Análisis 1.3 (merged)        │
-│    └─ Análisis Sección 1 (merged)  │
-│    ├─ Sección 2 (header azul)     │
-│    └─ ...                          │
-└────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│ PASADA 6: Crítica Sección              │  (Secuencial)
+│ synthesize_critical_evaluation_sec()   │
+│ - max_completion_tokens=2000           │
+└──────────────┬─────────────────────────┘
+               ↓
+┌────────────────────────────────────────┐
+│ create_results_download_with_sections()│
+│ Salida ZIP con 3 hojas Excel           │
+│ + rúbrica original PRODOC_rubric.xlsx  │
+└────────────────────────────────────────┘
 ```
+
+---
+
+## Detección de Preguntas de Dos Partes
+
+**Función:** `parse_two_part_question()` — Líneas 6052–6105
+
+Muchas preguntas de la rúbrica contienen dos sub-preguntas implícitas. La función aplica dos patrones de detección en orden:
+
+**Patrón 1 — Palabras clave separadoras:**
+```
+"¿Se ha documentado el proceso? Específicamente, ¿se actualiza trimestralmente?"
+                                 ↑
+                           separador detectado
+```
+Palabras clave: `específicamente`, `en particular`, `en concreto`, `puntualmente`, `además`
+
+**Patrón 2 — Doble signo de interrogación:**
+```
+"¿Se ha documentado el proceso?¿Se audita anualmente?"
+                               ↑
+                         segundo ¿ detectado
+```
+
+**Resultado cuando se detecta una pregunta de dos partes:**
+
+```python
+{
+    'is_two_part': True,
+    'part1': '¿Se ha documentado el proceso?',   # Contexto general
+    'part2': '¿Se actualiza trimestralmente?',    # Foco específico (70% del peso)
+    'full_question': '...'
+}
+```
+
+El prompt del LLM en las Pasadas 1 y 2 cambia según este resultado:
+- **Pregunta simple:** prompt estándar con JSON `{Respuesta, Razonamiento, Evidencia}`
+- **Pregunta de dos partes:** prompt especializado que exige comenzar el razonamiento con `"Se identificaron 2 partes en esta pregunta."` y ponderar la Parte 2 al 70%
+
+En la Pasada 2 (evaluación crítica), se verifica explícitamente que el razonamiento reconozca las dos partes; no hacerlo se considera un fallo crítico.
+
+---
+
+## Gestión de Contexto con tiktoken
+
+**Función:** `truncate_to_token_limit()` — Líneas 54–86
+
+```python
+try:
+    import tiktoken
+    encoding = tiktoken.get_encoding("cl100k_base")
+except ImportError:
+    encoding = None  # fallback: estimación por caracteres
+
+def truncate_to_token_limit(text, max_tokens=110000, encoding_obj=None):
+    if encoding_obj is None:
+        # Fallback: 4 chars/token para español → 110K × 4 = 440K chars
+        return text[:max_tokens * 4]
+    tokens = encoding_obj.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    return encoding_obj.decode(tokens[:max_tokens])
+```
+
+El límite de 110,000 tokens reserva ~18,000 tokens de margen para el prompt del sistema y la respuesta dentro de la ventana de 128K del modelo GPT-5-mini.
+
+**Cambio respecto a V4:**
+
+| Aspecto | V4 | V6.1 |
+|---------|-----|------|
+| Método | Truncado por caracteres | Truncado por tokens (tiktoken) |
+| Límite | ~400K chars (estimación) | 110,000 tokens (preciso) |
+| Encoding | N/A | cl100k_base (GPT-4/GPT-5 estándar) |
+| Fallback | No | Sí (estimación por caracteres) |
 
 ---
 
 ## Cambios Funcionales
 
-### 1. Extracción de Números de Sección/Subsección
+### Funciones de Extracción y Ordenamiento (sin cambio respecto a V4 funcional)
 
 | Función | Entrada | Salida | Propósito |
 |---------|---------|--------|-----------|
-| `extract_section_number()` | "1.1 ¿Está..." | `1` | Identificar sección para agrupación |
-| `extract_subsection_number()` | "1.1 ¿Está..." | `"1.1"` | Identificar subsección exacta |
+| `extract_section_number()` | `"1.1 ¿Está..."` | `1` | Identificar sección |
+| `extract_subsection_number()` | `"1.1 ¿Está..."` | `"1.1"` | Identificar subsección |
 | `parse_subsection_for_sorting()` | `"1.1"` | `(1, 1)` | Ordenamiento numérico correcto |
 
-**Ejemplo de Ordenamiento:**
-```python
-# SIN parse_subsection_for_sorting (String sorting - INCORRECTO)
-subsections = ["1.2", "1.10", "1.20", "1.3"]
-sorted(subsections)  # ["1.10", "1.2", "1.20", "1.3"] ❌
+### Funciones de Análisis (versiones Tab1 especializadas, nuevas en V6)
 
-# CON parse_subsection_for_sorting (Numeric sorting - CORRECTO)
-subsections = ["1.2", "1.10", "1.20", "1.3"]
-sorted(subsections, key=parse_subsection_for_sorting)  # ["1.2", "1.3", "1.10", "1.20"] ✓
-```
+| Función | V4 | V6.1 |
+|---------|-----|------|
+| `analyze_question_with_llm_tab1()` | No existía | Pasada 1; detecta dos partes |
+| `analyze_question_with_critical_opinion_tab1()` | No existía | Pasada 2; verifica dos partes |
+| `synthesize_subsection_analysis()` | Existía | Sin cambio |
+| `synthesize_section_analysis()` | Existía | Sin cambio |
+| `synthesize_critical_evaluation_subsection()` | No existía | Pasada 4 |
+| `synthesize_critical_evaluation_section()` | No existía | Pasada 6 |
 
-### 2. Síntesis por Subsección (NUEVA FUNCIÓN)
+### Paralelización
 
-```python
-def synthesize_subsection_analysis(subsection_id, subsection_questions_df):
-    """
-    NUEVA EN V6
-    
-    Características:
-    - Input: DataFrame con Pregunta, Respuesta, Razonamiento
-    - Scope: 1-2 párrafos
-    - Token limit: 1500 máx
-    - Reasoning effort: "minimal" (económico)
-    
-    Prompts construidos dinámicamente:
-    1. Recopila respuestas (Yes/No/Partial/Not Found)
-    2. Agrupa por tema si es posible
-    3. Identifica patrones
-    4. Señala inconsistencias
-    
-    Ejemplo de output:
-    "La subsección 1.1 evalúa la documentación de procesos de gestión.
-     De las 5 preguntas analizadas, 3 responden afirmativamente (60%),
-     indicando que existe documentación pero con gaps en actualización.
-     Se recomienda revisar la fecha de última actualización de...
-    """
-    pass
-```
-
-### 3. Síntesis por Sección (MODIFICADA)
-
-**V4 (Original):**
-```python
-def synthesize_section_analysis(section_num, section_questions_df, document_text):
-    # Toma PREGUNTAS individuales como input
-    # Usa document_text para contexto adicional
-    # Genera análisis a partir de respuestas de bajo nivel
-    pass
-```
-
-**V6 (Mejorada):**
-```python
-def synthesize_section_analysis(section_num, subsection_analyses_dict):
-    # Toma ANÁLISIS DE SUBSECCIONES como input
-    # NO necesita document_text (ya está en subsección_analyses)
-    # Genera síntesis de síntesis
-    # Proporciona panorama ejecutivo de alto nivel
-    
-    # Ventajas:
-    # 1. Reutiliza trabajo ya realizado
-    # 2. Reduce tokens necesarios
-    # 3. Proporciona mejor contexto ejecutivo
-    # 4. Evita repetición de análisis
-    pass
-```
-
----
-
-## Implementación de la Jerarquía
-
-### Código: Grupo de Preguntas por Subsección
+Las Pasadas 1 y 2 se ejecutan en paralelo con dos `ThreadPoolExecutor` independientes:
 
 ```python
-# Línea 5149: Extracción de números
-results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
-results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
-results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
-
-# Ordenar por subsección (ascendente)
-results_df = results_df.sort_values(by=['_sort_key']).reset_index(drop=True)
-```
-
-**Resultado:**
-```
-Pregunta                _subsection  _sort_key  Respuesta
-1.1 ¿Documentado?         "1.1"      (1,1)      Yes
-1.1 ¿Actualizado?         "1.1"      (1,1)      Partial
-1.2 ¿Revisado?            "1.2"      (1,2)      No
-1.3 ¿Publicado?           "1.3"      (1,3)      Yes
-...
-2.1 ¿Comunicado?          "2.1"      (2,1)      Yes
-```
-
-### Código: Síntesis por Subsección
-
-```python
-# Líneas 5160-5171: Loop de síntesis por subsección
-subsections = sorted(results_df['_subsection'].dropna().unique(), 
-                    key=parse_subsection_for_sorting)
-subsection_analyses = {}
-
-subsection_progress = st.progress(0)
-for idx, subsection_id in enumerate(subsections):
-    # Filtra preguntas de esta subsección
-    subsection_df = results_df[results_df['_subsection'] == subsection_id].copy()
-    
-    # Genera síntesis
-    subsection_analysis = synthesize_subsection_analysis(
-        subsection_id,
-        subsection_df[['Pregunta', 'Respuesta', 'Razonamiento']]
-    )
-    subsection_analyses[subsection_id] = subsection_analysis
-    
-    subsection_progress.progress((idx + 1) / len(subsections))
-
-# Resultado: {"1.1": "texto...", "1.2": "texto...", ...}
-```
-
-### Código: Síntesis por Sección
-
-```python
-# Líneas 5174-5190: Loop de síntesis por sección
-sections = sorted(results_df['_section_num'].dropna().unique())
-section_analyses = {}
-
-section_progress = st.progress(0)
-for idx, section_num in enumerate(sections):
-    section_num = int(section_num)
-    
-    # Filtra subsecciones de esta sección
-    section_subsections = {
-        subsec_id: subsection_analyses[subsec_id]
-        for subsec_id in subsections
-        if subsec_id.startswith(f"{section_num}.")
+# Pasada 1: Análisis individual
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    futures_analysis = {
+        executor.submit(analyze_question_with_llm_tab1, q, doc_text): q
+        for q in questions
     }
-    
-    # Genera síntesis de síntesis
-    section_analysis = synthesize_section_analysis(
-        section_num,
-        section_subsections  # ← CAMBIO: Usa análisis de subsecciones, no preguntas
-    )
-    section_analyses[section_num] = section_analysis
-    
-    section_progress.progress((idx + 1) / len(sections))
 
-# Resultado: {1: "texto...", 2: "texto...", ...}
+# Pasada 2: Evaluación crítica (inicia después de completar Pasada 1)
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    futures_critical = {
+        executor.submit(analyze_question_with_critical_opinion_tab1,
+                        q, answer, reasoning, evidence, doc_text): q
+        for q, answer, reasoning, evidence in results_pasada1
+    }
 ```
 
----
-
-## Optimizaciones y Eficiencia
-
-### Paralelización (Nivel 1: Preguntas)
-
-```python
-# V4 y V6: Idéntico - Paralelo máximo
-from concurrent.futures import ThreadPoolExecutor
-
-with ThreadPoolExecutor(max_workers=48) as executor:
-    futures = {executor.submit(analyze_single_question, q, r): q 
-               for q, r in zip(questions, rubric_criteria)}
-    
-    results = []
-    for future in as_completed(futures):
-        result = future.result()
-        results.append(result)
-
-# Beneficio: Si hay 100 preguntas:
-# - Serial: 100 × (2 segundos/call) = 200 segundos
-# - Paralelo (48 workers): ~4 segundos (100/48 batches)
-```
-
-### Síntesis Secuencial (Nivel 2 y 3)
-
-```python
-# V6 (MODIFICADA): Síntesis secuencial es NECESARIA
-# No se puede paralelizar porque:
-# 1. Nivel 3 depende de Nivel 2
-# 2. Número pequeño de items (típicamente <20 subsecciones, <5 secciones)
-
-# Ejemplo de costos en tiempo:
-# Nivel 1 (100 preguntas): ~4 segundos (paralelo 48)
-# Nivel 2 (10 subsecciones): ~20 segundos (secuencial, 2 seg/call)
-# Nivel 3 (3 secciones): ~6 segundos (secuencial, 2 seg/call)
-# TOTAL: ~30 segundos
-
-# V4 para comparación: 100 llamadas × 2 seg = 200 segundos (paralelo)
-# V6: 30 + 13 = 43 segundos (100 + 10 + 3 = 113 llamadas, pero con paralelo)
-```
-
-### Optimización de Tokens LLM
-
-```python
-# V4: Cada pregunta requiere contexto completo
-# Pregunta: "¿Está documentado el proceso de X?"
-# Context: 1000 tokens (documento completo)
-# Respuesta: 500 tokens
-# TOTAL por pregunta: ~1500 tokens
-# Para 100 preguntas: 150,000 tokens
-
-# V6: Reutiliza respuestas previas
-# Nivel 1 (100 preguntas): 150,000 tokens
-# Nivel 2 (10 subsecciones): 
-#   - Subsección 1: 5 respuestas × 100 tokens cada una = 500 tokens input
-#                   + 500 tokens output = 1000 tokens total
-#   - 10 subsecciones × 1000 = 10,000 tokens
-# Nivel 3 (3 secciones):
-#   - Sección 1: 3 análisis × 300 tokens = 900 tokens input
-#             + 800 tokens output = 1700 tokens
-#   - 3 secciones × 1700 = 5,100 tokens
-# TOTAL V6: 150,000 + 10,000 + 5,100 = 165,100 tokens
-# 
-# Aumento aparente (165K vs 150K) es por síntesis adicional
-# PERO: Valor agregado exponencial (3 niveles de análisis vs 1)
-# ROI: +10% tokens → +300% análisis útil
-```
+Las Pasadas 3–6 son secuenciales por diseño (cada pasada depende de la anterior).
 
 ---
 
@@ -582,177 +387,121 @@ with ThreadPoolExecutor(max_workers=48) as executor:
 ### V4: Excel Simple (1 hoja)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Sheet: "Resultados"                                          │
-├────────┬──────────────┬─────────┬──────────────────────────┤
-│Pregunta│ Respuesta    │Razonam. │ Evidencia                │
-├────────┼──────────────┼─────────┼──────────────────────────┤
-│1.1 ¿Es │ Yes          │Se...    │Págs 5-8 demuestran...   │
-│1.2 ¿Es │ Partial      │Incoms...│Falta capítulo X pero...  │
-│1.3 ¿Es │ No           │No se... │Documento no menciona...  │
-│2.1 ¿Hay│ Yes          │Sí, en..│Págs 12-15 muestran...   │
-│...     │ ...          │...      │ ...                      │
-└────────┴──────────────┴─────────┴──────────────────────────┘
-
-Ventajas: Simple, directo
-Desventajas: Sin contexto, sin síntesis, datos desorganizados
+Sheet: "Resultados"
+┌──────────┬──────────┬──────────────┬──────────────┬─────────┐
+│ Pregunta │ Respuesta│ Razonamiento │ Evidencia    │ Status  │
+├──────────┼──────────┼──────────────┼──────────────┼─────────┤
+│ 1.1 ¿Es..│ Yes      │ Se encontró..│ Págs 5-8...  │ Success │
+│ 1.2 ¿Es..│ Partial  │ Incompleto...│ Falta cap... │ Success │
+│ 2.1 ¿Hay │ Yes      │ Sí, en...    │ Págs 12-15.. │ Success │
+└──────────┴──────────┴──────────────┴──────────────┴─────────┘
 ```
 
-### V6: Excel Jerárquico (2 hojas)
+### V6.1: ZIP con 3 Hojas Excel + Rúbrica
 
-**Hoja 1: "Detallado" (igual a V4, pero ordenado)**
+Función: `create_results_download_with_sections()` — Líneas 6846–6995
+
+El archivo ZIP descargable contiene:
+
+**Hoja "1. Preguntas"** — Análisis individual con evaluación crítica
+
 ```
-┌──────────┬──────────────┬──────────┬──────────────────┬─────────┐
-│Pregunta  │ Respuesta    │Razonam. │ Evidencia        │ Status  │
-├──────────┼──────────────┼──────────┼──────────────────┼─────────┤
-│1.1 ¿Es..│ Yes          │Se...    │Págs 5-8...      │Success │
-│1.1 ¿Es..│ Partial      │Incoms...│Falta capítulo...│Success │
-│1.2 ¿Es..│ No           │No se... │Doc no menciona..|Success │
-│1.3 ¿Hay│ Yes          │Sí, en..│Págs 12-15...    │Success │
-│2.1 ¿Hay│ Yes          │Sí...   │Evidencia clara..│Success │
-└──────────┴──────────────┴──────────┴──────────────────┴─────────┘
+┌──────────┬──────────┬──────────────┬──────────────┬───────────────────┬─────────┐
+│ Pregunta │ Respuesta│ Razonamiento │ Evidencia    │ Evaluación Crítica│ Status  │
+├──────────┼──────────┼──────────────┼──────────────┼───────────────────┼─────────┤
+│ 1.1 ¿Es..│ Yes      │ Se identific.│ Págs 5-8...  │ El análisis ide...│ Success │
+│ 1.2 ¿Es..│ Partial  │ Se identific.│ Falta cap... │ La evaluación cr..│ Success │
+│ 2.1 ¿Hay │ Yes      │ Plan documen.│ Págs 12-15.. │ Correcto pero omi.│ Success │
+└──────────┴──────────┴──────────────┴──────────────┴───────────────────┴─────────┘
+```
+**Nueva columna `Evaluación Crítica`** contiene el output de la Pasada 2.
+
+**Hoja "2. Análisis Subsecciones"** — Síntesis y crítica por subsección
+
+```
+┌─────────────┬────────────────────────────────┬──────────────────────────────────┐
+│ Subsección  │ Análisis de Subsección         │ Evaluación Crítica Subsección     │
+├─────────────┼────────────────────────────────┼──────────────────────────────────┤
+│ 1.1         │ La subsección 1.1 evalúa...    │ Críticamente, la subsección 1.1..│
+│ 1.2         │ Respecto a 1.2, los resultados │ La evaluación detecta brechas en..│
+│ 2.1         │ La subsección 2.1 muestra...   │ El análisis de 2.1 es sólido...  │
+└─────────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
-**Hoja 2: "Análisis por Sección" (NUEVA)**
-```
-╔════════════════════════════════════════════════════════════════════╗
-║ Sección 1                                                           ║ ← Header azul
-╠──────────┬──────────────┬──────────┬──────────────────────────────╣
-│Subsección│ Pregunta     │ Respuesta│ Razonamiento                  │
-├──────────┼──────────────┼──────────┼──────────────────────────────┤
-│1.1       │1.1 ¿Es doc. │ Yes      │Se encontró documentación...   │
-│1.1       │1.1 ¿Es actual│ Partial │Actualización incompleta...    │
-├──────────┴──────────────┴──────────┴──────────────────────────────┤
-│ Análisis 1.1: [SÍNTESIS DE SUBSECCIÓN 1-2 PÁRRAFOS]              │ ← Merged, azul claro
-│ La subsección 1.1 demuestra cumplimiento en documentación...     │
-├──────────┬──────────────┬──────────┬──────────────────────────────┤
-│1.2       │1.2 ¿Es accs. │ No       │No se encuentra proceso...    │
-│1.2       │1.2 ¿Es fácil │ Partial │Acceso restringido a...       │
-├──────────┴──────────────┴──────────┴──────────────────────────────┤
-│ Análisis 1.2: [SÍNTESIS DE SUBSECCIÓN]                            │
-│ La subsección 1.2 indica limitaciones en accesibilidad...        │
-├──────────┴──────────────┴──────────┴──────────────────────────────┤
-│ Análisis Sección 1: [SÍNTESIS DE SECCIÓN 2-3 PÁRRAFOS]            │ ← Merged, gris
-│ La Sección 1 evalúa elementos fundamentales de gobernanza...     │
-│ Hallazgos principales: documentación presente pero con gaps...   │
-│ Recomendaciones: revisar acceso y actualización de procesos...   │
-╠════════════════════════════════════════════════════════════════════╣
-║ Sección 2                                                           ║
-├──────────┬──────────────┬──────────┬──────────────────────────────┤
-│2.1       │2.1 ¿Hay plan │ Yes      │Plan estratégico documentado..│
-│2.1       │2.1 ¿Es públi │ Yes      │Publicado en portal web...    │
-├──────────┴──────────────┴──────────┴──────────────────────────────┤
-│ Análisis 2.1: [SÍNTESIS DE SUBSECCIÓN]                            │
-│ La subsección 2.1 muestra cumplimiento integral...               │
-├──────────┴──────────────┴──────────┴──────────────────────────────┤
-│ Análisis Sección 2: [SÍNTESIS DE SECCIÓN]                        │
-│ La Sección 2 refleja fortaleza en planificación estratégica...   │
-└────────────────────────────────────────────────────────────────────┘
+**Hoja "3. Análisis Secciones"** — Síntesis y crítica por sección
 
-Ventajas: 
-- Contexto visual claro (encabezados de sección)
-- Síntesis agregada visible
-- Fácil para ejecutivos (leen primero síntesis)
-- Estructura lógica para auditoría
-
-Desventajas:
-- Más complejo de navegar
-- Más espacioso (más filas)
 ```
+┌─────────┬────────────────────────────────┬──────────────────────────────────────┐
+│ Sección │ Análisis de Sección            │ Evaluación Crítica Sección            │
+├─────────┼────────────────────────────────┼──────────────────────────────────────┤
+│ 1       │ La Sección 1 demuestra...      │ Estratégicamente, la Sección 1...    │
+│ 2       │ En cuanto a la Sección 2...    │ La evaluación de Sección 2 revela... │
+└─────────┴────────────────────────────────┴──────────────────────────────────────┘
+```
+
+**Archivo adicional:** `PRODOC_rubric.xlsx` (rúbrica original, incluida en el ZIP para referencia).
 
 ---
 
 ## Consideraciones de Rendimiento
 
-### Tiempo de Ejecución
+### Tiempo de Ejecución Estimado
 
-| Métrica | V4 | V6 |
-|---------|----|----|
-| 100 preguntas individuales | 200s (serial) / 4s (paralelo 48) | 4s (Nivel 1) |
-| 10 síntesis subsecciones | - | 20s |
-| 3 síntesis secciones | - | 6s |
-| TOTAL estimado | 4s | 30s |
-| Síntesis ejecutiva | No | Sí |
+| Pasada | Operación | Modo | Tiempo típico |
+|--------|-----------|------|---------------|
+| 1 | Análisis individual (100 preguntas) | Paralelo 48 workers | 4–8 s |
+| 2 | Evaluación crítica (100 preguntas) | Paralelo 48 workers | 4–8 s |
+| 3 | Síntesis subsecciones (10 subsec.) | Secuencial | 20–30 s |
+| 4 | Crítica subsecciones (10 subsec.) | Secuencial | 20–30 s |
+| 5 | Síntesis secciones (3 secciones) | Secuencial | 6–12 s |
+| 6 | Crítica secciones (3 secciones) | Secuencial | 6–12 s |
+| **Total** | | | **~60–100 s (doc pequeño) / 3–10 min (doc grande)** |
 
-### Memoria
+### Llamadas LLM Estimadas
 
-```python
-# V4
-results_df: 100 rows × 5 columns = ~100 KB
-section_analyses: dict, 5 items = ~10 KB
-TOTAL: ~110 KB
+```
+N = número de preguntas
+S = número de subsecciones
+K = número de secciones
 
-# V6
-results_df: 100 rows × 8 columns (+ _section_num, _subsection, _sort_key) = ~150 KB
-subsection_analyses: dict, 10 items = ~50 KB
-section_analyses: dict, 3 items = ~15 KB
-TOTAL: ~215 KB
+Total de llamadas = N (Pasada 1) + N (Pasada 2) + S (Pasada 3) + S (Pasada 4) + K (Pasada 5) + K (Pasada 6)
 
-# Aumento: 2x memoria por 3x análisis (ROI positivo)
+Ejemplo con 100 preguntas, 10 subsecciones, 3 secciones:
+= 100 + 100 + 10 + 10 + 3 + 3 = 226 llamadas
+
+Comparación V4: 100 llamadas
+Incremento V6.1: +126% llamadas → +500% análisis generado
 ```
 
-### Costo de API (OpenAI)
+### Costo de API (referencial, GPT-5-mini)
 
-**Modelo: GPT-5-mini**
-- Input: $0.075 / 1M tokens
-- Output: $0.30 / 1M tokens
+| Versión | Llamadas | Tokens aprox. | Costo estimado |
+|---------|----------|---------------|----------------|
+| V4 | ~100 | ~150K | ~$0.05 |
+| V6.1 | ~226 | ~350K | ~$0.12 |
 
-```python
-# V4: 100 preguntas × 1500 tokens promedio = 150,000 tokens
-# Costo promedio: (150K × $0.075 + 150K × $0.30) / 1M = $0.051
-
-# V6: 165,100 tokens total
-# Costo promedio: (165.1K × $0.075 + 165.1K × $0.30) / 1M = $0.056
-
-# Aumento: $0.005 por análisis completo (muy bajo)
-# Valor agregado: 3 niveles vs 1 nivel (300% más análisis)
-```
-
-### Optimizaciones Posibles
-
-```python
-# 1. Cache de LLM (si se analizan documentos similares)
-# V6 permite reutilizar análisis de subsecciones para documentos nuevos
-# Reducción potencial: 30% del tiempo de síntesis
-
-# 2. Análisis incremental
-# Si se actualiza 1 pregunta, solo recalcular su subsección y sección
-# Vs V4: recalcular todo
-
-# 3. Batch processing de síntesis por subsección
-# Paralelizar Nivel 2 en groups de 5 subsecciones (si < 5 en paralelo)
-# Reducción potencial: 50% en tiempo de síntesis por subsección
-```
+El incremento de costo (~$0.07 adicional por análisis completo) se justifica por la profundidad del análisis generado.
 
 ---
 
-## Resumen de Cambios
+## Resumen de Cambios V4 → V6.1
 
-| Aspecto | V4 | V6 | Cambio |
-|---------|----|----|--------|
-| Niveles de análisis | 1 | 3 | +200% |
-| Llamadas LLM | 100 | 113 | +13% |
-| Tiempo de ejecución | 4s (paralelo) | 30s | +7x (pero 3x análisis) |
-| Hojas Excel | 1 | 2 | +1 |
-| Filas Excel | 100 | 300+ | +3x (síntesis agregadas) |
-| Contexto por pregunta | Ninguno | Nivel subsección + sección | +2 contextos |
-| Síntesis ejecutiva | No | Sí (nivel sección) | Nuevo |
-| Ordenamiento | No | Ascendente completo | Nuevo |
-| Fusión de celdas | No | Sí | Nuevo (formateo) |
+| Aspecto | V4 | V6.1 | Cambio |
+|---------|----|------|--------|
+| Pasadas LLM por documento | 1 | 6 | +500% |
+| Evaluación crítica | No | Sí (Pasadas 2, 4, 6) | Nuevo |
+| Detección preguntas 2 partes | No | Sí (`parse_two_part_question`) | Nuevo |
+| Gestión de tokens | Caracteres (estimación) | tiktoken cl100k_base (exacto) | Mejorado |
+| Llamadas LLM (100 preguntas) | ~100 | ~226 | +126% |
+| Hojas de salida | 1 | 3 + rúbrica en ZIP | +2 hojas |
+| Columna Evaluación Crítica | No | Sí | Nuevo |
+| Tiempo total estimado | ~4 s | 3–10 min | Mayor pero más completo |
+| Tabs de clasificación de recomendaciones | No | Tab 5 + Tab 6 | Nuevo módulo |
 
 ---
 
 ## Conclusión
 
-La evolución de V4 a V6 representa un cambio arquitectónico fundamental:
+La evolución de V4 a V6.1 transforma el sistema de un analizador de preguntas individuales a un motor de evaluación jerárquica con perspectiva crítica integrada. Las seis pasadas del pipeline permiten que cada nivel de síntesis se construya sobre el trabajo previo, produciendo un análisis ejecutivo de alto valor sin duplicar el procesamiento del documento original.
 
-- **De:** Análisis atomizado (pregunta aislada)
-- **A:** Análisis jerárquico (pregunta → subsección → sección)
-
-Este cambio permite:
-1. **Mejor contexto:** Cada síntesis entiende su contexto jerárquico
-2. **Síntesis de síntesis:** Información agregada de múltiples niveles
-3. **Eficiencia:** Reutilización de análisis previos
-4. **Presentación:** Excel profesional con estructura ejecutiva
-
-El costo adicional (13% más llamadas LLM, 7x tiempo de ejecución) se justifica ampliamente por el valor agregado (3x niveles de análisis) y la mejora en presentación y usabilidad.
+El costo adicional en tiempo (~3–10 min vs ~4 s) y en llamadas a la API (~226 vs ~100) es proporcional al valor agregado: el usuario recibe no solo respuestas individuales sino síntesis por subsección, por sección, y evaluaciones críticas en cada nivel, todo empaquetado en un ZIP con tres hojas temáticas.
