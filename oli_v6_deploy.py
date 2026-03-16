@@ -7024,7 +7024,7 @@ Distribución de respuestas:
 
 # Main tab interface
 with tab1:
-    st.header("📋 Valoración Preliminar de Calidad de Proyectos")
+    st.header("📋 Valoración Preliminar de Calidad de Proyectos (Preliminary Project Quality Appraisal)")
     
     # Load questions
     df_appraisal, error_msg = load_appraisal_questions()
@@ -9193,7 +9193,7 @@ with tab5:
             # 2. Summary Results
             if 'summary_result' in st.session_state:
                 st.markdown("---")
-                st.subheader("📄 Resultados: Resumen Ejecutivo")
+                st.subheader("📄 Resultados: Resumen Ejecutivo (Results: Executive Summary)")
                 st.markdown(st.session_state['summary_result'])
                 
                 # Export Summary
