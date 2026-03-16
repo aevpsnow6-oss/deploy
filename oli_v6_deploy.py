@@ -1892,7 +1892,7 @@ hr {
 """, unsafe_allow_html=True)
 
 st.markdown("""
-    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos</h2>
+    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos (Toolkit for Better Project Performance)</h2>
     <h3 style='text-align:center; color:#002F6C; margin-top:0;'>Usando Evidencia de las Evaluaciones</h3>
     <hr style='border-top: 2px solid #002F6C;'>
 """, unsafe_allow_html=True)
