@@ -1892,8 +1892,16 @@ hr {
 """, unsafe_allow_html=True)
 
 st.markdown("""
-    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos (Toolkit for Better Project Performance)</h2>
-    <h3 style='text-align:center; color:#002F6C; margin-top:0;'>Usando Evidencia de las Evaluaciones</h3>
+    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>
+        Caja de Herramientas para el Mejor Desempeño de los Proyectos
+        <br>
+        <span style='font-size:0.8em; font-weight:500;'>Toolkit for Better Project Performance</span>
+    </h2>
+    <h3 style='text-align:center; color:#002F6C; margin-top:0;'>
+        Usando Evidencia de las Evaluaciones
+        <br>
+        <span style='font-size:0.85em; font-weight:500;'>Using Evidence from Evaluations</span>
+    </h3>
     <hr style='border-top: 2px solid #002F6C;'>
 """, unsafe_allow_html=True)
 
