@@ -312,6 +312,46 @@ class AnalysisCache:
         return content 
 
 # --- Deep Analysis Logic ---
+INNOVATION_RUBRIC_PROMPT = """\
+RÚBRICA DE INNOVACIÓN (5 dimensiones, cada una 1–5). Evalúe internamente las 5 dimensiones, luego derive rec_innovation_score como el promedio redondeado mapeado a la escala categórica (1=Very low, 2=Low, 3=Medium, 4=High, 5=Very High).
+
+D1. NOVEDAD RELEVANTE — qué tan diferente es la recomendación respecto de prácticas habituales. NO premiar lenguaje tecnológico ni aspiracional; NO confundir tamaño con innovación.
+  1=Muy baja: reitera práctica normal (reuniones de seguimiento, actualizar base de beneficiarios, informes trimestrales).
+  2=Baja: ajuste incremental a práctica conocida (mejorar formato de reportes, ampliar capacitaciones existentes).
+  3=Media: adapta práctica conocida a nuevo contexto/población (incorporar teoría de cambio donde no existía, adaptar capacitación a comunidades rurales).
+  4=Alta: mecanismo poco común en ese contexto (red interinstitucional formal, fondo competitivo, laboratorio de innovación).
+  5=Muy alta: solución no rutinaria con lógica nueva (sistema nacional interoperable, arquitectura institucional nueva, ecosistema digital colaborativo).
+
+D2. VALOR PARA CONSTITUYENTES — mejora acceso, calidad, eficiencia, inclusión o resultados para usuarios/beneficiarios/mandantes. NO premiar mejoras internas sin impacto en usuarios.
+  1=Muy bajo: sin problema ni beneficiario claro (fortalecer gestión, optimizar procesos administrativos).
+  2=Bajo: mejora marginal/indirecta sin impacto en resultados.
+  3=Medio: responde a un problema con impacto limitado o parcial.
+  4=Alto: mejora claramente calidad/cobertura/pertinencia (servicios adaptados a poblaciones vulnerables, reducir barreras de acceso).
+  5=Muy alto: transforma acceso/beneficio (acceso universal antes inexistente, eliminar barreras estructurales).
+
+D3. APRENDIZAJE, PRUEBA Y ESCALAMIENTO — mecanismos para experimentar, medir, aprender y replicar.
+  1=Muy bajo: actividad única sin aprendizaje (un taller, un informe final).
+  2=Bajo: aprendizaje implícito sin estructura.
+  3=Medio: potencial de réplica pero sin cómo aprender/mejorar.
+  4=Alto: piloto/seguimiento/mejora progresiva estructurados.
+  5=Muy alto: ciclo completo piloto→medición→retroalimentación→escalamiento.
+
+D4. CAMBIO SISTÉMICO O INSTITUCIONAL — modifica estructuras, reglas, coordinación o gobernanza (no solo actividades). NO confundir cobertura con cambio sistémico.
+  1=Muy bajo: actividad aislada (capacitaciones, materiales, talleres).
+  2=Bajo: mejora operativa local sin afectar estructura.
+  3=Medio: cambio dentro de una unidad/programa.
+  4=Alto: cambio organizacional o de coordinación entre actores (red interinstitucional con roles, nuevo modelo de gobernanza en implementación).
+  5=Muy alto: transformación sistémica (sistema nacional integrado, rediseño de gobernanza de política pública, arquitectura multisectorial nueva).
+
+D5. FACTIBILIDAD ESTRATÉGICA — viable en el contexto institucional, político, técnico y operativo actual. Penalizar aspiracional/vago sin mecanismo.
+  1=Muy baja: irreal (sistema nacional sin actores ni recursos, transformación sin estrategia).
+  2=Baja: requiere condiciones altamente improbables o no descritas.
+  3=Media: implementable con ajustes, recursos o coordinación adicional.
+  4=Alta: coherente con capacidades, actores y contexto (escalar intervención ya probada).
+  5=Muy alta: condiciones de implementación claras (piloto exitoso con actores comprometidos, modelo validado en contextos similares).
+"""
+
+
 def analyze_recommendation_plan_pair(recommendation, action_plan, comments, client, model="gpt-4o-mini"):
     """
     Send recommendation, action plan, and comments to OpenAI API for analysis
@@ -367,8 +407,11 @@ def analyze_recommendation_plan_pair(recommendation, action_plan, comments, clie
     14. tags: Select 2-5 most relevant tags from: {", ".join(ilo_tags_list)}
     
     Now, analyze the recommendation on its own:
-    15. rec_innovation_score: (Very low, Low, Medium, High, Very High).
-    16. rec_innovation_rationale: Explanation (3-4 sentences).
+
+    {INNOVATION_RUBRIC_PROMPT}
+
+    15. rec_innovation_score: Apply the 5-dimension innovation rubric above. Score each dimension 1–5 internally, then return the overall level as one of (Very low, Low, Medium, High, Very High), derived from the rounded average of the five dimension scores (1→Very low, 2→Low, 3→Medium, 4→High, 5→Very High).
+    16. rec_innovation_rationale: 3-4 sentences. Explicitly cite the per-dimension scores in the form "D1=x, D2=x, D3=x, D4=x, D5=x" and briefly justify the weakest/strongest dimensions. Do not reward tech/aspirational language or size alone.
     17. rec_precision_and_clarity: (Very low, Low, Medium, High, Very High).
     18. rec_precision_and_clarity_rationale: Explanation (3-4 sentences).
     19. rec_additional_tags: Select 2-5 relevant tags from: {", ".join(rec_tags_list)}
