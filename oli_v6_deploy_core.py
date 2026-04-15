@@ -3305,6 +3305,36 @@ def extract_document_content(uploaded_file):
         }
 
 
+def parse_critic_verdict(critic_text):
+    """Extract the VEREDICTO tag from the first line of a critic response.
+
+    Returns (verdict, body) where:
+      - verdict ∈ {"Yes", "No", "Partial", "Not Found", "Keep", None}
+      - body is the critic text with the verdict line stripped (original text if no verdict parsed)
+    """
+    if not isinstance(critic_text, str) or not critic_text.strip():
+        return None, critic_text or ""
+    m = re.match(
+        r'\s*VEREDICTO\s*:\s*(Not\s*Found|Partial|Yes|No|Keep)\s*[\.\n:]?',
+        critic_text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None, critic_text.strip()
+    raw = m.group(1).strip()
+    canonical = {
+        'yes': 'Yes',
+        'no': 'No',
+        'partial': 'Partial',
+        'not found': 'Not Found',
+        'notfound': 'Not Found',
+        'keep': 'Keep',
+    }
+    verdict = canonical.get(re.sub(r'\s+', ' ', raw.lower()), None)
+    body = critic_text[m.end():].lstrip()
+    return verdict, body
+
+
 def parse_two_part_question(question):
     """
     Detect and parse two-part rubric questions where:
@@ -3700,8 +3730,14 @@ The question names a specific subject/scope. Verify the document's answer did NO
 - If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
 - Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
 
-Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about shortcomings, especially regarding Part 2. No preamble, no filler.
-Respond ONLY with the critical opinion text, no JSON, no formatting."""
+**OUTPUT FORMAT (MANDATORY):**
+Your response MUST begin with exactly one line in this format:
+VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+- Use "Keep" if the document's original answer is adequate and should stand.
+- Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
+
+After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. No preamble, no filler. No JSON, no extra formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
@@ -3744,8 +3780,14 @@ Evalúa críticamente:
                     **SCOPE LOCK CHECK (CRITICAL):**
                     The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
 
-                    Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about any shortcomings. No preamble, no filler.
-                    Respond ONLY with the critical opinion text, no JSON, no formatting."""
+                    **OUTPUT FORMAT (MANDATORY):**
+                    Your response MUST begin with exactly one line in this format:
+                    VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+                    - Use "Keep" if the document's original answer is adequate and should stand.
+                    - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
+
+                    After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about any shortcomings. No preamble, no filler. No JSON, no extra formatting."""
 
             user_content = f"""Question: {question}
 
@@ -3839,8 +3881,14 @@ The question names a specific subject/scope. Verify the document's answer did NO
 - If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
 - Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
 
-Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about shortcomings, especially regarding Part 2. No preamble, no filler.
-Respond ONLY with the critical opinion text, no JSON, no formatting."""
+**OUTPUT FORMAT (MANDATORY):**
+Your response MUST begin with exactly one line in this format:
+VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+- Use "Keep" if the document's original answer is adequate and should stand.
+- Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
+
+After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. No preamble, no filler. No JSON, no extra formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
@@ -3880,8 +3928,14 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     **SCOPE LOCK CHECK (CRITICAL):**
                     The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
 
-                    Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about any shortcomings. No preamble, no filler.
-                    Respond ONLY with the critical opinion text, no JSON, no formatting."""
+                    **OUTPUT FORMAT (MANDATORY):**
+                    Your response MUST begin with exactly one line in this format:
+                    VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+                    - Use "Keep" if the document's original answer is adequate and should stand.
+                    - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
+
+                    After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about any shortcomings. No preamble, no filler. No JSON, no extra formatting."""
 
             user_content = f"""Question: {question}
 
@@ -4853,10 +4907,38 @@ with tab1:
                 progress = completed / len(questions)
                 progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
                 status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
-        
+
+        # Apply critic verdict: override Respuesta when the critic recommends a different grade,
+        # and merge the critic's assessment into Razonamiento so the user reads one coherent rationale.
+        # Preserve the pre-critic answer in 'Respuesta Original' for audit.
+        override_count = 0
+        for result in results:
+            q = result.get('Pregunta')
+            critic_raw = critical_opinions.get(q, "") or ""
+            verdict, critic_body = parse_critic_verdict(critic_raw)
+            original_answer = result.get('Respuesta', '')
+            result['Respuesta Original'] = original_answer
+            base_rationale = result.get('Razonamiento', '') or ''
+            if verdict and verdict != 'Keep' and verdict != original_answer:
+                result['Respuesta'] = verdict
+                result['Razonamiento'] = (
+                    f"{base_rationale}\n\n"
+                    f"**Evaluación crítica:** {critic_body}\n\n"
+                    f"**Ajuste de respuesta:** Originalmente '{original_answer}', "
+                    f"revisada a '{verdict}' según la evaluación crítica."
+                )
+                override_count += 1
+            else:
+                result['Razonamiento'] = (
+                    f"{base_rationale}\n\n"
+                    f"**Evaluación crítica:** {critic_body}" if critic_body else base_rationale
+                )
+        if override_count:
+            st.info(f"🔄 {override_count} respuesta(s) ajustada(s) por la evaluación crítica.")
+
         # Create results DataFrame - sort by subsection for proper ordering
         results_df = pd.DataFrame(results)
-        
+
         # Add critical opinions to dataframe
         results_df['Evaluación Crítica'] = results_df['Pregunta'].map(critical_opinions).fillna("No disponible")
         results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
