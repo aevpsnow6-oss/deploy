@@ -776,8 +776,19 @@ with tab1:
 
             
         end_count = len(filtered_rec_df)
-        
-        st.markdown(f"**Registros seleccionados:** {end_count} de {start_count}")
+
+        # Show row count AND unique-recommendation count: a region with many rows
+        # may contain far fewer unique recommendations because the source file repeats
+        # rows for multi-attribute records (themes, sources, etc.). Embedding cost is
+        # driven by uniques, so analysts need both numbers before clicking process.
+        id_col_pre = 'Recommendation ID' if 'Recommendation ID' in filtered_rec_df.columns else 'Recommendation description'
+        unique_count_pre = filtered_rec_df[id_col_pre].nunique()
+        total_unique_pre = rec_df_world[id_col_pre].nunique()
+        st.markdown(
+            f"**Registros seleccionados:** {end_count} de {start_count}  |  "
+            f"**Recomendaciones únicas:** {unique_count_pre} de {total_unique_pre}"
+        )
+        st.caption("⚠️ El número de registros puede ser mayor que el número de recomendaciones únicas porque algunas recomendaciones tienen múltiples atributos (ej. múltiples temas), generando filas duplicadas en el archivo original. El costo de clasificación se basa en las recomendaciones únicas.")
 
         # --- Classification Logic ---
         
@@ -1682,7 +1693,17 @@ with tab2:
 
         end_count_en = len(filtered_rec_df_en)
 
-        st.markdown(f"**Selected records:** {end_count_en} of {start_count_en}")
+        # Show row count AND unique-recommendation count: source rows repeat for
+        # multi-attribute records (themes, sources, etc.). Embedding cost is driven
+        # by uniques, so analysts need both numbers before clicking process.
+        id_col_pre_en = 'Recommendation ID' if 'Recommendation ID' in filtered_rec_df_en.columns else 'Recommendation description'
+        unique_count_pre_en = filtered_rec_df_en[id_col_pre_en].nunique()
+        total_unique_pre_en = rec_df_world_en[id_col_pre_en].nunique()
+        st.markdown(
+            f"**Selected records:** {end_count_en} of {start_count_en}  |  "
+            f"**Unique recommendations:** {unique_count_pre_en} of {total_unique_pre_en}"
+        )
+        st.caption("⚠️ The number of records may be higher than the number of unique recommendations because some recommendations have multiple attributes (e.g. multiple themes), generating duplicate rows in the original file. Classification cost is driven by unique recommendations.")
 
         # --- Classification Logic ---
 

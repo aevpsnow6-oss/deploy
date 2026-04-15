@@ -91,8 +91,42 @@ def truncate_to_token_limit(text, max_tokens=110000, encoding_obj=None):
     # Truncate to max_tokens
     truncated_tokens = tokens[:max_tokens]
     truncated_text = encoding_obj.decode(truncated_tokens)
-    
+
     return truncated_text
+
+# JSON Schemas for structured rubric responses (Tabs 1-4).
+# Using strict structured outputs eliminates JSON-parse fallbacks AND gives a
+# verifiable 'parte_enfocada' signal that the model committed to Part 2.
+RUBRIC_SCHEMA_TWO_PART = {
+    "name": "rubric_response_two_part",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "Respuesta": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found"]},
+            "Razonamiento": {"type": "string"},
+            "Evidencia": {"type": "string"},
+            "parte_enfocada": {"type": "string", "enum": ["Parte 2", "Parte 1", "Ambas"]},
+        },
+        "required": ["Respuesta", "Razonamiento", "Evidencia", "parte_enfocada"],
+    },
+}
+
+RUBRIC_SCHEMA_SINGLE = {
+    "name": "rubric_response_single",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "Respuesta": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found"]},
+            "Razonamiento": {"type": "string"},
+            "Evidencia": {"type": "string"},
+        },
+        "required": ["Respuesta", "Razonamiento", "Evidencia"],
+    },
+}
 
 # ============= MAIN APP CODE =============
 
@@ -3277,54 +3311,52 @@ def parse_two_part_question(question):
     - Part 1 (broader): Sets the general context
     - Part 2 (specific): Asks the critical detail that needs primary focus
 
-    Returns dict with 'is_two_part', 'part1', 'part2', 'full_question'
+    Returns dict with 'is_two_part', 'part1', 'part2', 'full_question'.
     """
     import re
 
-    # Pattern 1: Questions with explicit keywords separating them (check this first)
-    # Keywords like "Específicamente" act as clear separators
+    if not isinstance(question, str) or question.count('?') < 2:
+        return {'is_two_part': False, 'part1': None, 'part2': None, 'full_question': question}
+
+    # Pattern 1: Explicit keyword separator ("específicamente", "además", ...).
     keywords = ['específicamente', 'en particular', 'en concreto', 'puntualmente', 'además']
     for keyword in keywords:
-        # The keyword is a separator, not part of either question
-        pattern = rf'(.*?\?)\s*{keyword}[,:]?\s*¿\s*(.*?\?)'
-        match = re.search(pattern, question, re.IGNORECASE)
+        pattern = rf'(.+?\?)\s*{keyword}[,:]?\s*¿\s*(.+?\?)'
+        match = re.search(pattern, question, re.IGNORECASE | re.UNICODE)
         if match:
-            part2 = match.group(2).strip()
-            # Ensure part2 starts with ¿
-            if not part2.startswith('¿'):
-                part2 = '¿' + part2
             return {
                 'is_two_part': True,
                 'part1': match.group(1).strip(),
-                'part2': part2,
-                'full_question': question
+                'part2': '¿' + match.group(2).strip(),
+                'full_question': question,
             }
 
-    # Pattern 2: Questions run together like "...gráfico?Se identifican..." or "...?¿Se..."
-    # This is the most common pattern in the rubrics (no keyword separator)
-    match = re.search(r'(.*?\?)\s*¿?\s*([A-ZSÉA].*?\?)', question)
+    # Pattern 2a: Two clauses joined with explicit ¿ separator (Spanish convention).
+    # Unicode-safe: matches lowercase, accented capitals (Á/Í/Ó/Ú/Ñ), digits, etc.
+    match = re.search(r'(.+?\?)\s*¿\s*(.+\?)', question, re.UNICODE)
     if match:
-        part1 = match.group(1).strip()
-        part2 = match.group(2).strip()
-
-        # Ensure part2 starts with ¿ if it doesn't already
-        if not part2.startswith('¿'):
-            part2 = '¿' + part2
-
         return {
             'is_two_part': True,
-            'part1': part1,
-            'part2': part2,
-            'full_question': question
+            'part1': match.group(1).strip(),
+            'part2': '¿' + match.group(2).strip(),
+            'full_question': question,
         }
 
-    # Not a two-part question
-    return {
-        'is_two_part': False,
-        'part1': None,
-        'part2': None,
-        'full_question': question
-    }
+    # Pattern 2b: Run-together — first clause ends in '?', second starts immediately
+    # with a non-whitespace character (rubric formatting quirk, e.g. "...gráfico?Se identifican...").
+    match = re.search(r'(.+?\?)(\S.+\?)', question, re.UNICODE)
+    if match:
+        part2 = match.group(2).strip()
+        if not part2.startswith('¿'):
+            part2 = '¿' + part2
+        return {
+            'is_two_part': True,
+            'part1': match.group(1).strip(),
+            'part2': part2,
+            'full_question': question,
+        }
+
+    return {'is_two_part': False, 'part1': None, 'part2': None, 'full_question': question}
 
 def analyze_question_with_llm_tab1(question, document_text):
     """
@@ -3354,44 +3386,42 @@ def analyze_question_with_llm_tab1(question, document_text):
 **CRITICAL INSTRUCTION FOR TWO-PART QUESTIONS:**
 
 This question has TWO PARTS with different priorities:
-1. **Part 1 (Broader Context)**: Provides the general framework
-2. **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis
+- **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis. Drives the final answer.
+- **Part 1 (Broader Context)**: Provides the general framework.
 
 **YOUR ANALYSIS APPROACH:**
-1. **START with Part 2**: Analyze the specific question FIRST and IN DEPTH
-2. **Then Part 1**: Consider how Part 2's findings relate to the broader context in Part 1
-3. **Final Assessment**: The overall answer should be driven by Part 2, but explained in context of Part 1
+1. **Answer Part 2 IN DEPTH FIRST.** This drives the final Respuesta.
+2. **Then relate Part 2's findings back to Part 1** (broader context).
+3. The final Respuesta is determined PRIMARILY by Part 2; Part 1 provides framing only.
 
-**Response Structure (JSON):**
-{
-    "Respuesta": "Yes/No/Partial/Not Found (based primarily on Part 2)",
-    "Razonamiento": "**DEBE COMENZAR CON**: 'Se identificaron 2 partes en esta pregunta.' LUEGO responder la pregunta específica (Parte 2) con análisis detallado. DESPUÉS explicar cómo esto se relaciona con la pregunta general (Parte 1). Máximo 200 palabras.",
-    "Evidencia": "Proporcionar evidencia PRINCIPALMENTE para la Parte 2 (pregunta específica), luego evidencia de apoyo para la Parte 1. Máximo 300 palabras con citas directas."
-}
+**Response fields (returned via structured output):**
+- "Respuesta": Yes / No / Partial / Not Found — based PRIMARILY on Part 2.
+- "Razonamiento": MUST begin with "Se identificaron 2 partes en esta pregunta." Then answer Part 2 in detail, then explain the connection to Part 1. Max 200 words.
+- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 300 words.
+- "parte_enfocada": Set to "Parte 2" when your analysis was driven by Part 2 (the expected default). Use "Ambas" only if both parts truly required equal weight. Use "Parte 1" only if Part 2 was unanswerable from the document.
 
-**Estructura OBLIGATORIA para Razonamiento:**
-"Se identificaron 2 partes en esta pregunta. [Respuesta específica a Parte 2 con análisis detallado]. Esto [afecta/se relaciona con] [Parte 1] porque [explicación de la relación]."
+Siempre responder en español. Enfoque: 70% en Parte 2, 30% en su relación con Parte 1."""
 
-Siempre responder en español. Enfoque: 70% en Parte 2, 30% en cómo se relaciona con Parte 1."""
-
-            user_content = f"""PREGUNTA CON DOS PARTES:
-
-**PARTE 1 (Contexto General):**
-{parsed['part1']}
+            # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
+            # Full original question deliberately omitted — including it re-anchors the model on Part 1.
+            user_content = f"""PREGUNTA CON DOS PARTES — RESPONDE PRIMERO LA PARTE 2.
 
 **PARTE 2 (Enfoque Específico - PRIORITARIO):**
 {parsed['part2']}
 
-**Pregunta Completa:**
-{question}
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
 
 **Texto del Documento:**
 {combined_text}
 
 RECUERDA:
 1. COMENZAR tu Razonamiento con "Se identificaron 2 partes en esta pregunta."
-2. Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica)
-3. Luego explica cómo se relaciona con la Parte 1 (contexto general)"""
+2. Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica).
+3. Luego explica cómo se relaciona con la Parte 1 (contexto general).
+4. Marca "parte_enfocada" como "Parte 2" salvo que el documento no permita responderla."""
+
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_TWO_PART}
 
         else:
             # Original single-question prompt
@@ -3403,22 +3433,18 @@ RECUERDA:
             }"""
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
 
-        # Single API call per question - much more efficient than chunking
+        # Bump reasoning effort for two-part: the 70/30 weighting needs more deliberation.
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": system_content
-                },
-                {
-                    "role": "user",
-                    "content": user_content
-                }
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
             max_completion_tokens=8000,
-            reasoning_effort="minimal"
+            reasoning_effort="medium" if parsed['is_two_part'] else "minimal",
+            response_format=response_format,
         )
 
         content = resp.choices[0].message.content
@@ -3431,18 +3457,10 @@ RECUERDA:
                 'Status': 'Error'
             }
 
-        # Parse JSON response
+        # Structured outputs guarantees valid JSON conforming to the schema.
         try:
             result = json.loads(content.strip())
-            return {
-                'Pregunta': question,
-                'Respuesta': result.get('Respuesta', 'Not Found'),
-                'Razonamiento': result.get('Razonamiento', ''),
-                'Evidencia': result.get('Evidencia', ''),
-                'Status': 'Success'
-            }
         except json.JSONDecodeError:
-            # If JSON parsing fails, return error
             return {
                 'Pregunta': question,
                 'Respuesta': 'Error',
@@ -3450,6 +3468,20 @@ RECUERDA:
                 'Evidencia': '',
                 'Status': 'Error'
             }
+
+        # Flag rows where the model failed to commit to Part 2 focus despite a two-part question.
+        # 'Partial' is the analyst's signal to spot-check the row.
+        status = 'Success'
+        if parsed['is_two_part'] and result.get('parte_enfocada') != 'Parte 2':
+            status = 'Partial'
+
+        return {
+            'Pregunta': question,
+            'Respuesta': result.get('Respuesta', 'Not Found'),
+            'Razonamiento': result.get('Razonamiento', ''),
+            'Evidencia': result.get('Evidencia', ''),
+            'Status': status,
+        }
 
     except Exception as e:
         return {
@@ -3485,41 +3517,38 @@ def analyze_question_with_llm(question, document_text):
 **CRITICAL INSTRUCTION FOR TWO-PART QUESTIONS:**
 
 This question has TWO PARTS with different priorities:
-1. **Part 1 (Broader Context)**: Provides the general framework
-2. **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis
+- **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis. Drives the final answer.
+- **Part 1 (Broader Context)**: Provides the general framework.
 
 **YOUR ANALYSIS APPROACH:**
-1. **START with Part 2**: Analyze the specific question FIRST and IN DEPTH
-2. **Then Part 1**: Consider how Part 2's findings relate to the broader context in Part 1
-3. **Final Assessment**: The overall answer should be driven by Part 2, but explained in context of Part 1
+1. **Answer Part 2 IN DEPTH FIRST.** This drives the final Respuesta.
+2. **Then relate Part 2's findings back to Part 1** (broader context).
+3. The final Respuesta is determined PRIMARILY by Part 2; Part 1 provides framing only.
 
-**Response Structure (JSON):**
-{
-    "Respuesta": "Yes/No/Partial/Not Found (based primarily on Part 2)",
-    "Razonamiento": "BEGIN by answering the specific question (Part 2) with detailed analysis. THEN explain how this relates to the broader question (Part 1). Maximum 200 words.",
-    "Evidencia": "Provide evidence PRIMARILY for Part 2 (the specific question), then supporting evidence for Part 1. Maximum 300 words with direct quotes."
-}
-
-**Example Structure for Razonamiento:**
-"Respecto a [specific Part 2]: [detailed analysis of Part 2]... Esto [connects to/affects] [broader Part 1] porque [explanation of relationship]."
+**Response fields (returned via structured output):**
+- "Respuesta": Yes / No / Partial / Not Found — based PRIMARILY on Part 2.
+- "Razonamiento": Begin by answering Part 2 in detail, then connect to Part 1. Max 200 words.
+- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 300 words.
+- "parte_enfocada": Set to "Parte 2" when your analysis was driven by Part 2 (the expected default). Use "Ambas" only if both parts truly required equal weight. Use "Parte 1" only if Part 2 was unanswerable from the document.
 
 Always respond in Spanish. Focus 70% on Part 2, 30% on how it relates to Part 1."""
 
-            user_content = f"""PREGUNTA CON DOS PARTES:
-
-**PARTE 1 (Contexto General):**
-{parsed['part1']}
+            # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
+            # Full original question deliberately omitted — including it re-anchors the model on Part 1.
+            user_content = f"""PREGUNTA CON DOS PARTES — RESPONDE PRIMERO LA PARTE 2.
 
 **PARTE 2 (Enfoque Específico - PRIORITARIO):**
 {parsed['part2']}
 
-**Pregunta Completa:**
-{question}
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
 
 **Texto del Documento:**
 {combined_text}
 
-RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica), luego explica cómo se relaciona con la Parte 1 (contexto general)."""
+RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica), luego explica cómo se relaciona con la Parte 1 (contexto general). Marca "parte_enfocada" como "Parte 2" salvo que el documento no permita responderla."""
+
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_TWO_PART}
 
         else:
             # Original single-question prompt
@@ -3531,22 +3560,18 @@ RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica
             }"""
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
 
-        # Single API call per question - much more efficient than chunking
+        # Bump reasoning effort for two-part: the 70/30 weighting needs more deliberation.
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": system_content
-                },
-                {
-                    "role": "user",
-                    "content": user_content
-                }
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
             max_completion_tokens=8000,
-            reasoning_effort="minimal"
+            reasoning_effort="medium" if parsed['is_two_part'] else "minimal",
+            response_format=response_format,
         )
 
         content = resp.choices[0].message.content
@@ -3559,18 +3584,10 @@ RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica
                 'Status': 'Error'
             }
 
-        # Parse JSON response
+        # Structured outputs guarantees valid JSON conforming to the schema.
         try:
             result = json.loads(content.strip())
-            return {
-                'Pregunta': question,
-                'Respuesta': result.get('Respuesta', 'Not Found'),
-                'Razonamiento': result.get('Razonamiento', ''),
-                'Evidencia': result.get('Evidencia', ''),
-                'Status': 'Success'
-            }
         except json.JSONDecodeError:
-            # If JSON parsing fails, return error
             return {
                 'Pregunta': question,
                 'Respuesta': 'Error',
@@ -3578,6 +3595,19 @@ RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica
                 'Evidencia': '',
                 'Status': 'Error'
             }
+
+        # Flag rows where the model failed to commit to Part 2 focus despite a two-part question.
+        status = 'Success'
+        if parsed['is_two_part'] and result.get('parte_enfocada') != 'Parte 2':
+            status = 'Partial'
+
+        return {
+            'Pregunta': question,
+            'Respuesta': result.get('Respuesta', 'Not Found'),
+            'Razonamiento': result.get('Razonamiento', ''),
+            'Evidencia': result.get('Evidencia', ''),
+            'Status': status,
+        }
 
     except Exception as e:
         return {
@@ -3638,16 +3668,14 @@ This is a TWO-PART question where:
 Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about shortcomings, especially regarding Part 2.
 Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
-            user_content = f"""PREGUNTA CON DOS PARTES:
-
-**PARTE 1 (Contexto General):**
-{parsed['part1']}
+            # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
+            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
 
 **PARTE 2 (Enfoque Específico - PRIORITARIO):**
 {parsed['part2']}
 
-**Pregunta Completa:**
-{question}
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
 
 **Respuesta del Documento:** {answer}
 
@@ -3660,8 +3688,8 @@ Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
 Evalúa críticamente:
 1. ¿El razonamiento reconoce explícitamente que hay 2 partes en la pregunta?
-2. ¿La respuesta aborda adecuadamente AMBAS partes, especialmente la Parte 2 (pregunta específica)?
-3. ¿La evidencia y el razonamiento son suficientes para ambas partes?"""
+2. ¿La respuesta aborda adecuadamente la Parte 2 (pregunta específica) — el foco prioritario?
+3. ¿La evidencia para la Parte 2 es concreta y suficiente, o se quedó en generalidades de la Parte 1?"""
 
         else:
             # Original single-question critical evaluation
@@ -3769,16 +3797,14 @@ This is a TWO-PART question where:
 Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about shortcomings, especially regarding Part 2.
 Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
-            user_content = f"""PREGUNTA CON DOS PARTES:
-
-**PARTE 1 (Contexto General):**
-{parsed['part1']}
+            # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
+            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
 
 **PARTE 2 (Enfoque Específico - PRIORITARIO):**
 {parsed['part2']}
 
-**Pregunta Completa:**
-{question}
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
 
 **Respuesta del Documento:** {answer}
 
@@ -3789,7 +3815,7 @@ Respond ONLY with the critical opinion text, no JSON, no formatting."""
 **Contexto Completo del Documento:**
 {doc_context}
 
-Evalúa críticamente: ¿La respuesta aborda adecuadamente AMBAS partes, especialmente la Parte 2 (pregunta específica)? ¿La evidencia y el razonamiento son suficientes para ambas partes?"""
+Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta específica) — el foco prioritario? ¿La evidencia para la Parte 2 es concreta y suficiente, o se quedó en generalidades de la Parte 1?"""
 
         else:
             # Original single-question critical evaluation
