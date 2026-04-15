@@ -6226,11 +6226,18 @@ This question has TWO PARTS with different priorities:
 
 **Response fields (returned via structured output):**
 - "Respuesta": Yes / No / Partial / Not Found — based PRIMARILY on Part 2.
-- "Razonamiento": MUST begin with "Se identificaron 2 partes en esta pregunta." Then answer Part 2 in detail, then explain the connection to Part 1. Max 200 words.
-- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 300 words.
+- "Razonamiento": MUST begin with "Se identificaron 2 partes en esta pregunta." Then answer Part 2 concisely, then briefly connect to Part 1. Max 120 words. Be terse — no filler, no restating the question.
+- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 180 words. Trim quotes to the essential span; avoid long blocks.
 - "parte_enfocada": Set to "Parte 2" when your analysis was driven by Part 2 (the expected default). Use "Ambas" only if both parts truly required equal weight. Use "Parte 1" only if Part 2 was unanswerable from the document.
 
-Siempre responder en español. Enfoque: 70% en Parte 2, 30% en su relación con Parte 1."""
+**SCOPE LOCK (CRITICAL):**
+La pregunta nombra un sujeto o alcance específico (p.ej. "personas con discapacidad", "mujeres rurales", "trabajo infantil en minería", una región, un sector o un período concreto). Tu análisis debe limitarse ESTRICTAMENTE a ese sujeto exacto.
+1. Identifica el sujeto exacto de la pregunta antes de responder.
+2. Evidencia sobre sujetos relacionados pero distintos (otras poblaciones vulnerables, otros grupos, otros sectores, otras regiones, otros períodos) NO cuenta como respuesta. Ejemplo: si la pregunta es sobre discapacidad, evidencia sobre mujeres, pueblos indígenas o juventud NO la satisface.
+3. Si el sujeto nombrado está ausente del documento pero sujetos relacionados están ampliamente cubiertos, Respuesta debe ser "Not Found" o "No" — NO "Partial" ni "Yes". Sub-inclusión es preferible a sobre-inclusión.
+4. En tu Razonamiento, declara explícitamente cuál sujeto exacto se analizó y confirma que la evidencia trata sobre ese sujeto (no sobre uno relacionado).
+
+Siempre responder en español. Enfoque: 95% en Parte 2, 5% en su relación con Parte 1. La Parte 1 solo existe para enmarcar brevemente; NO analices la Parte 1 de forma independiente."""
 
             # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
             # Full original question deliberately omitted — including it re-anchors the model on Part 1.
@@ -6258,9 +6265,16 @@ RECUERDA:
             system_content = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
             {
                 "Respuesta": "Yes/No/Partial/Not Found",
-                "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-            }"""
+                "Razonamiento": "Concise explanation (max 120 words, terse)",
+                "Evidencia": "Trimmed text excerpts supporting the answer (max 180 words)"
+            }
+
+**SCOPE LOCK (CRITICAL):**
+The question names a specific subject/scope (e.g., a specific population like people with disabilities; a specific sector, region, or period). Your analysis must be STRICTLY limited to that exact named subject.
+1. Identify the exact subject of the question before answering.
+2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors/regions/periods) does NOT count. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
+3. If the named subject is absent but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one)."""
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
             response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
@@ -6272,7 +6286,7 @@ RECUERDA:
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": user_content},
             ],
-            max_completion_tokens=8000,
+            max_completion_tokens=3000,
             reasoning_effort="medium" if parsed['is_two_part'] else "minimal",
             response_format=response_format,
         )
@@ -6357,11 +6371,18 @@ This question has TWO PARTS with different priorities:
 
 **Response fields (returned via structured output):**
 - "Respuesta": Yes / No / Partial / Not Found — based PRIMARILY on Part 2.
-- "Razonamiento": Begin by answering Part 2 in detail, then connect to Part 1. Max 200 words.
-- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 300 words.
+- "Razonamiento": Begin by answering Part 2 concisely, then briefly connect to Part 1. Max 120 words. Be terse — no filler, no restating the question.
+- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 180 words. Trim quotes to the essential span; avoid long blocks.
 - "parte_enfocada": Set to "Parte 2" when your analysis was driven by Part 2 (the expected default). Use "Ambas" only if both parts truly required equal weight. Use "Parte 1" only if Part 2 was unanswerable from the document.
 
-Always respond in Spanish. Focus 70% on Part 2, 30% on how it relates to Part 1."""
+**SCOPE LOCK (CRITICAL):**
+The question names a specific subject or scope (e.g., "people with disabilities", "rural women", "child labor in mining", a specific region/sector/period). Your analysis must be STRICTLY limited to that exact named subject.
+1. Identify the exact subject of the question before answering.
+2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors, other regions, other periods) does NOT count as answering the question. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
+3. If the named subject is absent from the document but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one).
+
+Always respond in Spanish. Focus 95% on Part 2, 5% on how it relates to Part 1. Part 1 exists only for brief framing; do NOT analyze Part 1 independently."""
 
             # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
             # Full original question deliberately omitted — including it re-anchors the model on Part 1.
@@ -6385,9 +6406,16 @@ RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica
             system_content = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
             {
                 "Respuesta": "Yes/No/Partial/Not Found",
-                "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-            }"""
+                "Razonamiento": "Concise explanation (max 120 words, terse)",
+                "Evidencia": "Trimmed text excerpts supporting the answer (max 180 words)"
+            }
+
+**SCOPE LOCK (CRITICAL):**
+The question names a specific subject/scope (e.g., a specific population like people with disabilities; a specific sector, region, or period). Your analysis must be STRICTLY limited to that exact named subject.
+1. Identify the exact subject of the question before answering.
+2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors/regions/periods) does NOT count. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
+3. If the named subject is absent but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one)."""
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
             response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
@@ -6399,7 +6427,7 @@ RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": user_content},
             ],
-            max_completion_tokens=8000,
+            max_completion_tokens=3000,
             reasoning_effort="medium" if parsed['is_two_part'] else "minimal",
             response_format=response_format,
         )
@@ -6495,7 +6523,14 @@ This is a TWO-PART question where:
 - Evidence focuses on Part 1 but neglects Part 2
 - The reasoning doesn't connect Part 2's findings to Part 1's context
 
-Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about shortcomings, especially regarding Part 2.
+**WEIGHTING:** Your critique should allocate 95% of its attention to Part 2 and only 5% to Part 1. Do NOT penalize the answer for limited Part 1 depth — Part 1 is framing only. DO penalize any drift away from Part 2.
+
+**SCOPE LOCK CHECK (CRITICAL):**
+The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
+- If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
+- Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
+
+Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about shortcomings, especially regarding Part 2. No preamble, no filler.
 Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
@@ -6536,7 +6571,10 @@ Evalúa críticamente:
                     - Is the reasoning robust or superficial?
                     - What is NOT mentioned that should be?
 
-                    Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
+                    **SCOPE LOCK CHECK (CRITICAL):**
+                    The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
+
+                    Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about any shortcomings. No preamble, no filler.
                     Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
             user_content = f"""Question: {question}
@@ -6565,7 +6603,7 @@ Provide a critical assessment: Is this answer truly adequate from an expert pers
                     "content": user_content
                 }
             ],
-            max_completion_tokens=500,
+            max_completion_tokens=400,
             reasoning_effort="minimal"
         )
 
@@ -6624,7 +6662,14 @@ This is a TWO-PART question where:
 - Evidence focuses on Part 1 but neglects Part 2
 - The reasoning doesn't connect Part 2's findings to Part 1's context
 
-Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about shortcomings, especially regarding Part 2.
+**WEIGHTING:** Your critique should allocate 95% of its attention to Part 2 and only 5% to Part 1. Do NOT penalize the answer for limited Part 1 depth — Part 1 is framing only. DO penalize any drift away from Part 2.
+
+**SCOPE LOCK CHECK (CRITICAL):**
+The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
+- If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
+- Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
+
+Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about shortcomings, especially regarding Part 2. No preamble, no filler.
 Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
@@ -6662,7 +6707,10 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     - Is the reasoning robust or superficial?
                     - What is NOT mentioned that should be?
 
-                    Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
+                    **SCOPE LOCK CHECK (CRITICAL):**
+                    The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
+
+                    Respond in Spanish with a terse (max 100 words) critical assessment. Be direct about any shortcomings. No preamble, no filler.
                     Respond ONLY with the critical opinion text, no JSON, no formatting."""
 
             user_content = f"""Question: {question}
@@ -6691,7 +6739,7 @@ Provide a critical assessment: Is this answer truly adequate from an expert pers
                     "content": user_content
                 }
             ],
-            max_completion_tokens=500,
+            max_completion_tokens=400,
             reasoning_effort="minimal"
         )
 
