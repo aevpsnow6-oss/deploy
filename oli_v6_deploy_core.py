@@ -3730,6 +3730,22 @@ The question names a specific subject/scope. Verify the document's answer did NO
 - If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
 - Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
 
+**VERDICT CONSISTENCY RULES (MANDATORY):**
+
+- **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+- **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+  * a missing required detail
+  * superficial or generic treatment
+  * evidence that is thin, indirect, or insufficient
+  * Part 2 (specific focus) answered weakly while Part 1 was handled well
+  If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+- **No**: The document claims to address the question but fails to.
+- **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+- **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+**CONSISTENCY CHECK (apply before emitting the verdict):**
+Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
 **OUTPUT FORMAT (MANDATORY):**
 Your response MUST begin with exactly one line in this format:
 VEREDICTO: <Yes|No|Partial|Not Found|Keep>
@@ -3737,7 +3753,7 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 - Use "Keep" if the document's original answer is adequate and should stand.
 - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
 
-After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. No preamble, no filler. No JSON, no extra formatting."""
+After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
@@ -3780,6 +3796,21 @@ Evalúa críticamente:
                     **SCOPE LOCK CHECK (CRITICAL):**
                     The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
 
+                    **VERDICT CONSISTENCY RULES (MANDATORY):**
+
+                    - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+                    - **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+                      * a missing required detail
+                      * superficial or generic treatment
+                      * evidence that is thin, indirect, or insufficient
+                      If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+                    - **No**: The document claims to address the question but fails to.
+                    - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+                    - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+                    **CONSISTENCY CHECK (apply before emitting the verdict):**
+                    Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
                     **OUTPUT FORMAT (MANDATORY):**
                     Your response MUST begin with exactly one line in this format:
                     VEREDICTO: <Yes|No|Partial|Not Found|Keep>
@@ -3787,7 +3818,7 @@ Evalúa críticamente:
                     - Use "Keep" if the document's original answer is adequate and should stand.
                     - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
 
-                    After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about any shortcomings. No preamble, no filler. No JSON, no extra formatting."""
+                    After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about any shortcomings. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
 
             user_content = f"""Question: {question}
 
@@ -3881,6 +3912,22 @@ The question names a specific subject/scope. Verify the document's answer did NO
 - If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
 - Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
 
+**VERDICT CONSISTENCY RULES (MANDATORY):**
+
+- **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+- **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+  * a missing required detail
+  * superficial or generic treatment
+  * evidence that is thin, indirect, or insufficient
+  * Part 2 (specific focus) answered weakly while Part 1 was handled well
+  If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+- **No**: The document claims to address the question but fails to.
+- **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+- **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+**CONSISTENCY CHECK (apply before emitting the verdict):**
+Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
 **OUTPUT FORMAT (MANDATORY):**
 Your response MUST begin with exactly one line in this format:
 VEREDICTO: <Yes|No|Partial|Not Found|Keep>
@@ -3888,7 +3935,7 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 - Use "Keep" if the document's original answer is adequate and should stand.
 - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
 
-After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. No preamble, no filler. No JSON, no extra formatting."""
+After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
@@ -3928,6 +3975,21 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     **SCOPE LOCK CHECK (CRITICAL):**
                     The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
 
+                    **VERDICT CONSISTENCY RULES (MANDATORY):**
+
+                    - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+                    - **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+                      * a missing required detail
+                      * superficial or generic treatment
+                      * evidence that is thin, indirect, or insufficient
+                      If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+                    - **No**: The document claims to address the question but fails to.
+                    - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+                    - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+                    **CONSISTENCY CHECK (apply before emitting the verdict):**
+                    Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
                     **OUTPUT FORMAT (MANDATORY):**
                     Your response MUST begin with exactly one line in this format:
                     VEREDICTO: <Yes|No|Partial|Not Found|Keep>
@@ -3935,7 +3997,7 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     - Use "Keep" if the document's original answer is adequate and should stand.
                     - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
 
-                    After the verdict line, provide the assessment in Spanish, terse (max 100 words of assessment text, excluding the verdict line). Be direct about any shortcomings. No preamble, no filler. No JSON, no extra formatting."""
+                    After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about any shortcomings. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
 
             user_content = f"""Question: {question}
 
