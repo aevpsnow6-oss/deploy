@@ -7739,33 +7739,37 @@ with tab1:
                 progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
                 status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
 
-        # Apply critic verdict: override Respuesta when the critic recommends a different grade,
-        # and merge the critic's assessment into Razonamiento so the user reads one coherent rationale.
-        # Preserve the pre-critic answer in 'Respuesta Original' for audit.
+        # Apply critic verdict. The critic is authoritative: when it overrides, its body becomes
+        # the single coherent Razonamiento. When it confirms (Keep or matching verdict), the
+        # original reasoning is retained. The VEREDICTO tag is stripped from the audit column so
+        # Razonamiento and Evaluación Crítica never show the raw "VEREDICTO: …" prefix.
         override_count = 0
+        unparsed_count = 0
         for result in results:
             q = result.get('Pregunta')
             critic_raw = critical_opinions.get(q, "") or ""
             verdict, critic_body = parse_critic_verdict(critic_raw)
             original_answer = result.get('Respuesta', '')
             result['Respuesta Original'] = original_answer
-            base_rationale = result.get('Razonamiento', '') or ''
-            if verdict and verdict != 'Keep' and verdict != original_answer:
+
+            if verdict is None:
+                unparsed_count += 1
+            elif verdict != 'Keep' and verdict != original_answer:
                 result['Respuesta'] = verdict
-                result['Razonamiento'] = (
-                    f"{base_rationale}\n\n"
-                    f"**Evaluación crítica:** {critic_body}\n\n"
-                    f"**Ajuste de respuesta:** Originalmente '{original_answer}', "
-                    f"revisada a '{verdict}' según la evaluación crítica."
-                )
+                if critic_body:
+                    result['Razonamiento'] = critic_body
                 override_count += 1
-            else:
-                result['Razonamiento'] = (
-                    f"{base_rationale}\n\n"
-                    f"**Evaluación crítica:** {critic_body}" if critic_body else base_rationale
-                )
+
+            # Cleaned body drives the audit column; fall back to raw text if parsing failed.
+            critical_opinions[q] = critic_body if critic_body else critic_raw
+
         if override_count:
             st.info(f"🔄 {override_count} respuesta(s) ajustada(s) por la evaluación crítica.")
+        if unparsed_count:
+            st.warning(
+                f"⚠️ {unparsed_count} evaluación(es) crítica(s) sin veredicto parseable; "
+                "se mantuvo la respuesta original."
+            )
 
         # Create results DataFrame - sort by subsection for proper ordering
         results_df = pd.DataFrame(results)
