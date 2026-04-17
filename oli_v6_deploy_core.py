@@ -3753,15 +3753,21 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 - Use "Keep" if the document's original answer is adequate and should stand.
 - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
 
-**BODY TONE (MANDATORY):**
-After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+**BODY STRUCTURE (MANDATORY):**
+After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
 
-**BANNED PHRASING:**
-- No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
-- No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+(1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps in Part 2. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
 
-**STRICTNESS:**
-Be strict. Err on the side of downgrading. Any material gap in Part 2 → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address Part 2 → No or Not Found. A "Yes" requires Part 2 to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+(2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+**STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+Be strict. Err on the side of downgrading.
+- **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
+- **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+- **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+- **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
+- **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+- If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
 
 No preamble, no filler. No JSON, no extra formatting."""
 
@@ -3828,15 +3834,21 @@ Evalúa críticamente:
                     - Use "Keep" if the document's original answer is adequate and should stand.
                     - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
 
-                    **BODY TONE (MANDATORY):**
-                    After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+                    **BODY STRUCTURE (MANDATORY):**
+                    After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
 
-                    **BANNED PHRASING:**
-                    - No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
-                    - No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+                    (1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
 
-                    **STRICTNESS:**
-                    Be strict. Err on the side of downgrading. Any material gap → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address the question → No or Not Found. A "Yes" requires the question to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+                    (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+                    **STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+                    Be strict. Err on the side of downgrading.
+                    - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
+                    - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+                    - **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+                    - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
+                    - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+                    - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
 
                     No preamble, no filler. No JSON, no extra formatting."""
 
@@ -3955,15 +3967,21 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 - Use "Keep" if the document's original answer is adequate and should stand.
 - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
 
-**BODY TONE (MANDATORY):**
-After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+**BODY STRUCTURE (MANDATORY):**
+After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
 
-**BANNED PHRASING:**
-- No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
-- No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+(1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps in Part 2. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
 
-**STRICTNESS:**
-Be strict. Err on the side of downgrading. Any material gap in Part 2 → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address Part 2 → No or Not Found. A "Yes" requires Part 2 to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+(2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+**STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+Be strict. Err on the side of downgrading.
+- **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
+- **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+- **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+- **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
+- **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+- If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
 
 No preamble, no filler. No JSON, no extra formatting."""
 
@@ -4027,15 +4045,21 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     - Use "Keep" if the document's original answer is adequate and should stand.
                     - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
 
-                    **BODY TONE (MANDATORY):**
-                    After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+                    **BODY STRUCTURE (MANDATORY):**
+                    After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
 
-                    **BANNED PHRASING:**
-                    - No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
-                    - No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+                    (1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
 
-                    **STRICTNESS:**
-                    Be strict. Err on the side of downgrading. Any material gap → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address the question → No or Not Found. A "Yes" requires the question to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+                    (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+                    **STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+                    Be strict. Err on the side of downgrading.
+                    - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
+                    - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+                    - **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+                    - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
+                    - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+                    - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
 
                     No preamble, no filler. No JSON, no extra formatting."""
 
@@ -4360,8 +4384,12 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
             if '_sort_key' not in results_df.columns:
                 results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
             
-            # Sort the entire dataframe by sort_key to ensure consistent ordering
-            results_df_sorted = results_df.sort_values(by='_sort_key').reset_index(drop=True)
+            # Sort by subsection first, then by original input index so within-subsection
+            # order reflects the rubric order (not parallel as_completed arrival order).
+            sort_cols = ['_sort_key']
+            if '_orig_idx' in results_df.columns:
+                sort_cols.append('_orig_idx')
+            results_df_sorted = results_df.sort_values(by=sort_cols).reset_index(drop=True)
             
             # ===== SHEET 1: Questions (Preguntas) =====
             sheet_questions = workbook.add_worksheet('1. Preguntas')
@@ -4961,16 +4989,19 @@ with tab1:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all questions for document-based analysis first
             # TAB1: Using tab1-specific function that explicitly states when 2 parts are detected
+            # Tag each future with its original index so within-subsection ordering survives
+            # the parallel as_completed dispatch.
             future_to_question_doc = {
-                executor.submit(analyze_question_with_llm_tab1, q, document_text): q
-                for q in questions
+                executor.submit(analyze_question_with_llm_tab1, q, document_text): (idx, q)
+                for idx, q in enumerate(questions)
             }
 
             # Process document-based analyses
             completed = 0
             for future in as_completed(future_to_question_doc):
-                question = future_to_question_doc[future]
+                idx, question = future_to_question_doc[future]
                 result = future.result()
+                result['_orig_idx'] = idx
                 results.append(result)
                 completed += 1
 
@@ -5049,9 +5080,10 @@ with tab1:
         results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
         results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
         results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
-        
-        # Sort results by section and subsection
-        results_df = results_df.sort_values(by=['_sort_key']).reset_index(drop=True)
+
+        # Sort by subsection, then by original input index so questions within a subsection
+        # follow rubric order (not as_completed arrival order).
+        results_df = results_df.sort_values(by=['_sort_key', '_orig_idx']).reset_index(drop=True)
         
         # THREE-LEVEL SYNTHESIS: Question -> Subsection -> Section
         st.markdown("### 📈 Síntesis Multinivel")
