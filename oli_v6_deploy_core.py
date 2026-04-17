@@ -4263,22 +4263,21 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
             
             # ===== SHEET 1: Questions (Preguntas) =====
             sheet_questions = workbook.add_worksheet('1. Preguntas')
-            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Evaluación Crítica', 'Status']].copy()
-            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Evaluación Crítica', 'Status']
+            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
+            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']
             questions_data.to_excel(writer, index=False, sheet_name='1. Preguntas', startrow=0)
-            
+
             # Format headers
             for col_num, value in enumerate(questions_data.columns.values):
                 writer.sheets['1. Preguntas'].write(0, col_num, value, header_format)
-            
+
             # Set column widths
             writer.sheets['1. Preguntas'].set_column('A:A', 12)  # Subsección
             writer.sheets['1. Preguntas'].set_column('B:B', 35)  # Pregunta
             writer.sheets['1. Preguntas'].set_column('C:C', 12)  # Respuesta
-            writer.sheets['1. Preguntas'].set_column('D:D', 50)  # Razonamiento
+            writer.sheets['1. Preguntas'].set_column('D:D', 55)  # Razonamiento (includes critical evaluation)
             writer.sheets['1. Preguntas'].set_column('E:E', 40)  # Evidencia
-            writer.sheets['1. Preguntas'].set_column('F:F', 45)  # Evaluación Crítica
-            writer.sheets['1. Preguntas'].set_column('G:G', 10)  # Status
+            writer.sheets['1. Preguntas'].set_column('F:F', 10)  # Status
             
             # ===== SHEET 2: Subsection Analysis (Análisis por Subsección) =====
             sheet_subsections = workbook.add_worksheet('2. Análisis Subsecciones')
@@ -4908,10 +4907,10 @@ with tab1:
                 progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
                 status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
 
-        # Apply critic verdict. The critic is authoritative: when it overrides, its body becomes
-        # the single coherent Razonamiento. When it confirms (Keep or matching verdict), the
-        # original reasoning is retained. The VEREDICTO tag is stripped from the audit column so
-        # Razonamiento and Evaluación Crítica never show the raw "VEREDICTO: …" prefix.
+        # Apply critic verdict. The critic is authoritative and its body becomes the single
+        # coherent Razonamiento — whether it overrides the answer or confirms it. This gives the
+        # reader one reasoning column instead of an original reasoning plus a separate critique.
+        # Respuesta Original preserves the pre-critic grade for audit.
         override_count = 0
         unparsed_count = 0
         for result in results:
@@ -4925,11 +4924,11 @@ with tab1:
                 unparsed_count += 1
             elif verdict != 'Keep' and verdict != original_answer:
                 result['Respuesta'] = verdict
-                if critic_body:
-                    result['Razonamiento'] = critic_body
                 override_count += 1
 
-            # Cleaned body drives the audit column; fall back to raw text if parsing failed.
+            if critic_body:
+                result['Razonamiento'] = critic_body
+
             critical_opinions[q] = critic_body if critic_body else critic_raw
 
         if override_count:
