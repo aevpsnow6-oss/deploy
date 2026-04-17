@@ -3721,9 +3721,9 @@ This is a TWO-PART question where:
 - The reasoning doesn't acknowledge the two-part structure
 - Part 2 (specific question) is answered superficially or avoided
 - Evidence focuses on Part 1 but neglects Part 2
-- The reasoning doesn't connect Part 2's findings to Part 1's context
+- The answer leans on Part 1 generalities to claim Part 2 is addressed
 
-**WEIGHTING:** Your critique should allocate 95% of its attention to Part 2 and only 5% to Part 1. Do NOT penalize the answer for limited Part 1 depth — Part 1 is framing only. DO penalize any drift away from Part 2.
+**WEIGHTING (ULTRA-FOCUS ON PART 2):** Your critique must allocate ~99% of its attention to Part 2 and effectively IGNORE Part 1. Part 1 is framing only and is analyzed separately at the subsection level — do NOT evaluate Part 1 here, do NOT penalize limited Part 1 depth, and do NOT let Part 1 coverage inflate the verdict. The verdict and body must be driven almost entirely by whether Part 2 is substantively addressed.
 
 **SCOPE LOCK CHECK (CRITICAL):**
 The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
@@ -3753,7 +3753,17 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 - Use "Keep" if the document's original answer is adequate and should stand.
 - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
 
-After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
+**BODY TONE (MANDATORY):**
+After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+
+**BANNED PHRASING:**
+- No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
+- No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+
+**STRICTNESS:**
+Be strict. Err on the side of downgrading. Any material gap in Part 2 → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address Part 2 → No or Not Found. A "Yes" requires Part 2 to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+
+No preamble, no filler. No JSON, no extra formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
@@ -3818,7 +3828,17 @@ Evalúa críticamente:
                     - Use "Keep" if the document's original answer is adequate and should stand.
                     - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
 
-                    After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about any shortcomings. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
+                    **BODY TONE (MANDATORY):**
+                    After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+
+                    **BANNED PHRASING:**
+                    - No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
+                    - No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+
+                    **STRICTNESS:**
+                    Be strict. Err on the side of downgrading. Any material gap → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address the question → No or Not Found. A "Yes" requires the question to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+
+                    No preamble, no filler. No JSON, no extra formatting."""
 
             user_content = f"""Question: {question}
 
@@ -3905,7 +3925,7 @@ This is a TWO-PART question where:
 - Evidence focuses on Part 1 but neglects Part 2
 - The reasoning doesn't connect Part 2's findings to Part 1's context
 
-**WEIGHTING:** Your critique should allocate 95% of its attention to Part 2 and only 5% to Part 1. Do NOT penalize the answer for limited Part 1 depth — Part 1 is framing only. DO penalize any drift away from Part 2.
+**WEIGHTING (ULTRA-FOCUS ON PART 2):** Your critique must allocate ~99% of its attention to Part 2 and effectively IGNORE Part 1. Part 1 is framing only and is analyzed separately at the subsection level — do NOT evaluate Part 1 here, do NOT penalize limited Part 1 depth, and do NOT let Part 1 coverage inflate the verdict. The verdict and body must be driven almost entirely by whether Part 2 is substantively addressed.
 
 **SCOPE LOCK CHECK (CRITICAL):**
 The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
@@ -3935,7 +3955,17 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 - Use "Keep" if the document's original answer is adequate and should stand.
 - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
 
-After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about shortcomings, especially regarding Part 2. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
+**BODY TONE (MANDATORY):**
+After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+
+**BANNED PHRASING:**
+- No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
+- No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+
+**STRICTNESS:**
+Be strict. Err on the side of downgrading. Any material gap in Part 2 → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address Part 2 → No or Not Found. A "Yes" requires Part 2 to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+
+No preamble, no filler. No JSON, no extra formatting."""
 
             # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
@@ -3997,7 +4027,17 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     - Use "Keep" if the document's original answer is adequate and should stand.
                     - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
 
-                    After the verdict line, provide the assessment in Spanish, terse (max 150 words of assessment text, excluding the verdict line). Be direct about any shortcomings. Name the specific gaps that justify the verdict. No preamble, no filler. No JSON, no extra formatting."""
+                    **BODY TONE (MANDATORY):**
+                    After the verdict line, write a terse Spanish explanation (max 150 words) of WHY that verdict was assigned. Lead with a phrase like "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Do NOT write a fresh evaluation phrased as "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it.
+
+                    **BANNED PHRASING:**
+                    - No recommendations. Do NOT write "se recomienda", "debería incluir", "sería conveniente", "se sugiere", "convendría", "idealmente". Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W".
+                    - No hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado").
+
+                    **STRICTNESS:**
+                    Be strict. Err on the side of downgrading. Any material gap → Partial minimum. Any substitution of scope, fundamental absence, or answer that does not address the question → No or Not Found. A "Yes" requires the question to be concretely and fully addressed with substantive evidence; if in doubt, it is Partial.
+
+                    No preamble, no filler. No JSON, no extra formatting."""
 
             user_content = f"""Question: {question}
 
