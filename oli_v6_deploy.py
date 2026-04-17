@@ -9393,8 +9393,13 @@ with tab5:
             for col, vals in ai_filters.items():
                 if vals and col in df_ai_base.columns:
                     df_ai_base = df_ai_base[df_ai_base[col].isin(vals)]
-            
-            st.write(f"**Total Registros Filtrados:** {len(df_ai_base)}")
+
+            id_col_ai = 'Recommendation ID' if 'Recommendation ID' in df_ai_base.columns else 'Recommendation description'
+            unique_recs_count = df_ai_base[id_col_ai].nunique() if id_col_ai in df_ai_base.columns else len(df_ai_base)
+
+            c_cnt1, c_cnt2 = st.columns(2)
+            c_cnt1.metric("Total Registros Filtrados", len(df_ai_base))
+            c_cnt2.metric("Recomendaciones Únicas", unique_recs_count)
             
             st.markdown("---")
             
