@@ -4122,6 +4122,23 @@ def parse_subsection_for_sorting(subsection_str):
     except:
         return (999, 999)
 
+def parse_question_sort_key(question_text):
+    """Extract the full numeric prefix from question text as a tuple for fine-grained sorting.
+
+    Examples: '1.1 ¿...?' -> (1, 1); '1.1.2 ¿...?' -> (1, 1, 2); '2.10 ¿...?' -> (2, 10).
+    Unlike parse_subsection_for_sorting which caps at two levels, this preserves every
+    numeric segment so nested numbering (1.1, 1.1.1, 1.1.2, 1.2) sorts naturally and
+    does not collapse to a single subsection bucket.
+    """
+    import re
+    match = re.match(r'^\s*(\d+(?:\.\d+)*)', str(question_text).strip())
+    if not match:
+        return (999, 999, 999)
+    try:
+        return tuple(int(p) for p in match.group(1).split('.'))
+    except ValueError:
+        return (999, 999, 999)
+
 def synthesize_subsection_analysis(subsection_id, subsection_questions_df):
     """Synthesize subsection-level analysis from individual question answers within that subsection"""
     try:
@@ -4384,8 +4401,12 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
             if '_sort_key' not in results_df.columns:
                 results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
             
-            # Sort by subsection first, then by original input index so within-subsection
-            # order reflects the rubric order (not parallel as_completed arrival order).
+            # Always re-derive _sort_key from the question text so persisted session-state
+            # DataFrames (which may have been built with the old two-level sort key) are
+            # re-sorted by the full numeric prefix.
+            results_df['_sort_key'] = results_df['Pregunta'].apply(parse_question_sort_key)
+
+            # Primary sort by full numeric prefix; _orig_idx breaks ties if available.
             sort_cols = ['_sort_key']
             if '_orig_idx' in results_df.columns:
                 sort_cols.append('_orig_idx')
@@ -5079,10 +5100,12 @@ with tab1:
         results_df['Evaluación Crítica'] = results_df['Pregunta'].map(critical_opinions).fillna("No disponible")
         results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
         results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
-        results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
+        # Sort key uses the FULL numeric prefix (e.g., "1.1.2" -> (1,1,2)) so nested
+        # numbering sorts naturally instead of collapsing to the two-level subsection.
+        results_df['_sort_key'] = results_df['Pregunta'].apply(parse_question_sort_key)
 
-        # Sort by subsection, then by original input index so questions within a subsection
-        # follow rubric order (not as_completed arrival order).
+        # Primary sort by full numeric prefix; _orig_idx breaks ties for questions that
+        # share the same numeric prefix, keeping rubric order within that group.
         results_df = results_df.sort_values(by=['_sort_key', '_orig_idx']).reset_index(drop=True)
         
         # THREE-LEVEL SYNTHESIS: Question -> Subsection -> Section
