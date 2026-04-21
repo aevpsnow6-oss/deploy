@@ -293,50 +293,22 @@ def analyze_recommendation_plan_pair(recommendation, action_plan, comments, clie
                 'public_policy_incidence', 'financial_sustainability']
     
     prompt = f"""
-    Analyze the following recommendation, its corresponding action plan, and additional comments:
+    Analyze the following recommendation:
     
     RECOMMENDATION:
     {recommendation}
     
-    ACTION PLAN:
+    ACTION PLAN (for context only):
     {action_plan}
     
-    ADDITIONAL COMMENTS:
+    ADDITIONAL COMMENTS (for context only):
     {comments}
     
-    Please extract and return ONLY a JSON object with the following fields:
-    1. extracted_actions_from_rec: List all specific actions requested in the recommendation
-    2. actions_proposed_in_plan: List all specific actions mentioned in the action plan
-    3. difficulties_mentioned: Any difficulties or challenges mentioned in implementing the recommendation (look carefully in the action plan AND comments for these)
-    4. reasons_for_rejection: If the recommendation wasn't fully accepted, reasons given (pay special attention to justifications in the comments)
-    5. rejection_difficulty_classification: Classify the reasons (Financial, Technical, Political, Low priority, Unjustified, Third party dependency, Time constraints, Cultural/behavioral, Local operational constraints, Mandate limitations, Other). At most 3.
-    6. coherence_score: Score from 0-10 how well the action plan addresses the recommendation
-    7. coherence_rationale: Detailed explanation (6-8 sentences).
-    8. plan_quality_score: Score from 0-10 (specificity, feasibility).
-    9. plan_quality_rationale: Detailed explanation (6-8 sentences).
-    10. attention_level_score: Score from 0-10 (priority given).
-    11. attention_level_rationale: Detailed explanation (6-8 sentences).
-    12. overall_score: Score from 0-10.
-    13. overall_score_rationale: Extensive analysis (6-8 sentences).
-    14. tags: Select 2-5 most relevant tags from: {", ".join(ilo_tags_list)}
-    
-    Now, analyze the recommendation on its own:
-
     {INNOVATION_RUBRIC_PROMPT}
 
-    15. rec_innovation_score: Apply the 5-dimension innovation rubric above. Score each dimension 1–5 internally, then return the overall level as one of (Very low, Low, Medium, High, Very High), derived from the rounded average of the five dimension scores (1→Very low, 2→Low, 3→Medium, 4→High, 5→Very High).
-    16. rec_innovation_rationale: 3-4 sentences. Explicitly cite the per-dimension scores in the form "D1=x, D2=x, D3=x, D4=x, D5=x" and briefly justify the weakest/strongest dimensions. Do not reward tech/aspirational language or size alone.
-    17. rec_precision_and_clarity: (Very low, Low, Medium, High, Very High).
-    18. rec_precision_and_clarity_rationale: Explanation (3-4 sentences).
-    19. rec_additional_tags: Select 2-5 relevant tags from: {", ".join(rec_tags_list)}
-    20. rec_operational_feasibility: (Very low, Low, Medium, High, Very High).
-    21. rec_operational_feasibility_rationale: Explanation (3-4 sentences).
-    22. rec_timeline: (short, medium, long).
-    23. rec_timeline_rationale: Explanation (3-4 sentences).
-    24. rec_expected_impact: (Very low, Low, Medium, High, Very High).
-    25. rec_expected_impact_rationale: Explanation (3-4 sentences).
-    26. rec_intervention_approach: (processes, results, policy).
-    27. rec_intervention_approach_rationale: Explanation (3-4 sentences).
+    Please return ONLY a JSON object with the following two fields:
+    1. rec_innovation_score: Apply the 5-dimension innovation rubric above. Score each dimension 1–5 internally, then return the overall level as one of (Very low, Low, Medium, High, Very High), derived from the rounded average of the five dimension scores (1→Very low, 2→Low, 3→Medium, 4→High, 5→Very High).
+    2. rec_innovation_rationale: 3-4 sentences. Explicitly cite the per-dimension scores in the form "D1=x, D2=x, D3=x, D4=x, D5=x" and briefly justify the weakest/strongest dimensions. Do not reward tech/aspirational language or size alone.
     
     Respond ONLY with the JSON object.
     """
@@ -346,7 +318,7 @@ def analyze_recommendation_plan_pair(recommendation, action_plan, comments, clie
             model=model,
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": "You analyze recommendations and action plans, returning structured JSON results."},
+                {"role": "system", "content": "You analyze recommendations and return structured JSON results."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3
@@ -357,8 +329,7 @@ def analyze_recommendation_plan_pair(recommendation, action_plan, comments, clie
     except Exception as e:
         return {
             "error": str(e),
-            "coherence_score": 0,
-            "overall_score": 0
+            "rec_innovation_score": None
         }
 
 def run_row_analysis(args):
@@ -1502,14 +1473,10 @@ with tab1:
             # 1. Deep Analysis Results
             if 'deep_analysis_df' in st.session_state:
                 st.markdown("---")
-                st.subheader("📊 Resultados: Análisis Profundo")
+                st.subheader("📊 Resultados: Análisis de Innovación")
                 df_final_deep = st.session_state['deep_analysis_df']
                 
-                c_m1, c_m2 = st.columns(2)
-                c_m1.metric("Coherencia Prom.", f"{df_final_deep['coherence_score'].mean():.2f}")
-                c_m2.metric("Calidad Plan Prom.", f"{df_final_deep['plan_quality_score'].mean():.2f}")
-                
-                st.dataframe(df_final_deep[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'rejection_difficulty_classification', 'tags']], use_container_width=True)
+                st.dataframe(df_final_deep[['Recommendation description', 'rec_innovation_score', 'rec_innovation_rationale']], use_container_width=True)
                 
                 # Export Deep
                 out_deep = BytesIO()
@@ -1521,50 +1488,14 @@ with tab1:
                     _cols_to_drop_deep += list(df_final_deep.columns[48:min(59, len(df_final_deep.columns))])
                 df_final_deep_export = df_final_deep.drop(columns=_cols_to_drop_deep, errors='ignore')
                 with pd.ExcelWriter(out_deep, engine='xlsxwriter') as writer:
-                    df_final_deep_export.to_excel(writer, index=False, sheet_name='Analisis_Profundo')
+                    df_final_deep_export.to_excel(writer, index=False, sheet_name='Analisis_Innovacion')
                 
-                st.download_button("📥 Descargar Reporte Análisis (.xlsx)", out_deep.getvalue(), "analisis_profundo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button("📥 Descargar Reporte Análisis (.xlsx)", out_deep.getvalue(), "analisis_innovacion.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-                # Visualizations Deep
-                st.markdown("##### 📈 Distribución de Métricas Clave")
-                
-                col_v1, col_v2 = st.columns(2)
-                
-                if 'coherence_score' in df_final_deep.columns:
-                    with col_v1:
-                        fig_d1 = px.histogram(df_final_deep, x="coherence_score", nbins=10, title="Distribución de Coherencia", color_discrete_sequence=['#636EFA'])
-                        st.plotly_chart(fig_d1, use_container_width=True)
-                
-                if 'plan_quality_score' in df_final_deep.columns:
-                     with col_v2:
-                        fig_d2 = px.histogram(df_final_deep, x="plan_quality_score", nbins=10, title="Distribución de Calidad del Plan", color_discrete_sequence=['#EF553B'])
-                        st.plotly_chart(fig_d2, use_container_width=True)
-                
-                col_v3, col_v4 = st.columns(2)
-                
-                if 'attention_level_score' in df_final_deep.columns:
-                     with col_v3:
-                        fig_d3 = px.histogram(df_final_deep, x="attention_level_score", nbins=10, title="Nivel de Atención", color_discrete_sequence=['#00CC96'])
-                        st.plotly_chart(fig_d3, use_container_width=True)
-
+                # Innovation pie chart
                 if 'rec_innovation_score' in df_final_deep.columns:
-                     with col_v4:
-                         # Categorical
-                         fig_pie = px.pie(df_final_deep, names='rec_innovation_score', title="Nivel de Innovación", hole=0.3)
-                         st.plotly_chart(fig_pie, use_container_width=True)
-                
-                st.markdown("##### 🚦 Factibilidad e Impacto")
-                col_v5, col_v6 = st.columns(2)
-                
-                if 'rec_operational_feasibility' in df_final_deep.columns:
-                    with col_v5:
-                        fig_feas = px.histogram(df_final_deep, x='rec_operational_feasibility', title="Factibilidad Operativa", color='rec_operational_feasibility')
-                        st.plotly_chart(fig_feas, use_container_width=True)
-                
-                if 'rec_expected_impact' in df_final_deep.columns:
-                    with col_v6:
-                         fig_imp = px.histogram(df_final_deep, x='rec_expected_impact', title="Impacto Esperado", color='rec_expected_impact')
-                         st.plotly_chart(fig_imp, use_container_width=True)
+                    fig_pie = px.pie(df_final_deep, names='rec_innovation_score', title="Nivel de Innovación", hole=0.3)
+                    st.plotly_chart(fig_pie, use_container_width=True)
 
             # 2. Summary Results
             if 'summary_result' in st.session_state:
@@ -2367,14 +2298,10 @@ with tab2:
             # 1. Deep Analysis Results
             if 'deep_analysis_df_en' in st.session_state:
                 st.markdown("---")
-                st.subheader("📊 Results: Deep Analysis")
+                st.subheader("📊 Results: Innovation Analysis")
                 df_final_deep_en = st.session_state['deep_analysis_df_en']
 
-                c_m1_en, c_m2_en = st.columns(2)
-                c_m1_en.metric("Avg. Coherence", f"{df_final_deep_en['coherence_score'].mean():.2f}")
-                c_m2_en.metric("Avg. Plan Quality", f"{df_final_deep_en['plan_quality_score'].mean():.2f}")
-
-                st.dataframe(df_final_deep_en[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'rejection_difficulty_classification', 'tags']], use_container_width=True)
+                st.dataframe(df_final_deep_en[['Recommendation description', 'rec_innovation_score', 'rec_innovation_rationale']], use_container_width=True)
 
                 # Export Deep
                 out_deep_en = BytesIO()
@@ -2386,49 +2313,14 @@ with tab2:
                     _cols_to_drop_deep_en += list(df_final_deep_en.columns[48:min(59, len(df_final_deep_en.columns))])
                 df_final_deep_en_export = df_final_deep_en.drop(columns=_cols_to_drop_deep_en, errors='ignore')
                 with pd.ExcelWriter(out_deep_en, engine='xlsxwriter') as writer:
-                    df_final_deep_en_export.to_excel(writer, index=False, sheet_name='Deep_Analysis')
+                    df_final_deep_en_export.to_excel(writer, index=False, sheet_name='Innovation_Analysis')
 
-                st.download_button("📥 Download Analysis Report (.xlsx)", out_deep_en.getvalue(), "deep_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button("📥 Download Analysis Report (.xlsx)", out_deep_en.getvalue(), "innovation_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-                # Visualizations Deep
-                st.markdown("##### 📈 Key Metrics Distribution")
-
-                col_v1_en, col_v2_en = st.columns(2)
-
-                if 'coherence_score' in df_final_deep_en.columns:
-                    with col_v1_en:
-                        fig_d1_en = px.histogram(df_final_deep_en, x="coherence_score", nbins=10, title="Coherence Distribution", color_discrete_sequence=['#636EFA'])
-                        st.plotly_chart(fig_d1_en, use_container_width=True)
-
-                if 'plan_quality_score' in df_final_deep_en.columns:
-                     with col_v2_en:
-                        fig_d2_en = px.histogram(df_final_deep_en, x="plan_quality_score", nbins=10, title="Plan Quality Distribution", color_discrete_sequence=['#EF553B'])
-                        st.plotly_chart(fig_d2_en, use_container_width=True)
-
-                col_v3_en, col_v4_en = st.columns(2)
-
-                if 'attention_level_score' in df_final_deep_en.columns:
-                     with col_v3_en:
-                        fig_d3_en = px.histogram(df_final_deep_en, x="attention_level_score", nbins=10, title="Attention Level", color_discrete_sequence=['#00CC96'])
-                        st.plotly_chart(fig_d3_en, use_container_width=True)
-
+                # Innovation pie chart
                 if 'rec_innovation_score' in df_final_deep_en.columns:
-                     with col_v4_en:
-                         fig_pie_en = px.pie(df_final_deep_en, names='rec_innovation_score', title="Innovation Level", hole=0.3)
-                         st.plotly_chart(fig_pie_en, use_container_width=True)
-
-                st.markdown("##### 🚦 Feasibility and Impact")
-                col_v5_en, col_v6_en = st.columns(2)
-
-                if 'rec_operational_feasibility' in df_final_deep_en.columns:
-                    with col_v5_en:
-                        fig_feas_en = px.histogram(df_final_deep_en, x='rec_operational_feasibility', title="Operational Feasibility", color='rec_operational_feasibility')
-                        st.plotly_chart(fig_feas_en, use_container_width=True)
-
-                if 'rec_expected_impact' in df_final_deep_en.columns:
-                    with col_v6_en:
-                         fig_imp_en = px.histogram(df_final_deep_en, x='rec_expected_impact', title="Expected Impact", color='rec_expected_impact')
-                         st.plotly_chart(fig_imp_en, use_container_width=True)
+                    fig_pie_en = px.pie(df_final_deep_en, names='rec_innovation_score', title="Innovation Level", hole=0.3)
+                    st.plotly_chart(fig_pie_en, use_container_width=True)
 
             # 2. Summary Results
             if 'summary_result_en' in st.session_state:
