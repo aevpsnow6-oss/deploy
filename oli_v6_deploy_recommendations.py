@@ -1513,8 +1513,15 @@ with tab1:
                 
                 # Export Deep
                 out_deep = BytesIO()
+                # Drop columns AE:AT (indices 30-45) and AW:BG (indices 48-58) before export
+                _cols_to_drop_deep = []
+                if len(df_final_deep.columns) > 30:
+                    _cols_to_drop_deep += list(df_final_deep.columns[30:min(46, len(df_final_deep.columns))])
+                if len(df_final_deep.columns) > 48:
+                    _cols_to_drop_deep += list(df_final_deep.columns[48:min(59, len(df_final_deep.columns))])
+                df_final_deep_export = df_final_deep.drop(columns=_cols_to_drop_deep, errors='ignore')
                 with pd.ExcelWriter(out_deep, engine='xlsxwriter') as writer:
-                    df_final_deep.to_excel(writer, index=False, sheet_name='Analisis_Profundo')
+                    df_final_deep_export.to_excel(writer, index=False, sheet_name='Analisis_Profundo')
                 
                 st.download_button("📥 Descargar Reporte Análisis (.xlsx)", out_deep.getvalue(), "analisis_profundo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
@@ -2371,8 +2378,15 @@ with tab2:
 
                 # Export Deep
                 out_deep_en = BytesIO()
+                # Drop columns AE:AT (indices 30-45) and AW:BG (indices 48-58) before export
+                _cols_to_drop_deep_en = []
+                if len(df_final_deep_en.columns) > 30:
+                    _cols_to_drop_deep_en += list(df_final_deep_en.columns[30:min(46, len(df_final_deep_en.columns))])
+                if len(df_final_deep_en.columns) > 48:
+                    _cols_to_drop_deep_en += list(df_final_deep_en.columns[48:min(59, len(df_final_deep_en.columns))])
+                df_final_deep_en_export = df_final_deep_en.drop(columns=_cols_to_drop_deep_en, errors='ignore')
                 with pd.ExcelWriter(out_deep_en, engine='xlsxwriter') as writer:
-                    df_final_deep_en.to_excel(writer, index=False, sheet_name='Deep_Analysis')
+                    df_final_deep_en_export.to_excel(writer, index=False, sheet_name='Deep_Analysis')
 
                 st.download_button("📥 Download Analysis Report (.xlsx)", out_deep_en.getvalue(), "deep_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
