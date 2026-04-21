@@ -3764,7 +3764,7 @@ After the verdict line, write a terse Spanish body (max 180 words total) in TWO 
 Be strict. Err on the side of downgrading.
 - **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
 - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-- **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+- **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
 - **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
 - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
 - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
@@ -3845,7 +3845,7 @@ Evalúa críticamente:
                     Be strict. Err on the side of downgrading.
                     - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
                     - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-                    - **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+                    - **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
                     - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
                     - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
                     - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
@@ -3978,7 +3978,7 @@ After the verdict line, write a terse Spanish body (max 180 words total) in TWO 
 Be strict. Err on the side of downgrading.
 - **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
 - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-- **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+- **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
 - **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
 - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
 - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
@@ -4056,7 +4056,7 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     Be strict. Err on the side of downgrading.
                     - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
                     - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-                    - **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+                    - **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
                     - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
                     - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
                     - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
