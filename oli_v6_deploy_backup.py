@@ -1,3 +1,5 @@
+import concurrent.futures
+import pickle
 import streamlit as st
 import pandas as pd
 import json
@@ -38,6 +40,85 @@ from openai import OpenAI
 client = OpenAI(api_key=openai_api_key)
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
+# Import tiktoken for accurate token counting
+try:
+    import tiktoken
+    # Use cl100k_base encoding (standard for GPT-4 and GPT-5 models)
+    encoding = tiktoken.get_encoding("cl100k_base")
+except ImportError:
+    encoding = None
+    # Warning will be shown when function is first called if needed
+
+# Helper function to truncate text to a token limit
+def truncate_to_token_limit(text, max_tokens=110000, encoding_obj=None):
+    """
+    Truncate text to a maximum number of tokens.
+    
+    Args:
+        text: The text to truncate
+        max_tokens: Maximum number of tokens (default 110K for GPT-5-mini's 128K context window)
+        encoding_obj: tiktoken encoding object (if None, falls back to character estimation)
+    
+    Returns:
+        Truncated text that fits within the token limit
+    """
+    if not text:
+        return text
+    
+    if encoding_obj is None:
+        # Fallback: use character-based estimation (4 chars per token for Spanish)
+        # 110K tokens * 4 = 440K characters
+        max_chars = max_tokens * 4
+        return text[:max_chars]
+    
+    # Count tokens
+    tokens = encoding_obj.encode(text)
+    
+    # If within limit, return full text
+    if len(tokens) <= max_tokens:
+        return text
+    
+    # Truncate to max_tokens
+    truncated_tokens = tokens[:max_tokens]
+    truncated_text = encoding_obj.decode(truncated_tokens)
+    
+    return truncated_text
+
+# JSON Schemas for structured rubric responses (Tabs 1-4).
+# Using strict structured outputs eliminates JSON-parse fallbacks AND gives a
+# verifiable 'parte_enfocada' signal that the model committed to Part 2.
+RUBRIC_SCHEMA_TWO_PART = {
+    "name": "rubric_response_two_part",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "Respuesta": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found"]},
+            "Razonamiento": {"type": "string"},
+            "Evidencia": {"type": "string"},
+            "parte_enfocada": {"type": "string", "enum": ["Parte 2", "Parte 1", "Ambas"]},
+        },
+        "required": ["Respuesta", "Razonamiento", "Evidencia", "parte_enfocada"],
+    },
+}
+
+RUBRIC_SCHEMA_SINGLE = {
+    "name": "rubric_response_single",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "Respuesta": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found"]},
+            "Razonamiento": {"type": "string"},
+            "Evidencia": {"type": "string"},
+        },
+        "required": ["Respuesta", "Razonamiento", "Evidencia"],
+    },
+}
+
 
 # Function to get embeddings from OpenAI
 def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
@@ -104,7 +185,285 @@ def find_recommendations_by_term_matching(query, doc_texts, structured_embedding
         st.error(f"Error en la coincidencia de términos: {str(e)}")
         return []
 
-# ============= DOCX PARSING FUNCTIONS =============
+# Function to generate executive summary using LLM
+def generate_executive_summary(recommendations_text, max_output_tokens=3000):
+    """
+    Generates an executive summary from a list of recommendations using OpenAI.
+    """
+    if not recommendations_text:
+        return "No hay recomendaciones para resumir."
+
+    # Truncate to avoid context limit (approx 120k chars is safe for gpt-4o-mini's 128k tokens, keeping room for output)
+    # Using existing helper
+    truncated_input = truncate_to_token_limit(recommendations_text, max_tokens=100000, encoding_obj=encoding)
+
+    system_prompt = """Eres un asistente experto en análisis de evaluaciones de proyectos de desarrollo. 
+    Tu tarea es generar un Resumen Ejecutivo exhaustivo, informativo y detallado basado en las recomendaciones, respuestas de gestión y planes de acción proporcionados.
+    
+    El resumen debe:
+    1. Identificar los temas principales y patrones recurrentes.
+    2. Resaltar las acciones críticas sugeridas.
+    3. Incorporar la perspectiva de la respuesta de gestión si está disponible.
+    4. Estar estructurado con títulos claros y puntos clave (bullet points).
+    5. Ser profesional y directo.
+    6. Estar en Español.
+    """
+    
+    user_prompt = f"Aquí están los datos de las recomendaciones (incluyendo descripción, respuesta de gestión, comentarios, etc.):\n\n{truncated_input}\n\nPor favor, genera el Resumen Ejecutivo ahora."
+
+    if not openai_api_key:
+        return "Error: No se encontró la clave API de OpenAI."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", # Cost-effective model
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=max_output_tokens
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generando el resumen: {str(e)}"
+
+def verify_match_with_llm(rec_text, candidates, api_key):
+    """
+    Uses LLM to verify which of the candidates is the best match for the recommendation.
+    candidates: list of dicts {'dimension':..., 'subdim':..., 'definition':...}
+    Returns: index of the best match in candidates list, or -1 if none fit well.
+    """
+    if not api_key: 
+        return 0 # Fallback to top 1 if no key
+        
+    candidates_str = ""
+    for i, c in enumerate(candidates):
+        # We assume 'texto_merged' acts as the definition/description
+        candidates_str += f"Option {i+1}:\nCategory: {c['dimension']} - {c['subdim']}\nDefinition/Context: {c['texto_merged']}\n\n"
+        
+    system_prompt = """You are an expert in classifying development project recommendations.
+    You will be given a 'Recommendation' and a list of 'Options' (categories with definitions).
+    Your task is to select the Option that BEST fits the Recommendation based on the definition.
+    
+    CRITICAL INSTRUCTIONS:
+    1. Read the Recommendation and the Definitions carefully.
+    2. **STRICT SEMANTIC MATCH**: The recommendation must describe the *same action* and *same object* as the definition.
+    3. **IGNORE SUPERFICIAL KEYWORDS**: Do not select an option just because it shares a word (e.g., "Pensions") if the *context* is different (e.g., "Political backing" vs "Financial funding").
+    4. **REQUIREMENT CHECK**: If a definition requires a specific mechanism (e.g., "Financing", "Legislation", "Training"), the recommendation MUST explicitly mention it.
+    5. Return ONLY the number of the best option (1, 2, 3...).
+    6. If none of them fit reasonably well, return 0.
+    """
+    
+    user_prompt = f"Recommendation: \"{rec_text}\"\n\n{candidates_str}\n\nWhich option is the best fit? (Return just the number, e.g. 1)"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.0, # Deterministic
+            max_tokens=6
+        )
+        content = response.choices[0].message.content.strip()
+        # Parse number
+        import re
+        match = re.search(r'\d+', content)
+        if match:
+            val = int(match.group())
+            if 1 <= val <= len(candidates):
+                return val - 1 # 0-indexed
+            else:
+                return -1 # None or 0
+        return 0 # Fallback to Top 1 if parse fails
+    except:
+        return 0 # Fallback to Top 1 on error
+
+# --- Analysis Cache (for Deep Analysis) ---
+class AnalysisCache:
+    def __init__(self, cache_file="analysis_cache.pkl"):
+        self.cache_file = cache_file
+        self.cache = {}
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'rb') as f:
+                    self.cache = pickle.load(f)
+            except:
+                self.cache = {}
+
+    def save(self):
+        with open(self.cache_file, 'wb') as f:
+            pickle.dump(self.cache, f)
+
+    def get(self, key):
+        return self.cache.get(key)
+    
+    def set(self, key, value):
+        self.cache[key] = value
+
+    def generate_key(self, rec, plan):
+        # Create a hash based on rec + plan content
+        content = f"{str(rec).strip()}|{str(plan).strip()}"
+        return content 
+
+# --- Deep Analysis Logic ---
+INNOVATION_RUBRIC_PROMPT = """\
+RÚBRICA DE INNOVACIÓN (5 dimensiones, cada una 1–5). Evalúe internamente las 5 dimensiones, luego derive rec_innovation_score como el promedio redondeado mapeado a la escala categórica (1=Very low, 2=Low, 3=Medium, 4=High, 5=Very High).
+
+D1. NOVEDAD RELEVANTE — qué tan diferente es la recomendación respecto de prácticas habituales. NO premiar lenguaje tecnológico ni aspiracional; NO confundir tamaño con innovación.
+  1=Muy baja: reitera práctica normal (reuniones de seguimiento, actualizar base de beneficiarios, informes trimestrales).
+  2=Baja: ajuste incremental a práctica conocida (mejorar formato de reportes, ampliar capacitaciones existentes).
+  3=Media: adapta práctica conocida a nuevo contexto/población (incorporar teoría de cambio donde no existía, adaptar capacitación a comunidades rurales).
+  4=Alta: mecanismo poco común en ese contexto (red interinstitucional formal, fondo competitivo, laboratorio de innovación).
+  5=Muy alta: solución no rutinaria con lógica nueva (sistema nacional interoperable, arquitectura institucional nueva, ecosistema digital colaborativo).
+
+D2. VALOR PARA CONSTITUYENTES — mejora acceso, calidad, eficiencia, inclusión o resultados para usuarios/beneficiarios/mandantes. NO premiar mejoras internas sin impacto en usuarios.
+  1=Muy bajo: sin problema ni beneficiario claro (fortalecer gestión, optimizar procesos administrativos).
+  2=Bajo: mejora marginal/indirecta sin impacto en resultados.
+  3=Medio: responde a un problema con impacto limitado o parcial.
+  4=Alto: mejora claramente calidad/cobertura/pertinencia (servicios adaptados a poblaciones vulnerables, reducir barreras de acceso).
+  5=Muy alto: transforma acceso/beneficio (acceso universal antes inexistente, eliminar barreras estructurales).
+
+D3. APRENDIZAJE, PRUEBA Y ESCALAMIENTO — mecanismos para experimentar, medir, aprender y replicar.
+  1=Muy bajo: actividad única sin aprendizaje (un taller, un informe final).
+  2=Bajo: aprendizaje implícito sin estructura.
+  3=Medio: potencial de réplica pero sin cómo aprender/mejorar.
+  4=Alto: piloto/seguimiento/mejora progresiva estructurados.
+  5=Muy alto: ciclo completo piloto→medición→retroalimentación→escalamiento.
+
+D4. CAMBIO SISTÉMICO O INSTITUCIONAL — modifica estructuras, reglas, coordinación o gobernanza (no solo actividades). NO confundir cobertura con cambio sistémico.
+  1=Muy bajo: actividad aislada (capacitaciones, materiales, talleres).
+  2=Bajo: mejora operativa local sin afectar estructura.
+  3=Medio: cambio dentro de una unidad/programa.
+  4=Alto: cambio organizacional o de coordinación entre actores (red interinstitucional con roles, nuevo modelo de gobernanza en implementación).
+  5=Muy alto: transformación sistémica (sistema nacional integrado, rediseño de gobernanza de política pública, arquitectura multisectorial nueva).
+
+D5. FACTIBILIDAD ESTRATÉGICA — viable en el contexto institucional, político, técnico y operativo actual. Penalizar aspiracional/vago sin mecanismo.
+  1=Muy baja: irreal (sistema nacional sin actores ni recursos, transformación sin estrategia).
+  2=Baja: requiere condiciones altamente improbables o no descritas.
+  3=Media: implementable con ajustes, recursos o coordinación adicional.
+  4=Alta: coherente con capacidades, actores y contexto (escalar intervención ya probada).
+  5=Muy alta: condiciones de implementación claras (piloto exitoso con actores comprometidos, modelo validado en contextos similares).
+"""
+
+
+def analyze_recommendation_plan_pair(recommendation, action_plan, comments, client, model="gpt-4o-mini"):
+    """
+    Send recommendation, action plan, and comments to OpenAI API for analysis
+    """
+    if pd.isna(recommendation) or pd.isna(action_plan):
+        return None # Skip empty
+    
+    # Handle NaN comments
+    if pd.isna(comments):
+        comments = "No additional comments provided."
+    
+    # Define ILO development project relevant tags
+    ilo_tags_list = [
+        "capacity_building", "training", "employment_creation", "gender_equality", 
+        "decent_work", "labor_rights", "social_dialogue", "social_protection",
+        "occupational_safety", "child_labor", "forced_labor", "labor_migration",
+        "working_conditions", "skills_development", "social_inclusion", "monitoring_evaluation",
+        "institutional_strengthening", "policy_development", "knowledge_management",
+        "sustainability", "stakeholder_engagement", "data_collection", "technical_assistance",
+        "project_design", "implementation_methodology", "resource_allocation", 
+        "coordination", "partnership_building", "innovation", "digital_transformation"
+    ]
+    
+    rec_tags_list = ['governance', 'participation', 'gender_issues', 'just_transition', 'institutional_strenghtening', 
+                'public_policy_incidence', 'financial_sustainability']
+    
+    prompt = f"""
+    Analyze the following recommendation, its corresponding action plan, and additional comments:
+    
+    RECOMMENDATION:
+    {recommendation}
+    
+    ACTION PLAN:
+    {action_plan}
+    
+    ADDITIONAL COMMENTS:
+    {comments}
+    
+    Please extract and return ONLY a JSON object with the following fields:
+    1. extracted_actions_from_rec: List all specific actions requested in the recommendation
+    2. actions_proposed_in_plan: List all specific actions mentioned in the action plan
+    3. difficulties_mentioned: Any difficulties or challenges mentioned in implementing the recommendation (look carefully in the action plan AND comments for these)
+    4. reasons_for_rejection: If the recommendation wasn't fully accepted, reasons given (pay special attention to justifications in the comments)
+    5. rejection_difficulty_classification: Classify the reasons (Financial, Technical, Political, Low priority, Unjustified, Third party dependency, Time constraints, Cultural/behavioral, Local operational constraints, Mandate limitations, Other). At most 3.
+    6. coherence_score: Score from 0-10 how well the action plan addresses the recommendation
+    7. coherence_rationale: Detailed explanation (6-8 sentences).
+    8. plan_quality_score: Score from 0-10 (specificity, feasibility).
+    9. plan_quality_rationale: Detailed explanation (6-8 sentences).
+    10. attention_level_score: Score from 0-10 (priority given).
+    11. attention_level_rationale: Detailed explanation (6-8 sentences).
+    12. overall_score: Score from 0-10.
+    13. overall_score_rationale: Extensive analysis (6-8 sentences).
+    14. tags: Select 2-5 most relevant tags from: {", ".join(ilo_tags_list)}
+    
+    Now, analyze the recommendation on its own:
+
+    {INNOVATION_RUBRIC_PROMPT}
+
+    15. rec_innovation_score: Apply the 5-dimension innovation rubric above. Score each dimension 1–5 internally, then return the overall level as one of (Very low, Low, Medium, High, Very High), derived from the rounded average of the five dimension scores (1→Very low, 2→Low, 3→Medium, 4→High, 5→Very High).
+    16. rec_innovation_rationale: 3-4 sentences. Explicitly cite the per-dimension scores in the form "D1=x, D2=x, D3=x, D4=x, D5=x" and briefly justify the weakest/strongest dimensions. Do not reward tech/aspirational language or size alone.
+    17. rec_precision_and_clarity: (Very low, Low, Medium, High, Very High).
+    18. rec_precision_and_clarity_rationale: Explanation (3-4 sentences).
+    19. rec_additional_tags: Select 2-5 relevant tags from: {", ".join(rec_tags_list)}
+    20. rec_operational_feasibility: (Very low, Low, Medium, High, Very High).
+    21. rec_operational_feasibility_rationale: Explanation (3-4 sentences).
+    22. rec_timeline: (short, medium, long).
+    23. rec_timeline_rationale: Explanation (3-4 sentences).
+    24. rec_expected_impact: (Very low, Low, Medium, High, Very High).
+    25. rec_expected_impact_rationale: Explanation (3-4 sentences).
+    26. rec_intervention_approach: (processes, results, policy).
+    27. rec_intervention_approach_rationale: Explanation (3-4 sentences).
+    
+    Respond ONLY with the JSON object.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You analyze recommendations and action plans, returning structured JSON results."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        
+        return json.loads(response.choices[0].message.content)
+    
+    except Exception as e:
+        return {
+            "error": str(e),
+            "coherence_score": 0,
+            "overall_score": 0
+        }
+
+def run_row_analysis(args):
+    """
+    Worker for parallel analysis
+    """
+    idx, rec, plan, comments, api_key, cache_obj = args
+    
+    # Check cache first
+    key = cache_obj.generate_key(rec, plan)
+    cached = cache_obj.get(key)
+    if cached:
+        return idx, cached, True # True = from cache
+        
+    # If not in cache, call API
+    client = OpenAI(api_key=api_key)
+    result = analyze_recommendation_plan_pair(rec, plan, comments, client)
+    
+    return idx, result, False # False = new call
 
 # --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
 import pickle
@@ -1611,8 +1970,16 @@ hr {
 """, unsafe_allow_html=True)
 
 st.markdown("""
-    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>Caja de Herramientas para el Mejor Desempeño de los Proyectos</h2>
-    <h3 style='text-align:center; color:#002F6C; margin-top:0;'>Usando Evidencia de las Evaluaciones</h3>
+    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>
+        Caja de Herramientas para el Mejor Desempeño de los Proyectos
+        <br>
+        <span style='font-size:0.8em; font-weight:500;'>Toolkit for Better Project Performance</span>
+    </h2>
+    <h3 style='text-align:center; color:#002F6C; margin-top:0;'>
+        Usando Evidencia de las Evaluaciones
+        <br>
+        <span style='font-size:0.85em; font-weight:500;'>Using Evidence from Evaluations</span>
+    </h3>
     <hr style='border-top: 2px solid #002F6C;'>
 """, unsafe_allow_html=True)
 
@@ -1736,11 +2103,13 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
                                          "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
-                                         "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción"])
+                                        #  "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción",
+                                         "Clasificación de Recomendaciones",
+                                         "Recommendation Classification"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -2358,6 +2727,14 @@ with tab2:
     **¿Para qué usar este diagnóstico?**
     Este diagnóstico en formato EXCEL sirve para **revisar propuestas**, **verificar aspectos puntuales** de informes de evaluación o de ejecución, **comprobar coherencia** con P&B, DWCP y marcos UNSDCF, **elaborar notas técnicas con sustento** y respaldar la rendición de cuentas ante mandantes y donantes.
     """)
+    
+    # Important requirements reminder
+    st.warning("""
+    **⚠️ Recordatorio importante:**
+    - Los documentos deben estar formateados con **estilos de encabezado de Word** (Heading 1, Heading 2, etc.) para que las secciones se identifiquen correctamente
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Solo se aceptan archivos en formato **.docx**
+    """)
 
     # Read rubrics from Excel files as in megaparse_example.py
     import pandas as pd
@@ -2405,6 +2782,270 @@ with tab2:
                     'page_number': None
                 })
         return pd.DataFrame(rows)
+    
+    # Enhanced extraction function with multi-method header detection, tables, and validation
+    def extract_docx_structure_enhanced(docx_path):
+        """
+        Enhanced document extraction with:
+        - Multi-method header detection (style, formatting, pattern)
+        - Table extraction
+        - List extraction
+        - Page estimation
+        - Quality metrics
+        """
+        from docx import Document
+        from docx.shared import Pt
+        import re
+        
+        doc = Document(docx_path)
+        filename = os.path.basename(docx_path)
+        rows = []
+        tables_data = []
+        current_headers = {i: '' for i in range(1, 7)}
+        para_counter = 0
+        page_estimate = 1
+        words_per_page = 500  # Estimate for page calculation
+        
+        # Track statistics
+        stats = {
+            'total_paragraphs': 0,
+            'total_tables': 0,
+            'headers_detected': 0,
+            'headers_by_style': 0,
+            'headers_by_formatting': 0,
+            'headers_by_pattern': 0,
+            'orphaned_paragraphs': 0,
+            'empty_sections': 0
+        }
+        
+        def get_header_level_by_style(style_name):
+            """Method 1: Style-based detection (original method)"""
+            for i in range(1, 7):
+                if style_name.lower().startswith(f'heading {i}'.lower()):
+                    return i
+            return None
+        
+        def get_header_level_by_formatting(para):
+            """Method 2: Formatting-based detection"""
+            # Check if paragraph is bold and larger than normal text
+            if para.runs:
+                first_run = para.runs[0]
+                is_bold = first_run.bold
+                font_size = first_run.font.size
+                
+                # If bold and larger font, likely a header
+                if is_bold and font_size:
+                    if font_size >= Pt(14):  # Larger than normal (11-12pt)
+                        # Estimate level based on size
+                        if font_size >= Pt(18):
+                            return 1
+                        elif font_size >= Pt(16):
+                            return 2
+                        elif font_size >= Pt(14):
+                            return 3
+                elif is_bold and len(para.text.strip()) < 100:  # Short bold text
+                    return 2  # Likely a subheader
+            return None
+        
+        def get_header_level_by_pattern(para_text):
+            """Method 3: Pattern-based detection (numbered headings)"""
+            text = para_text.strip()
+            # Patterns like "1.", "1.1", "1.1.1", "I.", "A.", etc.
+            patterns = [
+                (r'^\d+\.\s+\w', 1),  # "1. Title"
+                (r'^\d+\.\d+\s+\w', 2),  # "1.1 Title"
+                (r'^\d+\.\d+\.\d+\s+\w', 3),  # "1.1.1 Title"
+                (r'^[IVX]+\.\s+\w', 1),  # "I. Title"
+                (r'^[A-Z]\.\s+\w', 2),  # "A. Title"
+            ]
+            for pattern, level in patterns:
+                if re.match(pattern, text):
+                    return level
+            return None
+        
+        def detect_header_level(para):
+            """Try all methods to detect header level"""
+            # Method 1: Style-based
+            level = get_header_level_by_style(para.style.name)
+            if level:
+                stats['headers_by_style'] += 1
+                return level
+            
+            # Method 2: Formatting-based
+            level = get_header_level_by_formatting(para)
+            if level:
+                stats['headers_by_formatting'] += 1
+                return level
+            
+            # Method 3: Pattern-based
+            level = get_header_level_by_pattern(para.text)
+            if level:
+                stats['headers_by_pattern'] += 1
+                return level
+            
+            return None
+        
+        def header_dict():
+            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+        
+        def get_full_header_path():
+            """Get full hierarchical path of headers"""
+            path_parts = []
+            for i in range(1, 7):
+                if current_headers[i]:
+                    path_parts.append(current_headers[i])
+            return ' > '.join(path_parts) if path_parts else 'Sin sección'
+        
+        # Extract paragraphs and headers
+        for para in doc.paragraphs:
+            para_counter += 1
+            stats['total_paragraphs'] += 1
+            
+            level = detect_header_level(para)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                # Clear lower level headers
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                
+                stats['headers_detected'] += 1
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'header_path': get_full_header_path(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_estimate': page_estimate,
+                    'detection_method': 'style' if get_header_level_by_style(para.style.name) else ('formatting' if get_header_level_by_formatting(para) else 'pattern')
+                })
+            elif para.text.strip():
+                # Estimate page number based on word count
+                word_count = len(para.text.split())
+                if word_count > 0:
+                    page_estimate = max(1, int(stats['total_paragraphs'] * 0.02))  # Rough estimate
+                
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'header_path': get_full_header_path(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_estimate': page_estimate,
+                    'detection_method': None
+                })
+        
+        # Extract tables
+        for table_idx, table in enumerate(doc.tables):
+            stats['total_tables'] += 1
+            table_data = []
+            for row in table.rows:
+                row_data = [cell.text.strip() for cell in row.cells]
+                table_data.append(row_data)
+            
+            # Find which section this table belongs to
+            current_section = get_full_header_path()
+            
+            tables_data.append({
+                'filename': filename,
+                'table_number': table_idx + 1,
+                'section': current_section,
+                'header_path': current_section,
+                'data': table_data,
+                'row_count': len(table_data),
+                'col_count': len(table_data[0]) if table_data else 0
+            })
+            
+            # Add table as content row
+            table_text = '\n'.join([' | '.join(row) for row in table_data])
+            rows.append({
+                'filename': filename,
+                **header_dict(),
+                'header_path': current_section,
+                'content': f"[TABLA {table_idx + 1}]\n{table_text}",
+                'source_type': 'table',
+                'paragraph_number': para_counter + table_idx,
+                'page_estimate': page_estimate,
+                'detection_method': None
+            })
+        
+        # Calculate quality metrics
+        df = pd.DataFrame(rows)
+        
+        # Count orphaned paragraphs (no header_1)
+        stats['orphaned_paragraphs'] = len(df[(df['source_type'] == 'paragraph') & (df['header_1'].isna() | (df['header_1'] == ''))])
+        
+        # Count empty sections
+        if 'header_1' in df.columns:
+            sections = df[df['header_1'].notna() & (df['header_1'] != '')]['header_1'].unique()
+            for section in sections:
+                section_df = df[df['header_1'] == section]
+                if len(section_df[section_df['source_type'] == 'paragraph']) == 0:
+                    stats['empty_sections'] += 1
+        
+        return df, tables_data, stats
+    
+    # Validation function
+    def validate_extraction(df, tables_data, stats):
+        """
+        Validate extraction quality and return metrics, warnings, and recommendations
+        """
+        warnings = []
+        recommendations = []
+        quality_score = 100
+        
+        # Check header detection rate
+        if stats['total_paragraphs'] > 0:
+            header_rate = (stats['headers_detected'] / stats['total_paragraphs']) * 100
+            if header_rate < 2:  # Less than 2% headers might indicate poor detection
+                warnings.append(f"⚠️ Tasa de detección de encabezados baja: {header_rate:.1f}%")
+                quality_score -= 10
+                recommendations.append("Verificar si los encabezados usan estilos estándar de Word")
+        
+        # Check for orphaned paragraphs
+        if stats['orphaned_paragraphs'] > 0:
+            orphan_rate = (stats['orphaned_paragraphs'] / stats['total_paragraphs']) * 100
+            if orphan_rate > 10:  # More than 10% orphaned
+                warnings.append(f"⚠️ {stats['orphaned_paragraphs']} párrafos sin sección asignada ({orphan_rate:.1f}%)")
+                quality_score -= 15
+                recommendations.append("Revisar párrafos huérfanos y asignarlos manualmente a secciones")
+        
+        # Check for empty sections
+        if stats['empty_sections'] > 0:
+            warnings.append(f"⚠️ {stats['empty_sections']} secciones sin contenido")
+            quality_score -= 5 * min(stats['empty_sections'], 5)  # Max -25 points
+            recommendations.append("Revisar secciones vacías - pueden ser encabezados mal detectados")
+        
+        # Check table extraction
+        if stats['total_tables'] > 0:
+            if len(tables_data) < stats['total_tables']:
+                warnings.append(f"⚠️ No se extrajeron todas las tablas ({len(tables_data)}/{stats['total_tables']})")
+                quality_score -= 10
+        
+        # Check hierarchy integrity
+        if 'header_1' in df.columns and 'header_2' in df.columns:
+            # Check for level jumps (H1 -> H3, skipping H2)
+            h1_sections = df[df['header_1'].notna() & (df['header_1'] != '')]
+            for idx, row in h1_sections.iterrows():
+                # Find next header after this one
+                next_rows = df.iloc[idx+1:idx+10]  # Check next 10 rows
+                next_headers = next_rows[next_rows['source_type'] == 'heading']
+                if not next_headers.empty:
+                    next_header = next_rows.iloc[0]
+                    # Check if there's a level jump
+                    if next_header.get('header_3') and not next_header.get('header_2'):
+                        warnings.append(f"⚠️ Salto de nivel detectado: {row.get('header_1', '')} → {next_header.get('header_3', '')}")
+                        quality_score -= 5
+        
+        quality_score = max(0, quality_score)  # Don't go below 0
+        
+        return {
+            'quality_score': quality_score,
+            'warnings': warnings,
+            'recommendations': recommendations,
+            'stats': stats
+        }
     
     # Function to split text into chunks respecting the token limit
     def split_text_into_chunks(text, max_completion_tokens=7000):
@@ -2525,6 +3166,30 @@ with tab2:
         st.warning("Archivo de rúbricas no disponible para descarga.")
 
     # Document upload
+    st.markdown("### 📄 Carga de Documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    - Esto es especialmente importante para evaluaciones y PRODOCs que deben tener una estructura clara con secciones bien definidas
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que el documento esté guardado correctamente antes de subirlo
+    - Verifica que todas las secciones importantes tengan encabezados antes de procesar
+    """)
+    
     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
 
     # Initialize session state for selections and results persistence
@@ -2534,84 +3199,380 @@ with tab2:
         st.session_state['selected_criteria_tab2'] = {}
     if 'tab2_results' not in st.session_state:
         st.session_state['tab2_results'] = None
+    if 'document_extracted_tab2' not in st.session_state:
+        st.session_state['document_extracted_tab2'] = False
 
-    # Rubric and Criteria Selection Section
-    st.markdown("### Selección de Rúbricas y Criterios")
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
     
-    # All available rubrics
-    all_rubrics = {
-        # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
-        # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
-        "Participación durante la evaluación (metodología)": parteval_rubric,
-        "Integración del Enfoque de Género": gender_rubric,
-        # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
-        "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
-    }
-
-    # Step 1: Select Rubrics
-    st.markdown("#### 1. Seleccione las rúbricas a aplicar:")
-    selected_rubric_names = st.multiselect(
-        "Rúbricas:",
-        options=list(all_rubrics.keys()),
-        default=st.session_state['selected_rubrics_tab2'],
-        key='rubric_selector_tab2'
-    )
-    st.session_state['selected_rubrics_tab2'] = selected_rubric_names
-
-    # Step 2: Select Criteria within each rubric
-    if selected_rubric_names:
-        st.markdown("#### 2. Seleccione los criterios específicos:")
+    if uploaded_file is not None:
+        file_hash = hash(uploaded_file.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab2') != file_hash
         
-        for rubric_name in selected_rubric_names:
-            rubric_dict = all_rubrics[rubric_name]
+        if file_changed:
+            st.session_state['document_extracted_tab2'] = False
+            st.session_state['last_file_hash_tab2'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab2", type="primary"):
+            if uploaded_file is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
             
-            with st.expander(f"📋 {rubric_name} ({len(rubric_dict)} criterios disponibles)", expanded=True):
-                # Select all checkbox for this rubric
-                select_all_key = f"select_all_{rubric_name}_tab2"
-                select_all = st.checkbox(f"Seleccionar todos los criterios", key=select_all_key)
-                
-                # Initialize criteria selection for this rubric
-                if rubric_name not in st.session_state['selected_criteria_tab2']:
-                    st.session_state['selected_criteria_tab2'][rubric_name] = []
-                
-                # Show criteria checkboxes
-                selected_criteria = []
-                for criterion in rubric_dict.keys():
-                    # Default checked if select_all or previously selected
-                    default_value = select_all or criterion in st.session_state['selected_criteria_tab2'][rubric_name]
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file.close()
                     
-                    is_selected = st.checkbox(
-                        f"{criterion}",
-                        value=default_value,
-                        key=f"criterion_{rubric_name}_{criterion}_tab2"
-                    )
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
                     
-                    if is_selected:
-                        selected_criteria.append(criterion)
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Validando extracción...")
+                    
+                    # Validate extraction
+                    validation_results = validate_extraction(df, tables_data, extraction_stats)
+                    progress_bar.progress(0.3, text="Extracción validada. Procesando secciones...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        # Extract text directly - already clean from extract_docx_structure_enhanced
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        # Calculate section stats
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab2'] = full_document_text
+                    st.session_state['document_stats_tab2'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab2'] = exploded_df
+                    st.session_state['extraction_df_tab2'] = df
+                    st.session_state['tables_data_tab2'] = tables_data
+                    st.session_state['extraction_stats_tab2'] = extraction_stats
+                    st.session_state['validation_results_tab2'] = validation_results
+                    st.session_state['sections_df_tab2'] = llm_summary_df
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab2'] = file_hash
+                    st.session_state['document_extracted_tab2'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()  # Rerun to show extraction results
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab2', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab2_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab2"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display header_1 sections and their content
+            extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
+                    
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
+                    
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
+                        
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
+                        
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
+                        
+                        st.markdown("---")
+            
+            sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector - simplified, no warnings or diagnostics
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab2' not in st.session_state:
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab2', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab2"):
+                        st.session_state['selected_sections_tab2'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab2"):
+                        st.session_state['selected_sections_tab2'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab2"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                # Show first 500 characters as preview, full content in expandable
+                                preview_text = section_content[:500] + "..." if len(section_content) > 500 else section_content
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab2",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab2', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab2",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
                 
                 # Update session state
-                st.session_state['selected_criteria_tab2'][rubric_name] = selected_criteria
+                st.session_state['selected_sections_tab2'] = selected_sections
                 
-                st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(rubric_dict)}")
+                # Show selection summary - simplified
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2  # Rough estimate
+                    
+                    # Warn if approaching limit
+                    if estimated_tokens > 100000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.warning(f"⚠️ **Advertencia de límite de contexto:** Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). El sistema procesa hasta 110,000 tokens (aproximadamente 150-200 páginas). Si el documento excede este límite, será truncado automáticamente.")
+                    elif estimated_tokens > 80000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.info(f"ℹ️ Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). Estás dentro del límite de 110,000 tokens (aproximadamente 150-200 páginas).")
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+    
+    # Rubric and Criteria Selection Section (moved after document extraction)
+    st.markdown("---")
+    st.markdown("### 📋 Selección de Rúbricas y Criterios")
+    
+    # Only show rubric selection if document is extracted
+    if st.session_state.get('document_extracted_tab2', False):
+        # All available rubrics
+        all_rubrics = {
+            # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
+            # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
+            "Participación durante la evaluación (metodología)": parteval_rubric,
+            "Integración del Enfoque de Género": gender_rubric,
+            # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
+            "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        }
 
-    # Show summary of selections
-    if selected_rubric_names:
-        total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
-        st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
+        # Step 1: Select Rubrics
+        st.markdown("#### 1. Seleccione las rúbricas a aplicar:")
+        selected_rubric_names = st.multiselect(
+            "Rúbricas:",
+            options=list(all_rubrics.keys()),
+            default=st.session_state['selected_rubrics_tab2'],
+            key='rubric_selector_tab2'
+        )
+        st.session_state['selected_rubrics_tab2'] = selected_rubric_names
 
+        # Step 2: Select Criteria within each rubric
+        if selected_rubric_names:
+            st.markdown("#### 2. Seleccione los criterios específicos:")
+            
+            for rubric_name in selected_rubric_names:
+                rubric_dict = all_rubrics[rubric_name]
+                
+                with st.expander(f"📋 {rubric_name} ({len(rubric_dict)} criterios disponibles)", expanded=True):
+                    # Select all checkbox for this rubric
+                    select_all_key = f"select_all_{rubric_name}_tab2"
+                    select_all = st.checkbox(f"Seleccionar todos los criterios", key=select_all_key)
+                    
+                    # Initialize criteria selection for this rubric
+                    if rubric_name not in st.session_state['selected_criteria_tab2']:
+                        st.session_state['selected_criteria_tab2'][rubric_name] = []
+                    
+                    # Show criteria checkboxes
+                    selected_criteria = []
+                    for criterion in rubric_dict.keys():
+                        # Default checked if select_all or previously selected
+                        default_value = select_all or criterion in st.session_state['selected_criteria_tab2'][rubric_name]
+                        
+                        is_selected = st.checkbox(
+                            f"{criterion}",
+                            value=default_value,
+                            key=f"criterion_{rubric_name}_{criterion}_tab2"
+                        )
+                        
+                        if is_selected:
+                            selected_criteria.append(criterion)
+                    
+                    # Update session state
+                    st.session_state['selected_criteria_tab2'][rubric_name] = selected_criteria
+                    
+                    st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(rubric_dict)}")
+
+        # Show summary of selections
+        if selected_rubric_names:
+            total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
+            st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
+        else:
+            st.info("ℹ️ Selecciona al menos una rúbrica para continuar con la evaluación.")
+    else:
+        st.info("ℹ️ Por favor extrae el documento primero para poder seleccionar las rúbricas y criterios.")
+    
     # Process and Evaluate button
     st.markdown("---")
-    st.markdown("### Procesamiento y Evaluación")
-
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
     def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
         """Analyze document against criterion with retry logic"""
         import time
 
         for attempt in range(max_retries):
             try:
-                # Use first 100,000 characters to capture full document context
-                # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
-                combined_text = document_text[:100000]
+                # Truncate to ~110K tokens to maximize context while leaving room for:
+                # - System prompt (~50 tokens)
+                # - User prompt template + criterion + scoring levels (~500-2000 tokens)
+                # - Response tokens (6500 tokens)
+                # - Safety buffer (~5000 tokens)
+                # Total: 128K - 50 - 2000 - 6500 - 5000 = ~110K tokens for document
+                combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
 
                 # Now do the expensive analysis on focused content
                 prompt = f"""Evaluate this document against: {criterion}
@@ -2849,99 +3810,62 @@ with tab2:
                 'evidence': separator.join(evidence_parts)
             }
     
-    if st.button('Procesar y Evaluar', key='process_evaluate_tab2'):
-        if uploaded_file is None:
-            st.error("Por favor suba un archivo DOCX primero.")
+    if st.button('🚀 Procesar y Evaluar', key='process_evaluate_tab2', type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab2', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
             st.stop()
         
+        # Get selected rubrics from session state
+        selected_rubric_names = st.session_state.get('selected_rubrics_tab2', [])
         if not selected_rubric_names:
             st.error("Por favor seleccione al menos una rúbrica.")
             st.stop()
         
+        # Calculate total criteria
+        total_criteria = sum(len(st.session_state.get('selected_criteria_tab2', {}).get(r, [])) for r in selected_rubric_names)
         if total_criteria == 0:
             st.error("Por favor seleccione al menos un criterio.")
             st.stop()
         
-        # Process document
-        file_hash = hash(uploaded_file.getvalue())
-        if st.session_state.get('last_file_hash_tab2') != file_hash:
-            with st.spinner("Procesando documento..."):
-                try:
-                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                    tmp_file.write(uploaded_file.read())
-                    tmp_file.close()
-                    
-                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-                    doc_result = docx2python(tmp_file.name)
-                    
-                    # Extract structure
-                    df = extract_docx_structure(tmp_file.name)
-                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
-                    
-                    # Extract sections directly (no LLM needed - text is already well-formatted)
-                    header_1_values = df['header_1'].dropna().unique()
-                    llm_summary_rows = []
-                    progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
-
-                    for idx, header in enumerate(header_1_values):
-                        section_df = df[df['header_1'] == header].copy()
-                        # Extract text directly - already clean from extract_docx_structure
-                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
-
-                    progress_bar.progress(0.5, text="Secciones extraídas.")
-                    
-                    # Create exploded dataframe
-                    llm_summary_df = pd.DataFrame(llm_summary_rows)
-                    llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
-                    exploded_df = llm_summary_df.assign(
-                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                    ).explode('llm_paragraph')
-                    exploded_df = exploded_df.reset_index(drop=True)
-                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                    
-                    # Get full text
-                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
-                    
-                    # Store in session state
-                    file_size = os.path.getsize(tmp_file.name)
-                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                    n_paragraphs = len(exploded_df)
-                    
-                    st.session_state['full_document_text_tab2'] = full_document_text
-                    st.session_state['document_stats_tab2'] = {
-                        'file_size': file_size,
-                        'n_words': n_words,
-                        'n_paragraphs': n_paragraphs
-                    }
-                    st.session_state['exploded_df_tab2'] = exploded_df
-                    st.session_state['last_file_hash_tab2'] = file_hash
-                    
-                    try:
-                        os.unlink(tmp_file.name)
-                    except:
-                        pass
-                    
-                    progress_bar.progress(1.0, text="Procesamiento completo.")
-                    
-                    st.info(f"**Resumen del documento:**\n\n" + 
-                            f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                            f"- Número de palabras: {n_words}\n" + 
-                            f"- Número de párrafos: {n_paragraphs}")
-                    
-                except Exception as e:
-                    st.error(f"Error procesando el documento: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
-                    st.stop()
+        # Check if document needs re-extraction (shouldn't happen, but safety check)
+        if uploaded_file is not None:
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('last_file_hash_tab2') != file_hash:
+                st.warning("⚠️ El documento ha cambiado. Por favor extrae el documento nuevamente.")
+                st.stop()
         
         # Evaluate with selected rubrics and criteria
-        document_text = st.session_state.get('full_document_text_tab2', '')
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab2', [])
+        sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
+        
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab2', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
         if not document_text:
             st.error("No se pudo recuperar el texto del documento.")
             st.stop()
 
         # Build filtered rubrics based on selection
+        # Get selected rubrics from session state
+        selected_rubric_names = st.session_state.get('selected_rubrics_tab2', [])
+        
+        # Define all_rubrics for evaluation
+        all_rubrics = {
+            "Participación durante la evaluación (metodología)": parteval_rubric,
+            "Integración del Enfoque de Género": gender_rubric,
+            "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        }
+        
         rubrics_to_evaluate = []
         for rubric_name in selected_rubric_names:
             selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
@@ -3166,6 +4090,32 @@ with tab4:
     if 'doc_chat_docs' not in st.session_state:
         st.session_state['doc_chat_docs'] = []
 
+    # Warning box about document requirements for chat
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formatos aceptados:**
+    - Archivos **.docx** (Word 2007 o posterior)
+    - Archivos **.txt** (texto plano)
+    - Puedes subir **múltiples archivos** (hasta 200MB en total)
+    
+    **📝 Para documentos Word (.docx):**
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente.
+    - Para documentos grandes, el sistema usa RAG (Retrieval Augmented Generation) automáticamente
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos muy grandes (>100K caracteres, aproximadamente >40 páginas) se procesan con RAG para mejor eficiencia
+    - Documentos pequeños se procesan con contexto completo (más eficiente)
+    - Documentos que excedan el límite máximo serán truncados automáticamente
+    
+    **✅ Mejores prácticas:**
+    - Para documentos Word: usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que los documentos estén guardados correctamente antes de subirlos
+    """)
+    
     uploaded_files = st.file_uploader("Sube uno o más archivos DOCX o TXT para chatear:", type=["docx", "txt"], accept_multiple_files=True)
     if 'doc_chat_docs' not in st.session_state:
         st.session_state['doc_chat_docs'] = []
@@ -3260,9 +4210,13 @@ with tab4:
 
                 # Smart context selection: use full text for small docs, RAG for large docs
                 if not use_rag:
-                    # Small documents: use full context (up to 100K chars)
+                    # Small documents: use full context (up to 110K tokens)
                     # This is more efficient - no chunking, no embeddings, just direct LLM call
-                    context = st.session_state.get('doc_chat_total_text', '')[:100000]
+                    context = truncate_to_token_limit(
+                        st.session_state.get('doc_chat_total_text', ''), 
+                        max_tokens=110000, 
+                        encoding_obj=encoding
+                    )
 
                     messages = [
                         {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
@@ -3814,7 +4768,7 @@ with tab3:
     try:
         # Load rubric from PRODOC_rubric.xlsx
         # df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
-        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', sheet_name='rubric')
+        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx', sheet_name='rubric')
 
         # Verify required columns exist
         required_cols = ['Dimensión', 'Criterio', 'Indicador']
@@ -3878,7 +4832,7 @@ with tab3:
         
         # Download button for the rubric file (directly on page, no expander)
         try:
-            with open('./Evaluación de sostenibilidad del proyecto_rubric_7nov.xlsx', 'rb') as f:
+            with open('./Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx', 'rb') as f:
                 st.download_button(
                     label="📥 Descargar archivo rúbrica de Sostenibilidad del proyecto",
                     data=f,
@@ -3913,9 +4867,299 @@ with tab3:
         st.session_state['selected_dimensions_tab3'] = []
     if 'tab3_results' not in st.session_state:
         st.session_state['tab3_results'] = None
+    if 'document_extracted_tab3' not in st.session_state:
+        st.session_state['document_extracted_tab3'] = False
 
-    # Rubric and Criteria Selection Section
-    st.markdown("### Selección de Criterios")
+    # Document upload
+    st.markdown("### 📄 Carga de Documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos PRODOC:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento PRODOC debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del PRODOC deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    - Los PRODOCs deben tener una estructura clara con secciones bien definidas (Marco Lógico, Presupuesto, Cronograma, etc.)
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales del PRODOC
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que todas las secciones importantes (Marco Lógico, Presupuesto, etc.) tengan encabezados claros
+    - Verifica que el documento esté guardado correctamente antes de subirlo
+    """)
+    
+    uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader_tab3")
+    
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file_prodoc is not None:
+        file_hash = hash(uploaded_file_prodoc.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab3') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab3'] = False
+            st.session_state['last_file_hash_tab3'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab3", type="primary"):
+            if uploaded_file_prodoc is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file_prodoc.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab3'] = full_document_text
+                    st.session_state['prodoc_document_stats_tab3'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab3'] = exploded_df
+                    st.session_state['extraction_df_tab3'] = df
+                    st.session_state['tables_data_tab3'] = tables_data
+                    st.session_state['extraction_stats_tab3'] = extraction_stats
+                    st.session_state['sections_df_tab3'] = llm_summary_df
+                    st.session_state['selected_sections_tab3'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab3'] = file_hash
+                    st.session_state['document_extracted_tab3'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab3', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab3_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab3"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display header_1 sections and their content
+            extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
+                    
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
+                    
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
+                        
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
+                        
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
+                        
+                        st.markdown("---")
+            
+            sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento PRODOC tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento PRODOC. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales como Marco Lógico, Presupuesto, Cronograma, etc.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab3' not in st.session_state:
+                    st.session_state['selected_sections_tab3'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab3', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab3"):
+                        st.session_state['selected_sections_tab3'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab3"):
+                        st.session_state['selected_sections_tab3'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab3"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab3",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab3', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab3",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
+                
+                # Update session state
+                st.session_state['selected_sections_tab3'] = selected_sections
+                
+                # Show selection summary
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2
+                    
+                    # Warn if approaching limit
+                    if estimated_tokens > 100000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.warning(f"⚠️ **Advertencia de límite de contexto:** Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). El sistema procesa hasta 110,000 tokens (aproximadamente 150-200 páginas). Si el documento excede este límite, será truncado automáticamente.")
+                    elif estimated_tokens > 80000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.info(f"ℹ️ Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). Estás dentro del límite de 110,000 tokens (aproximadamente 150-200 páginas).")
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+
+    # Rubric and Criteria Selection Section (moved after document extraction)
+    st.markdown("---")
+    st.markdown("### 📋 Selección de Criterios")
     
     # Group indicadores by dimension and criterio, maintaining order
     # Structure: {dimension: {criterio: [(unique_key, indicador_text, sort_key)]}}
@@ -3938,7 +5182,7 @@ with tab3:
             criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[2])
     
     # Define dimension order
-    dimension_order = ['Diseño', 'Implementación', 'Evaluación']
+    dimension_order = ['Diseño', 'Implementación', 'Pre-Cierre']
     
     # Helper to extract criterio number for sorting (e.g., "1. Participación..." -> 1)
     def get_criterio_order(criterio_name):
@@ -3946,9 +5190,11 @@ with tab3:
         match = re.match(r'(\d+)\.', criterio_name)
         return int(match.group(1)) if match else 999
     
-    # Display the loaded rubric with selection grouped by dimension
-    with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
-        st.subheader("Criterios de Evaluación PRODOC")
+    # Only show rubric selection if document is extracted
+    if st.session_state.get('document_extracted_tab3', False):
+        # Display the loaded rubric with selection grouped by dimension
+        with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
+            st.subheader("Criterios de Evaluación PRODOC")
         st.markdown(
             """
             <div class='reference-box'>
@@ -3979,7 +5225,7 @@ with tab3:
                 "convenios y otros documentos de ejecución; los resultados orientan ajustes y fortalecen la trazabilidad "
                 "de decisiones."
             ),
-            "Evaluación": (
+            "Pre-Cierre": (
                 "Aplica una revisión ex post (idealmente en el último trimestre de un proyecto) para verificar qué "
                 "elementos efectivamente aseguran la continuidad de resultados y documentar lecciones. Si se aplica "
                 "antes del cierre, algunos puntajes serán referenciales (“lo esperado”); en todos los casos, el diagnóstico "
@@ -4056,106 +5302,292 @@ with tab3:
         )
         
         st.info(f"📌 Indicadores seleccionados: {len(selected_criteria)}/{total_indicadores} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
-
-    # Document upload
-    st.markdown("### Carga de Documento")
-    uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader_tab3")
+    else:
+        st.info("ℹ️ Por favor extrae el documento primero para poder seleccionar los criterios.")
 
     # Process and Evaluate button
     st.markdown("---")
-    if st.button('Procesar y Evaluar', key="prodoc_process_button_tab3"):
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
+    if st.button('🚀 Procesar y Evaluar', key="prodoc_process_button_tab3", type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab3', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
+            st.stop()
+        
         if uploaded_file_prodoc is None:
             st.error("Por favor suba un archivo DOCX primero.")
             st.stop()
         
+        # Get selected criteria from session state
+        selected_criteria = st.session_state.get('selected_criteria_tab3', [])
         if not selected_criteria:
             st.error("Por favor seleccione al menos un criterio.")
             st.stop()
         
-        uploaded_file = uploaded_file_prodoc
-        st.markdown("#### Procesando documento...")
-
-        file_hash = hash(uploaded_file.getvalue())
-        if st.session_state.get('prodoc_last_file_hash_tab3') != file_hash:
-            with st.spinner("Procesando documento..."):
-                try:
-                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                    tmp_file.write(uploaded_file.read())
-                    tmp_file.close()
-                    
-                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
-                    doc_result = docx2python(tmp_file.name)
-                    df = extract_docx_structure(tmp_file.name)
-                    
-                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
-
-                    # Extract sections directly (no LLM needed - text is already well-formatted)
-                    header_1_values = df['header_1'].dropna().unique()
-                    llm_summary_rows = []
-                    progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
-
-                    for idx, header in enumerate(header_1_values):
-                        section_df = df[df['header_1'] == header].copy()
-                        # Extract text directly - already clean from extract_docx_structure
-                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
-                        llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
-
-                    progress_bar.progress(0.5, text="Secciones extraídas.")
-                    llm_summary_df = pd.DataFrame(llm_summary_rows)
-                    llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
-                    exploded_df = llm_summary_df.assign(
-                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
-                    ).explode('llm_paragraph')
-                    exploded_df = exploded_df.reset_index(drop=True)
-                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
-                    
-                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
-                    file_size = os.path.getsize(tmp_file.name)
-                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
-                    n_paragraphs = len(exploded_df)
-                    
-                    st.session_state['prodoc_full_document_text_tab3'] = full_document_text
-                    st.session_state['prodoc_document_stats_tab3'] = {
-                        'file_size': file_size,
-                        'n_words': n_words,
-                        'n_paragraphs': n_paragraphs
-                    }
-                    st.session_state['prodoc_exploded_df_tab3'] = exploded_df
-                    st.session_state['prodoc_last_file_hash_tab3'] = file_hash
-                    
-                    try:
-                        os.unlink(tmp_file.name)
-                    except:
-                        pass
-                    
-                    progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
-                    st.info(f"**Resumen del documento:**\n\n" + 
-                            f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
-                            f"- Número de palabras: {n_words}\n" + 
-                            f"- Número de párrafos: {n_paragraphs}")
-                    st.markdown("#### Estructura extraída del documento:")
-                    st.dataframe(exploded_df, use_container_width=True)
-                    progress_bar.progress(1.0, text="Procesamiento completo.")
-                    
-                except Exception as e:
-                    st.error(f"Error procesando el documento: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
-                    st.stop()
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab3', [])
+        sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
         
-        # Define the evaluation function for tab3 (same as tab1)
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab3', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
+            st.stop()
+        
+        # Skip the old extraction logic - document is already extracted
+        # Evaluate with selected criteria
+        if False:  # Disable old extraction logic
+            uploaded_file = uploaded_file_prodoc
+            st.markdown("#### Procesando documento...")
+
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('prodoc_last_file_hash_tab3') != file_hash:
+                with st.spinner("Procesando documento..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        
+                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                        doc_result = docx2python(tmp_file.name)
+                        df = extract_docx_structure(tmp_file.name)
+                        
+                        progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+
+                        # Extract sections directly (no LLM needed - text is already well-formatted)
+                        header_1_values = df['header_1'].dropna().unique()
+                        llm_summary_rows = []
+                        progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
+
+                        for idx, header in enumerate(header_1_values):
+                            section_df = df[df['header_1'] == header].copy()
+                            # Extract text directly - already clean from extract_docx_structure
+                            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                            llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
+
+                        progress_bar.progress(0.5, text="Secciones extraídas.")
+                        llm_summary_df = pd.DataFrame(llm_summary_rows)
+                        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                        exploded_df = llm_summary_df.assign(
+                            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                        ).explode('llm_paragraph')
+                        exploded_df = exploded_df.reset_index(drop=True)
+                        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                        
+                        full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                        file_size = os.path.getsize(tmp_file.name)
+                        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                        n_paragraphs = len(exploded_df)
+                        
+                        st.session_state['prodoc_full_document_text_tab3'] = full_document_text
+                        st.session_state['prodoc_document_stats_tab3'] = {
+                            'file_size': file_size,
+                            'n_words': n_words,
+                            'n_paragraphs': n_paragraphs
+                        }
+                        st.session_state['prodoc_exploded_df_tab3'] = exploded_df
+                        st.session_state['prodoc_last_file_hash_tab3'] = file_hash
+                        
+                        try:
+                            os.unlink(tmp_file.name)
+                        except:
+                            pass
+                        
+                        progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+                        st.info(f"**Resumen del documento:**\n\n" + 
+                                f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+                                f"- Número de palabras: {n_words}\n" + 
+                                f"- Número de párrafos: {n_paragraphs}")
+                        st.markdown("#### Estructura extraída del documento:")
+                        st.dataframe(exploded_df, use_container_width=True)
+                        progress_bar.progress(1.0, text="Procesamiento completo.")
+                        
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
+        
+        # Define the evaluation function for tab3 with COUNTING support
         def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
-            """Analyze document against criterion with retry logic"""
+            """
+            Analyze document against criterion with retry logic.
+            TAB3-SPECIFIC: Enhanced to handle COUNT-BASED rubrics (stakeholders, participation forms, etc.)
+            """
             import time
+
+            # Detect if this is a stakeholder participation counting rubric
+            is_stakeholder_counting = any(keyword in criterion.lower() for keyword in
+                ['mandante', 'participan', 'stakeholder', 'actores', 'gobierno', 'empleador', 'trabajador'])
 
             for attempt in range(max_retries):
                 try:
-                    # Use first 100,000 characters to capture full document context
-                    # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
-                    combined_text = document_text[:100000]
+                    # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+                    combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
 
-                    # Now do the expensive analysis on focused content
-                    prompt = f"""Evaluate this document against: {criterion}
+                    # Enhanced prompt for count-based rubrics
+                    if is_stakeholder_counting:
+                        system_content = """Eres un evaluador experto de documentos especialmente capacitado para CONTAR y aplicar LÓGICA DE UMBRALES.
+
+**INSTRUCCIONES CRÍTICAS PARA EVALUACIÓN BASADA EN CONTEOS CON UMBRALES:**
+
+Los niveles de la rúbrica especifican requisitos como "AL MENOS X mandantes participando en AL MENOS Y formas".
+Debes aplicar lógica de umbrales estricta:
+
+1. **IDENTIFICA y CUENTA** cada tipo de mandante/actor mencionado:
+   - **Gobierno** (autoridades, funcionarios públicos, ministerios, etc.)
+   - **Empleadores** (empresas, organizaciones patronales, cámaras de comercio, etc.)
+   - **Trabajadores** (sindicatos, organizaciones de trabajadores, trabajadores individuales, etc.)
+
+2. **CUENTA las formas de participación** para CADA mandante individualmente:
+   - Diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
+   - Cada forma debe ser DISTINTA y VERIFICABLE en el documento
+
+3. **FILTRO DE EVIDENCIA Y TIEMPO VERBAL (CRÍTICO - DEBE APLICARSE ESTRICTAMENTE):**
+   
+   **REGLA ABSOLUTA: SOLO PARTICIPACIÓN FACTUAL, PASADA O PRESENTE**
+   
+   - **SOLO cuenta participación que YA OCURRIÓ o ESTÁ OCURRIENDO** (hechos verificables, acciones concretas realizadas).
+   - **NUNCA CUENTES** participaciones futuras, prometidas, planificadas, hipotéticas o esperadas.
+   
+   **VERBOS Y EXPRESIONES QUE DEBES RECHAZAR (NO CUENTAN):**
+   - Futuro simple: "participará", "asistirá", "consultará", "se invitará", "se convocará", "se reunirá"
+   - Futuro compuesto: "habrá participado", "habrá asistido"
+   - Condicional: "participaría", "asistiría", "se consultaría"
+   - Expresiones de planificación: "se espera que", "se prevé que", "está previsto", "se planifica", "se programará"
+   - Expresiones de intención: "se pretende", "se busca", "se tiene como objetivo", "se propone"
+   - Expresiones de compromiso futuro: "se compromete a", "acordó participar" (si no hay evidencia de participación real)
+   - Marcadores temporales futuros: "en el futuro", "durante la implementación", "en las próximas fases", "posteriormente"
+   - Participaciones hipotéticas: "podría participar", "sería consultado", "tendría la oportunidad"
+   
+   **VERBOS Y EXPRESIONES QUE SÍ CUENTAN (participación factual):**
+   - Pasado simple: "participó", "asistió", "validó", "revisó", "comentó", "aprobó", "contribuyó", "colaboró"
+   - Pasado compuesto: "ha participado", "ha asistido", "ha validado"
+   - Presente: "participa", "asiste", "es miembro de", "forma parte de", "colabora en"
+   - Gerundio de acciones completadas: "habiendo participado", "habiendo asistido"
+   - Expresiones de hecho realizado: "fue consultado", "fue invitado y asistió", "se reunió con"
+   
+   **EJEMPLOS ESPECÍFICOS:**
+   - ❌ "Se consultará a los mandantes durante la implementación" -> NO CUENTA (futuro)
+   - ❌ "Se espera que los empleadores participen en el diseño" -> NO CUENTA (expectativa futura)
+   - ❌ "Los trabajadores serán invitados a las reuniones" -> NO CUENTA (futuro)
+   - ❌ "Está previsto que el gobierno valide la propuesta" -> NO CUENTA (planificación futura)
+   - ❌ "Se tiene como objetivo involucrar a los actores" -> NO CUENTA (intención futura)
+   - ✅ "El gobierno participó en la reunión de diseño del 15 de marzo" -> SÍ CUENTA (pasado factual)
+   - ✅ "Los empleadores asistieron a las consultas y proporcionaron comentarios" -> SÍ CUENTA (pasado factual)
+   - ✅ "Los trabajadores son miembros del comité de diseño" -> SÍ CUENTA (presente factual)
+   - ✅ "Los mandantes fueron consultados y validaron el marco lógico" -> SÍ CUENTA (pasado factual)
+   
+   **VERIFICACIÓN OBLIGATORIA:**
+   Antes de contar cualquier participación, pregunta: "¿Esta acción YA OCURRIÓ o está ocurriendo AHORA?" 
+   Si la respuesta es NO o es incierta → NO CUENTES.
+   Si la respuesta es SÍ y hay evidencia clara → SÍ CUENTA.
+
+4. **APLICA LÓGICA DE UMBRALES** según los niveles de la rúbrica:
+   - Si el nivel requiere "AL MENOS 2 mandantes en AL MENOS 2 formas":
+     * CUENTA cuántos mandantes tienen 2 o más formas de participación
+     * Si al menos 2 mandantes alcanzan ese umbral → cumple el nivel
+     * Si solo 1 mandante alcanza ese umbral → NO cumple el nivel
+
+   - Ejemplo:
+     * Gobierno: 3 formas ✓ (cumple umbral de 2+)
+     * Empleadores: 2 formas ✓ (cumple umbral de 2+)
+     * Trabajadores: 1 forma ✗ (NO cumple umbral de 2+)
+     * Resultado: 2 mandantes cumplen el umbral → SÍ califica para "al menos 2 mandantes en al menos 2 formas"
+
+4. **ESTRUCTURA TU ANÁLISIS** así:
+   ```
+   CONTEO POR MANDANTE:
+   - Gobierno: [N] formas identificadas → [LISTAR formas]
+   - Empleadores: [N] formas identificadas → [LISTAR formas]
+   - Trabajadores: [N] formas identificadas → [LISTAR formas]
+
+   EVALUACIÓN DE UMBRALES (según nivel de la rúbrica):
+   - Nivel X requiere: "AL MENOS [A] mandantes en AL MENOS [B] formas"
+   - Mandantes que cumplen umbral de [B]+ formas: [LISTA DE MANDANTES]
+   - Total de mandantes que cumplen umbral: [NÚMERO]
+   - ¿Cumple requisito de [A]+ mandantes?: [SÍ/NO]
+
+   JUSTIFICACIÓN DEL PUNTAJE:
+   [Explicar EXPLÍCITAMENTE cómo los conteos y umbrales determinan el nivel]
+   ```
+
+5. **ASIGNA EL PUNTAJE** basándote ESTRICTAMENTE en:
+   - Cuántos mandantes cumplen el umbral mínimo de formas
+   - Si ese número cumple el requisito de "al menos X mandantes"
+
+Siempre responde en español, incluso si el documento está en inglés."""
+
+                        user_content = f"""Evalúa este documento contra el siguiente indicador (REQUIERE CONTEO CON LÓGICA DE UMBRALES):
+
+**Indicador:** {criterion}
+
+**Niveles de puntuación:** {json.dumps(descriptions, ensure_ascii=False, indent=2)}
+
+**Documento a evaluar:**
+{combined_text}
+
+**INSTRUCCIONES CRÍTICAS:**
+1. **PRIMERO: APLICA EL FILTRO DE TIEMPO VERBAL** - Revisa CADA mención de participación y verifica que sea factual (pasado o presente). RECHAZA cualquier participación futura, prometida o planificada.
+2. CUENTA SOLO las formas de participación FACTUALES (pasadas o presentes) para CADA mandante
+3. IDENTIFICA el umbral mínimo de formas requerido en cada nivel (ej: "al menos 2 formas")
+4. CUENTA cuántos mandantes CUMPLEN ese umbral con participación REAL (no prometida)
+5. VERIFICA si el número de mandantes que cumplen el umbral alcanza el requisito del nivel
+6. Justifica el puntaje EXPLÍCITAMENTE basándote en la lógica de umbrales y menciona explícitamente que solo se contó participación factual
+
+**EJEMPLO DE RAZONAMIENTO CORRECTO:**
+"APLICACIÓN DEL FILTRO DE TIEMPO VERBAL: Se revisaron todas las menciones de participación. Se excluyeron las siguientes por ser futuras/planificadas: 'se consultará a los trabajadores durante la implementación', 'se espera que los empleadores participen'. Solo se contaron participaciones factuales (pasadas o presentes).
+
+CONTEO POR MANDANTE (solo participación real):
+- Gobierno: 3 formas identificadas → participó en reunión de diseño (15/03), validó marco lógico, proporcionó comentarios escritos (✓ todas factuales, cumple umbral de 2+)
+- Empleadores: 2 formas identificadas → asistieron a consulta (20/03), revisaron propuesta técnica (✓ ambas factuales, cumple umbral de 2+)
+- Trabajadores: 1 forma identificada → mencionados en documento pero sin evidencia de participación real (✗ NO cumple umbral de 2+)
+
+EVALUACIÓN DE UMBRALES:
+- Nivel 4 requiere: AL MENOS 2 mandantes en AL MENOS 2 formas cada uno
+- Mandantes que cumplen umbral de 2+ formas: Gobierno (3 formas), Empleadores (2 formas)
+- Total de mandantes que cumplen umbral: 2
+- ¿Cumple requisito de 2+ mandantes?: SÍ
+
+JUSTIFICACIÓN DEL PUNTAJE: Dado que 2 mandantes (Gobierno y Empleadores) cumplen el umbral de 2+ formas cada uno con participación REAL verificable, SÍ se alcanza el Nivel 4. Se excluyeron participaciones futuras/planificadas del conteo."
+
+**RECORDATORIO FINAL CRÍTICO:**
+- Si encuentras participaciones futuras o planificadas en el documento, MENCIONA explícitamente en tu análisis que fueron EXCLUIDAS del conteo
+- Solo incluye en "evidence" citas que demuestren participación REAL (pasada o presente)
+- Si el documento solo menciona participación futura/planificada y no hay evidencia de participación real, el puntaje debe reflejar esto (probablemente nivel 1 o 0)
+
+Proporciona tu respuesta como JSON:
+{{"analysis": "COMIENZA indicando si aplicaste el filtro de tiempo verbal y qué participaciones fueron excluidas (si las hubo). Luego presenta el conteo por mandante SOLO con participación factual. EVALÚA EXPLÍCITAMENTE los umbrales según cada nivel. Finalmente JUSTIFICA el puntaje con la lógica de umbrales, asegurándote de mencionar que solo se contó participación real. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 que evidencia mandante y forma de participación específica REAL (pasada o presente)", "cita 2", "etc - 5-8 citas clave como array, SOLO participaciones factuales"]}}"""
+
+                    else:
+                        # Original prompt for non-counting rubrics
+                        system_content = "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."
+
+                        user_content = f"""Evaluate this document against: {criterion}
 
     Scoring levels: {json.dumps(descriptions)}
 
@@ -4163,15 +5595,15 @@ with tab3:
     {combined_text}
 
     IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
-    
+
     Provide JSON with:
     {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
 
                     response = client.chat.completions.create(
                         model="gpt-5-mini",
                         messages=[
-                            {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
-                            {"role": "user", "content": prompt}
+                            {"role": "system", "content": system_content},
+                            {"role": "user", "content": user_content}
                         ],
                         max_completion_tokens=6500,
                         reasoning_effort="minimal",
@@ -4228,7 +5660,7 @@ with tab3:
             }
         
         # Evaluate with selected criteria
-        document_text = st.session_state.get('prodoc_full_document_text_tab3', '')
+        document_text = st.session_state.get('full_document_text_tab3', '')
         if not document_text:
             st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
             st.stop()
@@ -4602,22 +6034,22 @@ OPENAI_MODEL = "gpt-5-mini"  # GPT-5 mini model with reasoning
 def load_appraisal_questions():
     """Load and cache appraisal questions from Excel file"""
     try:
-        df = pd.read_excel('./APPRAISAL_rubric.xlsx', sheet_name='rubric')
+        df = pd.read_excel('./Appraisal Checklist_2025 es-419.xlsx', sheet_name='rubric')
         if 'Pregunta_Realizada' not in df.columns:
             return None, "La columna 'Pregunta_Realizada' no se encontró en el archivo de Excel."
         
         # Replace first 3 characters of Pregunta_Realizada with Tema numbering
-        # if 'Tema' in df.columns:
-        df['Pregunta_Realizada'] = df.apply(
-            lambda row: str(row['Tema']) + ' ' + str(row['Pregunta_Realizada'])[3:].strip() 
-            if pd.notna(row['Tema']) and pd.notna(row['Pregunta_Realizada']) and len(str(row['Pregunta_Realizada'])) > 3
-            else row['Pregunta_Realizada'], 
-            axis=1
-        )
+        if 'Tema' in df.columns:
+            df['Pregunta_Realizada'] = df.apply(
+                lambda row: str(row['Tema']) + ' ' + str(row['Pregunta_Realizada'])[3:].strip() 
+                if pd.notna(row['Tema']) and pd.notna(row['Pregunta_Realizada']) and len(str(row['Pregunta_Realizada'])) > 3
+                else row['Pregunta_Realizada'], 
+                axis=1
+            )
         
         return df, None
     except FileNotFoundError:
-        return None, "No se encontró el archivo APPRAISAL_rubric.xlsx. Asegúrate de que exista en el directorio de la aplicación."
+        return None, "No se encontró el archivo Appraisal Checklist_2025 es-419.xlsx. Asegúrate de que exista en el directorio de la aplicación."
     except Exception as e:
         return None, f"Error al cargar el archivo de preguntas: {str(e)}"
 
@@ -4703,12 +6135,97 @@ def extract_document_content(uploaded_file):
 #             'Status': 'Error'
 #         }
 
-def analyze_question_with_llm(question, document_text):
-    """Analyze a single question against the document using LLM with full context (up to 100K chars)."""
+def parse_critic_verdict(critic_text):
+    """Extract the VEREDICTO tag from the first line of a critic response.
+
+    Returns (verdict, body) where:
+      - verdict ∈ {"Yes", "No", "Partial", "Not Found", "Keep", None}
+      - body is the critic text with the verdict line stripped (original text if no verdict parsed)
+    """
+    if not isinstance(critic_text, str) or not critic_text.strip():
+        return None, critic_text or ""
+    m = re.match(
+        r'\s*VEREDICTO\s*:\s*(Not\s*Found|Partial|Yes|No|Keep)\s*[\.\n:]?',
+        critic_text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None, critic_text.strip()
+    raw = m.group(1).strip()
+    canonical = {
+        'yes': 'Yes',
+        'no': 'No',
+        'partial': 'Partial',
+        'not found': 'Not Found',
+        'notfound': 'Not Found',
+        'keep': 'Keep',
+    }
+    verdict = canonical.get(re.sub(r'\s+', ' ', raw.lower()), None)
+    body = critic_text[m.end():].lstrip()
+    return verdict, body
+
+
+def parse_two_part_question(question):
+    """
+    Detect and parse two-part rubric questions where:
+    - Part 1 (broader): Sets the general context
+    - Part 2 (specific): Asks the critical detail that needs primary focus
+
+    Returns dict with 'is_two_part', 'part1', 'part2', 'full_question'.
+    """
+    import re
+
+    if not isinstance(question, str) or question.count('?') < 2:
+        return {'is_two_part': False, 'part1': None, 'part2': None, 'full_question': question}
+
+    # Pattern 1: Explicit keyword separator ("específicamente", "además", ...).
+    keywords = ['específicamente', 'en particular', 'en concreto', 'puntualmente', 'además']
+    for keyword in keywords:
+        pattern = rf'(.+?\?)\s*{keyword}[,:]?\s*¿\s*(.+?\?)'
+        match = re.search(pattern, question, re.IGNORECASE | re.UNICODE)
+        if match:
+            return {
+                'is_two_part': True,
+                'part1': match.group(1).strip(),
+                'part2': '¿' + match.group(2).strip(),
+                'full_question': question,
+            }
+
+    # Pattern 2a: Two clauses joined with explicit ¿ separator (Spanish convention).
+    # Unicode-safe: matches lowercase, accented capitals (Á/Í/Ó/Ú/Ñ), digits, etc.
+    match = re.search(r'(.+?\?)\s*¿\s*(.+\?)', question, re.UNICODE)
+    if match:
+        return {
+            'is_two_part': True,
+            'part1': match.group(1).strip(),
+            'part2': '¿' + match.group(2).strip(),
+            'full_question': question,
+        }
+
+    # Pattern 2b: Run-together — first clause ends in '?', second starts immediately
+    # with a non-whitespace character (rubric formatting quirk, e.g. "...gráfico?Se identifican...").
+    match = re.search(r'(.+?\?)(\S.+\?)', question, re.UNICODE)
+    if match:
+        part2 = match.group(2).strip()
+        if not part2.startswith('¿'):
+            part2 = '¿' + part2
+        return {
+            'is_two_part': True,
+            'part1': match.group(1).strip(),
+            'part2': part2,
+            'full_question': question,
+        }
+
+    return {'is_two_part': False, 'part1': None, 'part2': None, 'full_question': question}
+
+def analyze_question_with_llm_tab1(question, document_text):
+    """
+    Analyze a single question against the document using LLM with full context (up to 110K tokens).
+    TAB1-SPECIFIC VERSION: Explicitly states when 2+ parts are detected in the question.
+    """
     try:
-        # Use first 100,000 characters to capture full document context
-        # 100K chars ≈ 25K tokens, well within gpt-4o-mini's 128K context window
-        combined_text = (document_text or "")[:100000]
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        combined_text = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
 
         if not combined_text.strip():
             return {
@@ -4719,26 +6236,89 @@ def analyze_question_with_llm(question, document_text):
                 'Status': 'Success'
             }
 
-        # Single API call per question - much more efficient than chunking
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize system prompt based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert document analyst specializing in ILO project quality assessment.
+
+**CRITICAL INSTRUCTION FOR TWO-PART QUESTIONS:**
+
+This question has TWO PARTS with different priorities:
+- **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis. Drives the final answer.
+- **Part 1 (Broader Context)**: Provides the general framework.
+
+**YOUR ANALYSIS APPROACH:**
+1. **Answer Part 2 IN DEPTH FIRST.** This drives the final Respuesta.
+2. **Then relate Part 2's findings back to Part 1** (broader context).
+3. The final Respuesta is determined PRIMARILY by Part 2; Part 1 provides framing only.
+
+**Response fields (returned via structured output):**
+- "Respuesta": Yes / No / Partial / Not Found — based PRIMARILY on Part 2.
+- "Razonamiento": MUST begin with "Se identificaron 2 partes en esta pregunta." Then answer Part 2 concisely, then briefly connect to Part 1. Max 120 words. Be terse — no filler, no restating the question.
+- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 180 words. Trim quotes to the essential span; avoid long blocks.
+- "parte_enfocada": Set to "Parte 2" when your analysis was driven by Part 2 (the expected default). Use "Ambas" only if both parts truly required equal weight. Use "Parte 1" only if Part 2 was unanswerable from the document.
+
+**SCOPE LOCK (CRITICAL):**
+La pregunta nombra un sujeto o alcance específico (p.ej. "personas con discapacidad", "mujeres rurales", "trabajo infantil en minería", una región, un sector o un período concreto). Tu análisis debe limitarse ESTRICTAMENTE a ese sujeto exacto.
+1. Identifica el sujeto exacto de la pregunta antes de responder.
+2. Evidencia sobre sujetos relacionados pero distintos (otras poblaciones vulnerables, otros grupos, otros sectores, otras regiones, otros períodos) NO cuenta como respuesta. Ejemplo: si la pregunta es sobre discapacidad, evidencia sobre mujeres, pueblos indígenas o juventud NO la satisface.
+3. Si el sujeto nombrado está ausente del documento pero sujetos relacionados están ampliamente cubiertos, Respuesta debe ser "Not Found" o "No" — NO "Partial" ni "Yes". Sub-inclusión es preferible a sobre-inclusión.
+4. En tu Razonamiento, declara explícitamente cuál sujeto exacto se analizó y confirma que la evidencia trata sobre ese sujeto (no sobre uno relacionado).
+
+Siempre responder en español. Enfoque: 95% en Parte 2, 5% en su relación con Parte 1. La Parte 1 solo existe para enmarcar brevemente; NO analices la Parte 1 de forma independiente."""
+
+            # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
+            # Full original question deliberately omitted — including it re-anchors the model on Part 1.
+            user_content = f"""PREGUNTA CON DOS PARTES — RESPONDE PRIMERO LA PARTE 2.
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
+
+**Texto del Documento:**
+{combined_text}
+
+RECUERDA:
+1. COMENZAR tu Razonamiento con "Se identificaron 2 partes en esta pregunta."
+2. Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica).
+3. Luego explica cómo se relaciona con la Parte 1 (contexto general).
+4. Marca "parte_enfocada" como "Parte 2" salvo que el documento no permita responderla."""
+
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_TWO_PART}
+
+        else:
+            # Original single-question prompt
+            system_content = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
+            {
+                "Respuesta": "Yes/No/Partial/Not Found",
+                "Razonamiento": "Concise explanation (max 120 words, terse)",
+                "Evidencia": "Trimmed text excerpts supporting the answer (max 180 words)"
+            }
+
+**SCOPE LOCK (CRITICAL):**
+The question names a specific subject/scope (e.g., a specific population like people with disabilities; a specific sector, region, or period). Your analysis must be STRICTLY limited to that exact named subject.
+1. Identify the exact subject of the question before answering.
+2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors/regions/periods) does NOT count. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
+3. If the named subject is absent but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one)."""
+
+            user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
+
+        # Bump reasoning effort for two-part: the 70/30 weighting needs more deliberation.
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
-                    {
-                        "Respuesta": "Yes/No/Partial/Not Found",
-                        "Razonamiento": "Brief explanation of your analysis (max 200 words)",
-                        "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
-                    }"""
-                },
-                {
-                    "role": "user",
-                    "content": f"Question: {question}\n\nDocument Text: {combined_text}"
-                }
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
-            max_completion_tokens=8000,
-            reasoning_effort="minimal"
+            max_completion_tokens=3000,
+            reasoning_effort="medium" if parsed['is_two_part'] else "minimal",
+            response_format=response_format,
         )
 
         content = resp.choices[0].message.content
@@ -4751,18 +6331,10 @@ def analyze_question_with_llm(question, document_text):
                 'Status': 'Error'
             }
 
-        # Parse JSON response
+        # Structured outputs guarantees valid JSON conforming to the schema.
         try:
             result = json.loads(content.strip())
-            return {
-                'Pregunta': question,
-                'Respuesta': result.get('Respuesta', 'Not Found'),
-                'Razonamiento': result.get('Razonamiento', ''),
-                'Evidencia': result.get('Evidencia', ''),
-                'Status': 'Success'
-            }
         except json.JSONDecodeError:
-            # If JSON parsing fails, return error
             return {
                 'Pregunta': question,
                 'Respuesta': 'Error',
@@ -4770,6 +6342,20 @@ def analyze_question_with_llm(question, document_text):
                 'Evidencia': '',
                 'Status': 'Error'
             }
+
+        # Flag rows where the model failed to commit to Part 2 focus despite a two-part question.
+        # 'Partial' is the analyst's signal to spot-check the row.
+        status = 'Success'
+        if parsed['is_two_part'] and result.get('parte_enfocada') != 'Parte 2':
+            status = 'Partial'
+
+        return {
+            'Pregunta': question,
+            'Respuesta': result.get('Respuesta', 'Not Found'),
+            'Razonamiento': result.get('Razonamiento', ''),
+            'Evidencia': result.get('Evidencia', ''),
+            'Status': status,
+        }
 
     except Exception as e:
         return {
@@ -4780,27 +6366,269 @@ def analyze_question_with_llm(question, document_text):
             'Status': 'Error'
         }
 
-def analyze_question_with_critical_opinion(question, answer, reasoning, evidence, document_text=""):
-    """
-    Critically assess if the document's answer to a specific question is adequate and appropriate.
-    Evaluates whether the document's response truly addresses the concern raised in the question.
-    Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
-    Uses full 100K chars (≈25K tokens) for complete document understanding - cost effective within token budget.
-    """
+def analyze_question_with_llm(question, document_text):
+    """Analyze a single question against the document using LLM with full context (up to 110K tokens)."""
     try:
-        # Use first 100,000 characters to capture full document context
-        # 100K chars ≈ 25K tokens, well within gpt-5-mini's context window (cost effective)
-        doc_context = (document_text or "")[:100000]
-        
-        # Single API call for critical evaluation - focuses on answer adequacy
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        combined_text = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+
+        if not combined_text.strip():
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Not Found',
+                'Razonamiento': 'No se encontró contenido en el documento para analizar.',
+                'Evidencia': '',
+                'Status': 'Success'
+            }
+
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize system prompt based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert document analyst specializing in ILO project quality assessment.
+
+**CRITICAL INSTRUCTION FOR TWO-PART QUESTIONS:**
+
+This question has TWO PARTS with different priorities:
+- **Part 2 (Specific Focus - PRIMARY)**: The critical question that requires detailed analysis. Drives the final answer.
+- **Part 1 (Broader Context)**: Provides the general framework.
+
+**YOUR ANALYSIS APPROACH:**
+1. **Answer Part 2 IN DEPTH FIRST.** This drives the final Respuesta.
+2. **Then relate Part 2's findings back to Part 1** (broader context).
+3. The final Respuesta is determined PRIMARILY by Part 2; Part 1 provides framing only.
+
+**Response fields (returned via structured output):**
+- "Respuesta": Yes / No / Partial / Not Found — based PRIMARILY on Part 2.
+- "Razonamiento": Begin by answering Part 2 concisely, then briefly connect to Part 1. Max 120 words. Be terse — no filler, no restating the question.
+- "Evidencia": Quotes supporting Part 2 FIRST, then supporting evidence for Part 1. Max 180 words. Trim quotes to the essential span; avoid long blocks.
+- "parte_enfocada": Set to "Parte 2" when your analysis was driven by Part 2 (the expected default). Use "Ambas" only if both parts truly required equal weight. Use "Parte 1" only if Part 2 was unanswerable from the document.
+
+**SCOPE LOCK (CRITICAL):**
+The question names a specific subject or scope (e.g., "people with disabilities", "rural women", "child labor in mining", a specific region/sector/period). Your analysis must be STRICTLY limited to that exact named subject.
+1. Identify the exact subject of the question before answering.
+2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors, other regions, other periods) does NOT count as answering the question. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
+3. If the named subject is absent from the document but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one).
+
+Always respond in Spanish. Focus 95% on Part 2, 5% on how it relates to Part 1. Part 1 exists only for brief framing; do NOT analyze Part 1 independently."""
+
+            # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
+            # Full original question deliberately omitted — including it re-anchors the model on Part 1.
+            user_content = f"""PREGUNTA CON DOS PARTES — RESPONDE PRIMERO LA PARTE 2.
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
+
+**Texto del Documento:**
+{combined_text}
+
+RECUERDA: Enfoca tu análisis PRINCIPALMENTE en la Parte 2 (pregunta específica), luego explica cómo se relaciona con la Parte 1 (contexto general). Marca "parte_enfocada" como "Parte 2" salvo que el documento no permita responderla."""
+
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_TWO_PART}
+
+        else:
+            # Original single-question prompt
+            system_content = """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format and always respond in Spanish:
+            {
+                "Respuesta": "Yes/No/Partial/Not Found",
+                "Razonamiento": "Concise explanation (max 120 words, terse)",
+                "Evidencia": "Trimmed text excerpts supporting the answer (max 180 words)"
+            }
+
+**SCOPE LOCK (CRITICAL):**
+The question names a specific subject/scope (e.g., a specific population like people with disabilities; a specific sector, region, or period). Your analysis must be STRICTLY limited to that exact named subject.
+1. Identify the exact subject of the question before answering.
+2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors/regions/periods) does NOT count. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
+3. If the named subject is absent but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one)."""
+
+            user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
+            response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
+
+        # Bump reasoning effort for two-part: the 70/30 weighting needs more deliberation.
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": """You are an expert in project quality appraisal and international development (ILO standards).
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
+            ],
+            max_completion_tokens=3000,
+            reasoning_effort="medium" if parsed['is_two_part'] else "minimal",
+            response_format=response_format,
+        )
+
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'No se recibió respuesta del modelo.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
+
+        # Structured outputs guarantees valid JSON conforming to the schema.
+        try:
+            result = json.loads(content.strip())
+        except json.JSONDecodeError:
+            return {
+                'Pregunta': question,
+                'Respuesta': 'Error',
+                'Razonamiento': 'Error al procesar la respuesta del modelo.',
+                'Evidencia': '',
+                'Status': 'Error'
+            }
+
+        # Flag rows where the model failed to commit to Part 2 focus despite a two-part question.
+        status = 'Success'
+        if parsed['is_two_part'] and result.get('parte_enfocada') != 'Parte 2':
+            status = 'Partial'
+
+        return {
+            'Pregunta': question,
+            'Respuesta': result.get('Respuesta', 'Not Found'),
+            'Razonamiento': result.get('Razonamiento', ''),
+            'Evidencia': result.get('Evidencia', ''),
+            'Status': status,
+        }
+
+    except Exception as e:
+        return {
+            'Pregunta': question,
+            'Respuesta': 'Error',
+            'Razonamiento': f'Analysis failed: {str(e)}',
+            'Evidencia': '',
+            'Status': 'Error'
+        }
+
+def analyze_question_with_critical_opinion_tab1(question, answer, reasoning, evidence, document_text=""):
+    """
+    TAB1-SPECIFIC VERSION: Critically assess if the document's answer to a specific question is adequate.
+    Explicitly checks if the reasoning properly identifies and addresses two-part questions.
+    """
+    try:
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize critical evaluation based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+
+**CRITICAL EVALUATION FOR TWO-PART QUESTIONS:**
+
+This is a TWO-PART question where:
+- **Part 1 (Broader)**: Sets general context
+- **Part 2 (Specific - PRIMARY)**: The critical detail that needs focused assessment
+
+**Your Critical Assessment Must Evaluate:**
+
+1. **FIRST - Check Structure**: Does the reasoning BEGIN with "Se identificaron 2 partes en esta pregunta" or similar acknowledgment?
+   - If NO: This is a CRITICAL FAILURE - the analysis didn't recognize the question structure
+
+2. **PRIMARY FOCUS - Part 2 (Specific Question):**
+   - Does the answer adequately address the SPECIFIC question (Part 2)?
+   - Is the evidence for Part 2 substantive and concrete?
+   - Are there critical gaps or superficial treatment of Part 2?
+   - Does the document truly deliver on the specific requirement?
+
+3. **SECONDARY - Part 1 (Broader Context):**
+   - Does the answer address the broader context (Part 1)?
+   - How do the Part 2 findings affect the Part 1 assessment?
+
+4. **INTEGRATION:**
+   - Is there coherence between how Part 2 relates to Part 1?
+   - Are there contradictions or misalignments?
+
+**Be especially critical if:**
+- The reasoning doesn't acknowledge the two-part structure
+- Part 2 (specific question) is answered superficially or avoided
+- Evidence focuses on Part 1 but neglects Part 2
+- The answer leans on Part 1 generalities to claim Part 2 is addressed
+
+**WEIGHTING (ULTRA-FOCUS ON PART 2):** Your critique must allocate ~99% of its attention to Part 2 and effectively IGNORE Part 1. Part 1 is framing only and is analyzed separately at the subsection level — do NOT evaluate Part 1 here, do NOT penalize limited Part 1 depth, and do NOT let Part 1 coverage inflate the verdict. The verdict and body must be driven almost entirely by whether Part 2 is substantively addressed.
+
+**SCOPE LOCK CHECK (CRITICAL):**
+The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
+- If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
+- Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
+
+**VERDICT CONSISTENCY RULES (MANDATORY):**
+
+- **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+- **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+  * a missing required detail
+  * superficial or generic treatment
+  * evidence that is thin, indirect, or insufficient
+  * Part 2 (specific focus) answered weakly while Part 1 was handled well
+  If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+- **No**: The document claims to address the question but fails to.
+- **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+- **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+**CONSISTENCY CHECK (apply before emitting the verdict):**
+Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
+**OUTPUT FORMAT (MANDATORY):**
+Your response MUST begin with exactly one line in this format:
+VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+- Use "Keep" if the document's original answer is adequate and should stand.
+- Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
+
+**BODY STRUCTURE (MANDATORY):**
+After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
+
+(1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps in Part 2. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
+
+(2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+**STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+Be strict. Err on the side of downgrading.
+- **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
+- **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+- **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+- **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
+- **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+- If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
+
+No preamble, no filler. No JSON, no extra formatting."""
+
+            # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
+            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
+
+**Respuesta del Documento:** {answer}
+
+**Razonamiento del Documento:** {reasoning}
+
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Evalúa críticamente:
+1. ¿El razonamiento reconoce explícitamente que hay 2 partes en la pregunta?
+2. ¿La respuesta aborda adecuadamente la Parte 2 (pregunta específica) — el foco prioritario?
+3. ¿La evidencia para la Parte 2 es concreta y suficiente, o se quedó en generalidades de la Parte 1?"""
+
+        else:
+            # Original single-question critical evaluation
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
                     Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
-                    
+
                     Review the answer, reasoning, evidence, AND full document context together to evaluate:
                     - Does the answer fully address the concern raised in the question?
                     - Is the evidence substantive enough to support the answer?
@@ -4810,13 +6638,51 @@ def analyze_question_with_critical_opinion(question, answer, reasoning, evidence
                     - Should the project have included additional measures or details?
                     - Is the reasoning robust or superficial?
                     - What is NOT mentioned that should be?
-                    
-                    Respond in Spanish with a brief (max 150 words) critical assessment. Be direct about any shortcomings.
-                    Respond ONLY with the critical opinion text, no JSON, no formatting."""
-                },
-                {
-                    "role": "user",
-                    "content": f"""Question: {question}
+
+                    **SCOPE LOCK CHECK (CRITICAL):**
+                    The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
+
+                    **VERDICT CONSISTENCY RULES (MANDATORY):**
+
+                    - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+                    - **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+                      * a missing required detail
+                      * superficial or generic treatment
+                      * evidence that is thin, indirect, or insufficient
+                      If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+                    - **No**: The document claims to address the question but fails to.
+                    - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+                    - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+                    **CONSISTENCY CHECK (apply before emitting the verdict):**
+                    Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
+                    **OUTPUT FORMAT (MANDATORY):**
+                    Your response MUST begin with exactly one line in this format:
+                    VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+                    - Use "Keep" if the document's original answer is adequate and should stand.
+                    - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
+
+                    **BODY STRUCTURE (MANDATORY):**
+                    After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
+
+                    (1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
+
+                    (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+                    **STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+                    Be strict. Err on the side of downgrading.
+                    - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
+                    - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+                    - **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+                    - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
+                    - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+                    - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
+
+                    No preamble, no filler. No JSON, no extra formatting."""
+
+            user_content = f"""Question: {question}
 
 Document's Answer: {answer}
 
@@ -4828,9 +6694,232 @@ Full Document Context (complete):
 {doc_context}
 
 Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
+
+        # Single API call for critical evaluation - focuses on answer adequacy
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": user_content
                 }
             ],
-            max_completion_tokens=500,
+            max_completion_tokens=400,
+            reasoning_effort="minimal"
+        )
+
+        content = resp.choices[0].message.content
+        if not content or not content.strip():
+            return "No se generó evaluación crítica."
+
+        return content.strip()
+
+    except Exception as e:
+        return f"Error en evaluación crítica: {str(e)}"
+
+def analyze_question_with_critical_opinion(question, answer, reasoning, evidence, document_text=""):
+    """
+    Critically assess if the document's answer to a specific question is adequate and appropriate.
+    Evaluates whether the document's response truly addresses the concern raised in the question.
+    Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
+    Uses up to 110K tokens for complete document understanding - maximizes context window usage.
+    Enhanced to handle two-part questions with proper focus on the specific (Part 2) aspect.
+    """
+    try:
+        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+
+        # Parse question to detect two-part structure
+        parsed = parse_two_part_question(question)
+
+        # Customize critical evaluation based on question structure
+        if parsed['is_two_part']:
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+
+**CRITICAL EVALUATION FOR TWO-PART QUESTIONS:**
+
+This is a TWO-PART question where:
+- **Part 1 (Broader)**: Sets general context
+- **Part 2 (Specific - PRIMARY)**: The critical detail that needs focused assessment
+
+**Your Critical Assessment Must Evaluate:**
+
+1. **PRIMARY FOCUS - Part 2 (Specific Question):**
+   - Does the answer adequately address the SPECIFIC question (Part 2)?
+   - Is the evidence for Part 2 substantive and concrete?
+   - Are there critical gaps or superficial treatment of Part 2?
+   - Does the document truly deliver on the specific requirement?
+
+2. **SECONDARY - Part 1 (Broader Context):**
+   - Does the answer address the broader context (Part 1)?
+   - How do the Part 2 findings affect the Part 1 assessment?
+
+3. **INTEGRATION:**
+   - Is there coherence between how Part 2 relates to Part 1?
+   - Are there contradictions or misalignments?
+
+**Be especially critical if:**
+- Part 2 (specific question) is answered superficially or avoided
+- Evidence focuses on Part 1 but neglects Part 2
+- The reasoning doesn't connect Part 2's findings to Part 1's context
+
+**WEIGHTING (ULTRA-FOCUS ON PART 2):** Your critique must allocate ~99% of its attention to Part 2 and effectively IGNORE Part 1. Part 1 is framing only and is analyzed separately at the subsection level — do NOT evaluate Part 1 here, do NOT penalize limited Part 1 depth, and do NOT let Part 1 coverage inflate the verdict. The verdict and body must be driven almost entirely by whether Part 2 is substantively addressed.
+
+**SCOPE LOCK CHECK (CRITICAL):**
+The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
+- If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
+- Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
+
+**VERDICT CONSISTENCY RULES (MANDATORY):**
+
+- **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+- **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+  * a missing required detail
+  * superficial or generic treatment
+  * evidence that is thin, indirect, or insufficient
+  * Part 2 (specific focus) answered weakly while Part 1 was handled well
+  If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+- **No**: The document claims to address the question but fails to.
+- **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+- **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+**CONSISTENCY CHECK (apply before emitting the verdict):**
+Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
+**OUTPUT FORMAT (MANDATORY):**
+Your response MUST begin with exactly one line in this format:
+VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+- Use "Keep" if the document's original answer is adequate and should stand.
+- Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
+
+**BODY STRUCTURE (MANDATORY):**
+After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
+
+(1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps in Part 2. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
+
+(2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+**STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+Be strict. Err on the side of downgrading.
+- **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
+- **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+- **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+- **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
+- **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+- If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
+
+No preamble, no filler. No JSON, no extra formatting."""
+
+            # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
+            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
+
+**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+{parsed['part2']}
+
+**PARTE 1 (Contexto General — solo para enmarcar):**
+{parsed['part1']}
+
+**Respuesta del Documento:** {answer}
+
+**Razonamiento del Documento:** {reasoning}
+
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta específica) — el foco prioritario? ¿La evidencia para la Parte 2 es concreta y suficiente, o se quedó en generalidades de la Parte 1?"""
+
+        else:
+            # Original single-question critical evaluation
+            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+                    Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
+
+                    Review the answer, reasoning, evidence, AND full document context together to evaluate:
+                    - Does the answer fully address the concern raised in the question?
+                    - Is the evidence substantive enough to support the answer?
+                    - Does the full document context confirm or contradict the claimed answer?
+                    - Is the proposed approach sufficient according to best practices?
+                    - Are there gaps, risks, or inadequacies in what the document claims?
+                    - Should the project have included additional measures or details?
+                    - Is the reasoning robust or superficial?
+                    - What is NOT mentioned that should be?
+
+                    **SCOPE LOCK CHECK (CRITICAL):**
+                    The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
+
+                    **VERDICT CONSISTENCY RULES (MANDATORY):**
+
+                    - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
+                    - **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+                      * a missing required detail
+                      * superficial or generic treatment
+                      * evidence that is thin, indirect, or insufficient
+                      If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+                    - **No**: The document claims to address the question but fails to.
+                    - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
+                    - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
+
+                    **CONSISTENCY CHECK (apply before emitting the verdict):**
+                    Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
+
+                    **OUTPUT FORMAT (MANDATORY):**
+                    Your response MUST begin with exactly one line in this format:
+                    VEREDICTO: <Yes|No|Partial|Not Found|Keep>
+
+                    - Use "Keep" if the document's original answer is adequate and should stand.
+                    - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
+
+                    **BODY STRUCTURE (MANDATORY):**
+                    After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
+
+                    (1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
+
+                    (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
+
+                    **STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
+                    Be strict. Err on the side of downgrading.
+                    - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
+                    - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
+                    - **NOT Partial — downgrade to No — when:** coverage is token or passing, only isolated mentions exist, or only a small fraction (roughly under one-third) of the required elements is substantively addressed. One or two items mentioned out of many required is NOT Partial — it is No. A single passing reference does not earn Partial.
+                    - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
+                    - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
+                    - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
+
+                    No preamble, no filler. No JSON, no extra formatting."""
+
+            user_content = f"""Question: {question}
+
+Document's Answer: {answer}
+
+Document's Reasoning: {reasoning}
+
+Document's Evidence: {evidence}
+
+Full Document Context (complete):
+{doc_context}
+
+Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
+
+        # Single API call for critical evaluation - focuses on answer adequacy
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_content
+                },
+                {
+                    "role": "user",
+                    "content": user_content
+                }
+            ],
+            max_completion_tokens=400,
             reasoning_effort="minimal"
         )
 
@@ -4862,6 +6951,23 @@ def parse_subsection_for_sorting(subsection_str):
         return (int(parts[0]), int(parts[1]))
     except:
         return (999, 999)
+
+def parse_question_sort_key(question_text):
+    """Extract the full numeric prefix from question text as a tuple for fine-grained sorting.
+
+    Examples: '1.1 ¿...?' -> (1, 1); '1.1.2 ¿...?' -> (1, 1, 2); '2.10 ¿...?' -> (2, 10).
+    Unlike parse_subsection_for_sorting which caps at two levels, this preserves every
+    numeric segment so nested numbering (1.1, 1.1.1, 1.1.2, 1.2) sorts naturally and
+    does not collapse to a single subsection bucket.
+    """
+    import re
+    match = re.match(r'^\s*(\d+(?:\.\d+)*)', str(question_text).strip())
+    if not match:
+        return (999, 999, 999)
+    try:
+        return tuple(int(p) for p in match.group(1).split('.'))
+    except ValueError:
+        return (999, 999, 999)
 
 def synthesize_subsection_analysis(subsection_id, subsection_questions_df):
     """Synthesize subsection-level analysis from individual question answers within that subsection"""
@@ -5117,35 +7223,38 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
                 'text_wrap': True
             })
             
-            # Extract and ensure sorting columns exist
+            # Extract and ensure sorting columns exist. Always re-derive _sort_key from the
+            # question text so persisted session-state DataFrames (which may have been built
+            # with the old two-level sort key) are re-sorted by the full numeric prefix.
             if '_section' not in results_df.columns:
                 results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
             if '_subsection' not in results_df.columns:
                 results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
-            if '_sort_key' not in results_df.columns:
-                results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
-            
-            # Sort the entire dataframe by sort_key to ensure consistent ordering
-            results_df_sorted = results_df.sort_values(by='_sort_key').reset_index(drop=True)
+            results_df['_sort_key'] = results_df['Pregunta'].apply(parse_question_sort_key)
+
+            # Primary sort by full numeric prefix; _orig_idx breaks ties if available.
+            sort_cols = ['_sort_key']
+            if '_orig_idx' in results_df.columns:
+                sort_cols.append('_orig_idx')
+            results_df_sorted = results_df.sort_values(by=sort_cols).reset_index(drop=True)
             
             # ===== SHEET 1: Questions (Preguntas) =====
             sheet_questions = workbook.add_worksheet('1. Preguntas')
-            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Evaluación Crítica', 'Status']].copy()
-            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Evaluación Crítica', 'Status']
+            questions_data = results_df_sorted[['_subsection', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']].copy()
+            questions_data.columns = ['Subsección', 'Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia', 'Status']
             questions_data.to_excel(writer, index=False, sheet_name='1. Preguntas', startrow=0)
-            
+
             # Format headers
             for col_num, value in enumerate(questions_data.columns.values):
                 writer.sheets['1. Preguntas'].write(0, col_num, value, header_format)
-            
+
             # Set column widths
             writer.sheets['1. Preguntas'].set_column('A:A', 12)  # Subsección
             writer.sheets['1. Preguntas'].set_column('B:B', 35)  # Pregunta
             writer.sheets['1. Preguntas'].set_column('C:C', 12)  # Respuesta
-            writer.sheets['1. Preguntas'].set_column('D:D', 50)  # Razonamiento
+            writer.sheets['1. Preguntas'].set_column('D:D', 55)  # Razonamiento (includes critical evaluation)
             writer.sheets['1. Preguntas'].set_column('E:E', 40)  # Evidencia
-            writer.sheets['1. Preguntas'].set_column('F:F', 45)  # Evaluación Crítica
-            writer.sheets['1. Preguntas'].set_column('G:G', 10)  # Status
+            writer.sheets['1. Preguntas'].set_column('F:F', 10)  # Status
             
             # ===== SHEET 2: Subsection Analysis (Análisis por Subsección) =====
             sheet_subsections = workbook.add_worksheet('2. Análisis Subsecciones')
@@ -5205,6 +7314,14 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
         
         excel_buffer.seek(0)
         zipf.writestr(f"{filename_base}_results.xlsx", excel_buffer.getvalue())
+
+        # Add original template if available
+        try:
+            with open('./Appraisal Checklist_2025 es-419.xlsx', 'rb') as f:
+                template_data = f.read()
+                zipf.writestr(f"{filename_base}_rubric_template.xlsx", template_data)
+        except FileNotFoundError:
+            pass
         
         # Add summary report
         summary = f"""
@@ -5233,7 +7350,7 @@ Distribución de respuestas:
 
 # Main tab interface
 with tab1:
-    st.header("📋 Valoración Preliminar de Calidad de Proyectos")
+    st.header("📋 Valoración Preliminar de Calidad de Proyectos (Preliminary Project Quality Appraisal)")
     
     # Load questions
     df_appraisal, error_msg = load_appraisal_questions()
@@ -5243,12 +7360,13 @@ with tab1:
         st.stop()
     
     # Download button for the rubric file (directly on page, no expander)
+    # Download button for the rubric file (directly on page, no expander)
     try:
-        with open('./APPRAISAL_rubric.xlsx', 'rb') as f:
+        with open('./Appraisal Checklist_2025 es-419.xlsx', 'rb') as f:
             st.download_button(
                 label="📥 Descargar archivo rúbrica de Valoración preliminar",
                 data=f,
-                file_name="APPRAISAL_rubric.xlsx",
+                file_name="Appraisal Checklist_2025 es-419.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_appraisal_rubric"
             )
@@ -5274,8 +7392,35 @@ with tab1:
     if 'tab1_doc_stats' not in st.session_state:
         st.session_state['tab1_doc_stats'] = None
 
-  # Sección de carga y procesamiento de archivo
+    # Initialize session state for Tab 1
+    if 'document_extracted_tab1' not in st.session_state:
+        st.session_state['document_extracted_tab1'] = False
+    if 'selected_sections_tab1' not in st.session_state:
+        st.session_state['selected_sections_tab1'] = []
+    
+    # Document upload
     st.subheader("📄 Carga de documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que el documento esté guardado correctamente antes de subirlo
+    """)
+    
     uploaded_file = st.file_uploader(
         "Sube un DOCX para la evaluación:",
         type=["docx"],
@@ -5283,70 +7428,371 @@ with tab1:
         help="Selecciona un documento de Word (.docx) para el análisis de valoración preliminar de calidad"
     )
     
-    # Filter section - added after file uploader
-    st.subheader("🔍 Filtros de análisis (opcional)")
-    st.info("Selecciona secciones y subsecciones específicas para un análisis enfocado. Deja en blanco para analizar todas.")
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file is not None:
+        file_hash = hash(uploaded_file.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab1') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab1'] = False
+            st.session_state['last_file_hash_tab1'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab1", type="primary"):
+            if uploaded_file is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab1'] = full_document_text
+                    st.session_state['appraisal_document_stats'] = {
+                        'file_size': file_size,
+                        'word_count': n_words,
+                        'n_words': n_words
+                    }
+                    st.session_state['exploded_df_tab1'] = exploded_df
+                    st.session_state['extraction_df_tab1'] = df
+                    st.session_state['tables_data_tab1'] = tables_data
+                    st.session_state['extraction_stats_tab1'] = extraction_stats
+                    st.session_state['sections_df_tab1'] = llm_summary_df
+                    st.session_state['selected_sections_tab1'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab1'] = file_hash
+                    st.session_state['document_extracted_tab1'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab1', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab1', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab1_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab1"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display header_1 sections and their content
+            extraction_df = st.session_state.get('extraction_df_tab1', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
+                    
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
+                    
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
+                        
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
+                        
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
+                        
+                        st.markdown("---")
+            
+            sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab1' not in st.session_state:
+                    st.session_state['selected_sections_tab1'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab1', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab1"):
+                        st.session_state['selected_sections_tab1'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab1"):
+                        st.session_state['selected_sections_tab1'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab1"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab1",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab1', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab1",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
+                
+                # Update session state
+                st.session_state['selected_sections_tab1'] = selected_sections
+                
+                # Show selection summary
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+    
+    # Filter section for questions (optional, for filtering which questions to analyze)
+    st.markdown("---")
+    st.subheader("🔍 Filtros de Preguntas (opcional)")
+    st.info("Selecciona secciones y subsecciones de preguntas para un análisis enfocado. Deja en blanco para analizar todas las preguntas.")
     
     # Get unique sections and subsections from questions
     df_with_sections = df_appraisal.copy()
     df_with_sections['_section'] = df_with_sections['Pregunta_Realizada'].apply(extract_section_number)
     df_with_sections['_subsection'] = df_with_sections['Pregunta_Realizada'].apply(extract_subsection_number)
     
+    # Section Names Mapping
+    SECTION_NAMES = {
+        1: "Pertinencia",
+        2: "Apropiación y sostenibilidad",
+        3: "Gestión orientada a los resultados",
+        4: "Transparencia y rendición de cuentas",
+        5: "Presentación de la propuesta"
+    }
+
     all_sections = sorted(df_with_sections['_section'].dropna().unique())
-    all_subsections = sorted(df_with_sections['_subsection'].dropna().unique(), 
-                            key=lambda x: parse_subsection_for_sorting(x) if pd.notna(x) else (999, 999))
     
     # Create two columns for filters
     col_filter1, col_filter2 = st.columns(2)
     
     with col_filter1:
-        selected_sections = st.multiselect(
+        # Format section options with names
+        section_options = [f"{int(s)}. {SECTION_NAMES.get(int(s), 'Sección ' + str(int(s)))}" for s in all_sections]
+        
+        selected_sections_filter = st.multiselect(
             "Selecciona Secciones:",
-            options=[f"Sección {int(s)}" for s in all_sections],
-            key="filter_sections",
+            options=section_options,
+            key="filter_sections_tab1",
             help="Selecciona una o más secciones para analizar"
         )
     
+    # Extract section numbers from filter selections
+    filtered_section_nums = []
+    if selected_sections_filter:
+        for s in selected_sections_filter:
+            try:
+                # Extract number from "1. Name" format
+                filtered_section_nums.append(int(s.split('.')[0]))
+            except:
+                pass
+
+    # Filter available subsections based on selected sections
+    if filtered_section_nums:
+        # Show only subsections belonging to selected sections
+        available_subsections_df = df_with_sections[df_with_sections['_section'].isin(filtered_section_nums)]
+    else:
+        # Show all subsections if no section is selected
+        available_subsections_df = df_with_sections
+        
+    all_subsections = sorted(available_subsections_df['_subsection'].dropna().unique(), 
+                            key=lambda x: parse_subsection_for_sorting(x) if pd.notna(x) else (999, 999))
+
     with col_filter2:
-        selected_subsections = st.multiselect(
+        selected_subsections_filter = st.multiselect(
             "Selecciona Subsecciones:",
             options=[f"Subsección {s}" for s in all_subsections],
-            key="filter_subsections",
+            key="filter_subsections_tab1",
             help="Selecciona una o más subsecciones para analizar"
         )
     
-    # Extract section numbers from filter selections
-    filtered_section_nums = [int(s.split()[-1]) for s in selected_sections] if selected_sections else None
-    filtered_subsection_ids = [s.split()[-1] for s in selected_subsections] if selected_subsections else None
+    # Extract subsection IDs
+    filtered_subsection_ids = [s.replace("Subsección ", "") for s in selected_subsections_filter] if selected_subsections_filter else None
     
     # Processing button
+    st.markdown("---")
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
     if st.button('🔍 Analizar documento', key="appraisal_process_button", type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab1', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
+            st.stop()
+        
         if uploaded_file is None:
-            st.warning("⚠️ Por favor sube un archivo DOCX primero.")
+            st.warning("⚠️ Por favor suba un archivo DOCX primero.")
             st.stop()
         
-        # Extract document content
-        with st.spinner("📖 Extrayendo contenido del documento..."):
-            doc_result = extract_document_content(uploaded_file)
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab1', [])
+        sections_df = st.session_state.get('sections_df_tab1', pd.DataFrame())
         
-        if not doc_result['success']:
-            st.error(f"❌ Error procesando el documento: {doc_result['error']}")
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab1', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
             st.stop()
-        
-        # Store document stats (using consistent key names)
-        st.session_state['appraisal_document_stats'] = {
-            'file_size': doc_result['file_size'],
-            'word_count': doc_result['word_count'],
-            'n_words': doc_result['word_count']  # Keep both for compatibility
-        }
-        
-        # Display document info
-        st.success("✅ ¡Documento procesado con éxito!")
-        st.info(f"""
-        **Resumen del documento:**
-        - Tamaño del archivo: {doc_result['file_size']/1024:.2f} KB
-        - Número de palabras: {doc_result['word_count']:,}
-        """)
         
         # Get questions for analysis
         questions = df_appraisal['Pregunta_Realizada'].dropna().unique().tolist()
@@ -5390,36 +7836,41 @@ with tab1:
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all questions for document-based analysis first
+            # TAB1: Using tab1-specific function that explicitly states when 2 parts are detected
+            # Tag each future with its original index so within-subsection ordering survives
+            # the parallel as_completed dispatch.
             future_to_question_doc = {
-                executor.submit(analyze_question_with_llm, q, doc_result['text']): q 
-                for q in questions
+                executor.submit(analyze_question_with_llm_tab1, q, document_text): (idx, q)
+                for idx, q in enumerate(questions)
             }
-            
+
             # Process document-based analyses
             completed = 0
             for future in as_completed(future_to_question_doc):
-                question = future_to_question_doc[future]
+                idx, question = future_to_question_doc[future]
                 result = future.result()
+                result['_orig_idx'] = idx
                 results.append(result)
                 completed += 1
-                
+
                 # Update progress
                 progress = completed / len(questions)
                 progress_bar.progress(progress * 0.5)  # First half of progress bar
                 status_text.text(f"Análisis documentales: {completed}/{len(questions)} preguntas")
-            
+
             # Create results DataFrame to get answers for critical evaluation
             results_df_temp = pd.DataFrame(results)
-            
+
             # Now submit critical evaluations with answer, reasoning, evidence AND document context
+            # TAB1: Using tab1-specific function that checks for proper two-part acknowledgment
             future_to_question_critical = {
                 executor.submit(
-                    analyze_question_with_critical_opinion,
+                    analyze_question_with_critical_opinion_tab1,
                     row['Pregunta'],
                     row['Respuesta'],
                     row['Razonamiento'],
                     row['Evidencia'],
-                    doc_result['text']  # Pass complete document text for context
+                    document_text  # Pass selected sections text for context
                 ): row['Pregunta']
                 for _, row in results_df_temp.iterrows()
             }
@@ -5436,18 +7887,53 @@ with tab1:
                 progress = completed / len(questions)
                 progress_bar.progress(0.5 + progress * 0.5)  # Second half of progress bar
                 status_text.text(f"Evaluaciones críticas: {completed}/{len(questions)} preguntas")
-        
+
+        # Apply critic verdict. The critic is authoritative and its body becomes the single
+        # coherent Razonamiento — whether it overrides the answer or confirms it. This gives the
+        # reader one reasoning column instead of an original reasoning plus a separate critique.
+        # Respuesta Original preserves the pre-critic grade for audit.
+        override_count = 0
+        unparsed_count = 0
+        for result in results:
+            q = result.get('Pregunta')
+            critic_raw = critical_opinions.get(q, "") or ""
+            verdict, critic_body = parse_critic_verdict(critic_raw)
+            original_answer = result.get('Respuesta', '')
+            result['Respuesta Original'] = original_answer
+
+            if verdict is None:
+                unparsed_count += 1
+            elif verdict != 'Keep' and verdict != original_answer:
+                result['Respuesta'] = verdict
+                override_count += 1
+
+            if critic_body:
+                result['Razonamiento'] = critic_body
+
+            critical_opinions[q] = critic_body if critic_body else critic_raw
+
+        if override_count:
+            st.info(f"🔄 {override_count} respuesta(s) ajustada(s) por la evaluación crítica.")
+        if unparsed_count:
+            st.warning(
+                f"⚠️ {unparsed_count} evaluación(es) crítica(s) sin veredicto parseable; "
+                "se mantuvo la respuesta original."
+            )
+
         # Create results DataFrame - sort by subsection for proper ordering
         results_df = pd.DataFrame(results)
-        
+
         # Add critical opinions to dataframe
         results_df['Evaluación Crítica'] = results_df['Pregunta'].map(critical_opinions).fillna("No disponible")
         results_df['_section_num'] = results_df['Pregunta'].apply(extract_section_number)
         results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
-        results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
-        
-        # Sort results by section and subsection
-        results_df = results_df.sort_values(by=['_sort_key']).reset_index(drop=True)
+        # Sort key uses the FULL numeric prefix (e.g., "1.1.2" -> (1,1,2)) so nested
+        # numbering sorts naturally instead of collapsing to the two-level subsection.
+        results_df['_sort_key'] = results_df['Pregunta'].apply(parse_question_sort_key)
+
+        # Primary sort by full numeric prefix; _orig_idx breaks ties for questions that
+        # share the same numeric prefix, keeping rubric order within that group.
+        results_df = results_df.sort_values(by=['_sort_key', '_orig_idx']).reset_index(drop=True)
         
         # THREE-LEVEL SYNTHESIS: Question -> Subsection -> Section
         st.markdown("### 📈 Síntesis Multinivel")
@@ -5540,9 +8026,12 @@ with tab1:
         st.session_state['tab1_subsection_critical_evaluations'] = subsection_critical_evaluations
         st.session_state['tab1_section_analyses'] = section_analyses
         st.session_state['tab1_section_critical_evaluations'] = section_critical_evaluations
+
+        # Get document stats from session state
+        doc_stats = st.session_state.get('appraisal_document_stats', {})
         st.session_state['tab1_doc_stats'] = {
-            'file_size': doc_result['file_size'],
-            'word_count': doc_result['word_count']
+            'file_size': doc_stats.get('file_size', 0),
+            'word_count': doc_stats.get('word_count', 0)
         }
         
         # Display results
@@ -5699,414 +8188,2255 @@ with tab1:
 
 #--------------------------#-------------------------------#
 #--------------------------#-------------------------------#
-# Tab 8: Tablero de seguimiento de recomendaciones y planes de acción
+# # Tab 8: Tablero de seguimiento de recomendaciones y planes de acción
+# with tab5:
+#     st.header("📊 Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción")
+
+#     # Comprehensive presentation box
+#     st.info("""
+
+#     En esta ventana se presentan gráficos y estadísticas derivados de las respuestas institucionales a las recomendaciones (incluidos sus planes de acción) ya procesadas por la herramienta. El panel permite seguir el estado de respuesta (completadas, parcialmente completadas, acción no planificada, acción no tomada, rechazadas, sin respuesta), analizar la calidad de la respuesta (coherencia con el plan, calidad del plan, nivel de atención), observar la evolución en el tiempo y la composición por país, año y dimensión (gobernanza, participación, género, transición justa, capacidades, sostenibilidad financiera, incidencia).
+
+#     También muestra atributos de las recomendaciones (innovación, precisión/claridad, viabilidad, horizonte temporal, impacto esperado) e identifica barreras de implementación.
+
+#     **🎯 Orientado al nivel directivo y unidades de programación para:**
+#     - Conducir conversaciones de seguimiento: qué ocurrió después de decidir implementar (o no) cada recomendación
+#     - Identificar por qué quedaron pendientes y qué ajustes corresponden
+#     - Facilitar acuerdos operativos (responsables y plazos)
+#     - Realizar reprogramaciones cuando haya cuellos de botella
+#     - Escalar barreras críticas
+#     - Preparar notas técnicas/minutas con evidencia gráfica para rendición de cuentas ante mandantes
+
+#     **💡 En síntesis:** El tablero transforma la evidencia en prioridades de acción verificables y ciclos de aprendizaje para cerrar brechas y sostener avances.
+
+#     **🔍 Análisis por similitud:** Use la opción "Por similitud" para estimar la correspondencia entre el núcleo de la recomendación y la respuesta/plan. Una similitud baja puede señalar un desajuste de alcance, actores o resultados esperados; tómelo como insumo para discutir ajustes y seguimiento con los equipos.
+
+#     *Sugerencia: comience con un umbral de 0.70 y ajústelo según el contexto.*
+#     """)
+
+#     # Chat section for querying similar recommendations
+#     st.header("Búsqueda de Recomendaciones")
+#     st.markdown("### Búsqueda")
+
+#     # Input for user query
+#     user_query = st.text_input("Búsqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab8')
+
+#     # Search method selection
+#     search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab8')
+
+#     # Slider for similarity score threshold (only relevant for similarity search)
+#     if search_method == "Por Similitud":
+#         score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab8')
+
+#     # Function to display results
+#     def display_results(results):
+#         if results:
+#             st.markdown("#### Recomendaciones similares")
+#             for i, result in enumerate(results):
+#                 st.markdown(f"**Recomendación {i+1}:**")
+#                 st.markdown(f"**Texto:** {result['recommendation']}")
+#                 if "similarity" in result:
+#                     st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
+#                 st.markdown(f"**País:** {result['country']}")
+#                 st.markdown(f"**Año:** {result['year']}")
+#                 st.markdown(f"**Número de evaluación:** {result['eval_id']}")
+#                 st.markdown("---")
+#         else:
+#             st.write("No se encontraron recomendaciones para la búsqueda.")
+
+#     # Button to search for recommendations
+#     if st.button("Buscar Recomendaciones", key='search_button_tab8'):
+#         if user_query:
+#             with st.spinner('Buscando recomendaciones...'):
+#                 if search_method == "Por Similitud":
+#                     query_embedding = get_embedding_with_retry(user_query)
+#                     if query_embedding is not None:
+#                         results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
+#                         display_results(results)
+#                     else:
+#                         st.error("No se pudo generar el embedding para la consulta.")
+#                 else:
+#                     results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
+#                     display_results(results)
+
+#     # Use the main recommendations dataset
+#     filtered_df = df.copy()
+
+#     # Check if this is the recommendations dataset (has required columns)
+#     required_cols = ['Theme_cl', 'Recommendation_theme', 'Management_response']
+#     has_required_cols = all(col in df.columns for col in required_cols)
+
+#     if not has_required_cols:
+#         st.warning("⚠️ Esta sección requiere datos de recomendaciones. Por favor, carga el archivo de recomendaciones en la configuración inicial.")
+#     else:
+#         # --- FILTER ROW WITHIN TAB ---
+#         st.markdown("### Filtros")
+#         filter_container = st.container()
+
+#         with filter_container:
+#             # Create 3 columns for filters
+#             col1, col2, col3 = st.columns(3)
+
+#             with col1:
+#                 # # Administrative unit filter
+#                 # office_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
+#                 # selected_offices_viz = st.multiselect('Unidad Administrativa:',
+#                 #                                  options=office_options,
+#                 #                                  default='Todas',
+#                 #                                  key='unidad_administrativa_viz')
+    
+#                 # Country filter
+#                 country_col_candidates = ['Country(ies)', 'Country', 'Countries', 'country', 'Country (ies)', 'Country/ies']
+#                 country_col = next((c for c in country_col_candidates if c in df.columns), None)
+#                 if country_col:
+#                     country_options = ['Todas'] + sorted([str(x) for x in df[country_col].unique() if not pd.isna(x)])
+#                 else:
+#                     st.warning("No se encontró una columna de país en los datos.")
+#                     country_options = ['Todas']
+#                 selected_countries_viz = st.multiselect('País:',
+#                                                   options=country_options,
+#                                                   default='Todas' if 'Todas' in country_options else [],
+#                                                   key='pais_viz')
+    
+#             with col2:
+#                 # Year filter with slider (only if year column exists)
+#                 if 'year' in df.columns:
+#                     min_year = int(df['year'].min())
+#                     max_year = max(int(df['year'].max()), 2025)
+#                     selected_year_range_viz = st.slider('Rango de Años:',
+#                                                   min_value=min_year,
+#                                                   max_value=max_year,
+#                                                   value=(min_year, max_year),
+#                                                   key='rango_anos_viz')
+#                 else:
+#                     selected_year_range_viz = None
+    
+#                 # Evaluation theme filter
+#                 evaltheme_options = ['Todas'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
+#                 selected_evaltheme_viz = st.multiselect('Tema (Evaluación):',
+#                                                   options=evaltheme_options,
+#                                                   default='Todas',
+#                                                   key='tema_eval_viz')
+    
+#             with col3:
+#                 # Recommendation theme filter
+#                 rectheme_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
+#                 selected_rectheme_viz = st.multiselect('Tema (Recomendación):',
+#                                                  options=rectheme_options,
+#                                                  default='Todas',
+#                                                  key='tema_recomendacion_viz')
+    
+#                 # Management response filter
+#                 mgtres_options = ['Todas'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
+#                 selected_mgtres_viz = st.multiselect('Respuesta de gerencia:',
+#                                                options=mgtres_options,
+#                                                default='Todas',
+#                                                key='respuesta_gerencia_viz')
+    
+#         # Apply filters
+#         # if 'Todas' not in selected_offices_viz and selected_offices_viz:
+#         #     filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
+    
+#         if 'Todas' not in selected_countries_viz and selected_countries_viz and 'country_col' in locals() and country_col:
+#             filtered_df = filtered_df[filtered_df[country_col].isin(selected_countries_viz)]
+    
+#         if selected_year_range_viz is not None and 'year' in filtered_df.columns:
+#             filtered_df = filtered_df[
+#                 (filtered_df['year'] >= selected_year_range_viz[0]) &
+#                 (filtered_df['year'] <= selected_year_range_viz[1])
+#             ]
+    
+#         if 'Todas' not in selected_evaltheme_viz and selected_evaltheme_viz:
+#             filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme_viz)]
+    
+#         if 'Todas' not in selected_rectheme_viz and selected_rectheme_viz:
+#             filtered_df = filtered_df[filtered_df['Recommendation_theme'].isin(selected_rectheme_viz)]
+    
+#         if 'Todas' not in selected_mgtres_viz and selected_mgtres_viz:
+#             filtered_df = filtered_df[filtered_df['Management_response'].isin(selected_mgtres_viz)]
+    
+#         # Remove duplicates for plotting
+#         filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
+    
+#         # --- KPIs FOR VISUALIZATION TAB ---
+#         if not filtered_df_unique.empty:
+#             # Main KPIs
+#             total_kpi_labels = [
+#                 "Total Recomendaciones",
+#                 "Países",
+#                 "Evaluaciones",
+#                 "Años Cubiertos"
+#             ]
+#             total_kpi_values = [
+#                 filtered_df_unique.shape[0],
+#                 (filtered_df_unique[country_col].nunique() if 'country_col' in locals() and country_col and country_col in filtered_df_unique.columns else 0),
+#                 filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 0,
+#                 filtered_df_unique['year'].nunique()
+#             ]
+    
+#             total_cols = st.columns(4)
+#             total_kpi_html = [
+#                 f"""
+#                 <div style='text-align:center;'>
+#                     <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+#                     <span style='font-size:2.3em; font-weight:700; color:#002F6C;'>{value}</span>
+#                 </div>
+#                 """
+#                 for label, value in zip(total_kpi_labels, total_kpi_values)
+#             ]
+    
+#             for col, html in zip(total_cols, total_kpi_html):
+#                 col.markdown(html, unsafe_allow_html=True)
+    
+#             st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
+    
+#             # KPIs for management response statuses
+#             mgmt_labels = [
+#                 ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),
+#                 ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),
+#                 ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),
+#                 ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),
+#                 ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),
+#                 ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),
+#             ]
+    
+#             st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
+#             kpi_cols = st.columns(3)
+#             for i, (label, value, color) in enumerate(mgmt_labels):
+#                 kpi_cols[i % 3].markdown(
+#                     f"""
+#                     <div style='text-align:center;'>
+#                         <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
+#                         <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
+#                     </div>
+#                     """,
+#                     unsafe_allow_html=True
+#                 )
+    
+#             # Display plots if data is available
+#             if not filtered_df.empty:
+#                 country_counts = (
+#                     filtered_df_unique[country_col].value_counts()
+#                     if 'country_col' in locals() and country_col and country_col in filtered_df_unique.columns
+#                     else pd.Series(dtype=int)
+#                 )
+    
+#                 # Add CSS for dashboard styling
+#                 st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #002F6C;}</style>', unsafe_allow_html=True)
+    
+#                 # Create two columns for charts
+#                 row1_col1, row1_col2 = st.columns(2)
+    
+#                 with row1_col1:
+#                     st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
+#                     fig1 = go.Figure()
+#                     if not country_counts.empty:
+#                         fig1.add_trace(go.Bar(
+#                             y=country_counts.index.tolist(),
+#                             x=country_counts.values.tolist(),
+#                             orientation='h',
+#                             text=country_counts.values.tolist(),
+#                             textposition='auto',
+#                             marker_color='#002F6C',
+#                             hovertemplate='%{y}: %{x} recomendaciones'
+#                         ))
+#                     else:
+#                         fig1.add_trace(go.Bar(y=[], x=[]))
+    
+#                     # Fixed height for alignment with year plot
+#                     fixed_height = 500
+#                     fig1.update_layout(
+#                         xaxis_title='Número de Recomendaciones',
+#                         yaxis_title='País',
+#                         margin=dict(t=10, l=10, r=10, b=40),
+#                         font=dict(size=22),
+#                         height=fixed_height,
+#                         plot_bgcolor='white',
+#                         showlegend=False
+#                     )
+#                     fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
+#                     fig1.update_yaxes(showgrid=False)
+#                     st.plotly_chart(fig1, use_container_width=True)
+    
+#                 with row1_col2:
+#                     st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
+#                     year_counts = filtered_df_unique['year'].value_counts().sort_index()
+#                     fig2 = go.Figure()
+#                     fig2.add_trace(go.Bar(
+#                         x=year_counts.index.astype(str).tolist(),
+#                         y=year_counts.values.tolist(),
+#                         text=year_counts.values.tolist(),
+#                         textposition='auto',
+#                         marker_color='#002F6C',
+#                         hovertemplate='Año %{x}: %{y} recomendaciones',
+#                         textfont=dict(size=22)
+#                     ))
+#                     fig2.update_layout(
+#                         xaxis_title='Año',
+#                         yaxis_title='Número de Recomendaciones',
+#                         margin=dict(t=10, l=10, r=10, b=40),
+#                         font=dict(size=22),
+#                         height=500,
+#                         plot_bgcolor='white',
+#                         showlegend=False
+#                     )
+#                     fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
+#                     fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
+#                     st.plotly_chart(fig2, use_container_width=True)
+    
+#                 # Dimension treemap
+#                 st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
+    
+#                 # Clean and prepare dimension data - use the same unique rows used for KPIs
+#                 import numpy as np
+#                 treemap_df = filtered_df_unique.copy()
+#                 treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.strip().str.lower().replace({
+#                     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+#                 })
+#                 treemap_df['dimension'] = treemap_df['dimension'].replace({'process': 'Process'})
+#                 treemap_df = treemap_df[treemap_df['dimension'].notna()]
+
+#                 # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
+#                 #     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
+#                 # })
+#                 # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
+#                 # treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
+
+#                 # Count recommendations by dimension
+#                 dimension_counts = treemap_df.groupby('dimension').agg({
+#                     'index_df': 'nunique'
+#                 }).reset_index()
+    
+#                 # Calculate percentages and format text
+#                 dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
+#                 dimension_counts['text'] = dimension_counts.apply(
+#                     lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%",
+#                     axis=1
+#                 )
+#                 dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
+    
+#                 # Remove 'Sin Clasificar' and capitalize dimension labels
+#                 dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
+#                 dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
+    
+#                 # Create treemap
+#                 fig3 = px.treemap(
+#                     dimension_counts,
+#                     path=['dimension'],
+#                     values='index_df',
+#                     title='Composición de Recomendaciones por Dimensión',
+#                     hover_data={'text': True, 'index_df': False, 'percentage': False},
+#                     custom_data=['text']
+#                 )
+#                 fig3.update_traces(
+#                     textinfo='label+value',
+#                     hovertemplate='%{customdata[0]}',
+#                     textfont_size=32
+#                 )
+#                 fig3.update_layout(
+#                     margin=dict(t=50, l=25, r=25, b=25),
+#                     width=900,
+#                     height=500,
+#                     title_font_size=32,
+#                     font=dict(size=28),
+#                     legend_font_size=28
+#                 )
+#                 st.plotly_chart(fig3, use_container_width=True)
+    
+#                 # Subdimension treemap - use treemap_df which was already cleaned above
+#                 # Harmonize process/processes before plotting subdimensions
+#                 treemap_df['dimension'] = treemap_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
+
+#                 # Remove 'Sin Clasificar' from both dimension and subdimension
+#                 treemap_df = treemap_df[treemap_df['dimension'].str.lower() != 'sin clasificar']
+#                 treemap_df = treemap_df[treemap_df['subdim'].str.lower() != 'sin clasificar']
+
+#                 # Capitalize dimension and subdimension labels
+#                 treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.title()
+#                 treemap_df['subdim'] = treemap_df['subdim'].astype(str).str.title()
+
+#                 # Count by subdimension
+#                 subdimension_counts = treemap_df.groupby(['dimension', 'subdim']).agg({
+#                     'index_df': 'nunique'
+#                 }).reset_index()
+    
+#                 # Calculate percentages and format text
+#                 subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
+#                 subdimension_counts['text'] = subdimension_counts.apply(
+#                     lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%",
+#                     axis=1
+#                 )
+#                 subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10
+    
+#                 # Create treemap
+#                 fig4 = px.treemap(
+#                     subdimension_counts,
+#                     path=['dimension', 'subdim'],
+#                     values='index_df',
+#                     title='Composición de Recomendaciones por Subdimensión',
+#                     hover_data={'text': True, 'index_df': False, 'percentage': False},
+#                     custom_data=['text']
+#                 )
+#                 fig4.update_traces(
+#                     textinfo='label+value',
+#                     hovertemplate='%{customdata[0]}',
+#                     textfont_size=32
+#                 )
+#                 fig4.update_layout(
+#                     margin=dict(t=50, l=25, r=25, b=25),
+#                     width=900,
+#                     height=500,
+#                     title_font_size=32,
+#                     font=dict(size=28),
+#                     legend_font_size=28
+#                 )
+
+#                 st.plotly_chart(fig4, use_container_width=True)
+    
+#                 # Add the advanced visualization section
+#                 add_advanced_visualization_section(filtered_df, tab_id="tab8")
+#             else:
+#                 st.warning("No hay datos disponibles para los filtros seleccionados.")
+#         else:
+#             st.warning("No hay datos disponibles para los filtros seleccionados.")
+
+#--------------------------#-------------------------------#
+#--------------------------#-------------------------------#
+# Tab 6: Clasificación de Recomendaciones (World)
 with tab5:
-    st.header("📊 Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción")
-
-    # Comprehensive presentation box
+    st.header("Clasificación de Recomendaciones")
     st.info("""
+    **🌍 Clasificación Inteligente de Recomendaciones**
 
-    En esta ventana se presentan gráficos y estadísticas derivados de las respuestas institucionales a las recomendaciones (incluidos sus planes de acción) ya procesadas por la herramienta. El panel permite seguir el estado de respuesta (completadas, parcialmente completadas, acción no planificada, acción no tomada, rechazadas, sin respuesta), analizar la calidad de la respuesta (coherencia con el plan, calidad del plan, nivel de atención), observar la evolución en el tiempo y la composición por país, año y dimensión (gobernanza, participación, género, transición justa, capacidades, sostenibilidad financiera, incidencia).
+    Esta herramienta permite clasificar automáticamente las recomendaciones contenidas en el archivo `Recommendations_World.xlsx` 
+    asignándolas a las subdimensiones definidas en el marco de trabajo `Frame_Recommendations_English.xlsx`.
 
-    También muestra atributos de las recomendaciones (innovación, precisión/claridad, viabilidad, horizonte temporal, impacto esperado) e identifica barreras de implementación.
+    **Optimizaciones:**
+    1.  **Filtrado Previo:** Filtra por región/país antes de procesar para ahorrar costos y tiempo.
+    2.  **Caché Persistente:** Los embeddings se guardan localmente para no regenerarlos en futuras ejecuciones.
+    3.  **Deduplicación:** Textos idénticos se procesan una sola vez.
 
-    **🎯 Orientado al nivel directivo y unidades de programación para:**
-    - Conducir conversaciones de seguimiento: qué ocurrió después de decidir implementar (o no) cada recomendación
-    - Identificar por qué quedaron pendientes y qué ajustes corresponden
-    - Facilitar acuerdos operativos (responsables y plazos)
-    - Realizar reprogramaciones cuando haya cuellos de botella
-    - Escalar barreras críticas
-    - Preparar notas técnicas/minutas con evidencia gráfica para rendición de cuentas ante mandantes
-
-    **💡 En síntesis:** El tablero transforma la evidencia en prioridades de acción verificables y ciclos de aprendizaje para cerrar brechas y sostener avances.
-
-    **🔍 Análisis por similitud:** Use la opción "Por similitud" para estimar la correspondencia entre el núcleo de la recomendación y la respuesta/plan. Una similitud baja puede señalar un desajuste de alcance, actores o resultados esperados; tómelo como insumo para discutir ajustes y seguimiento con los equipos.
-
-    *Sugerencia: comience con un umbral de 0.70 y ajústelo según el contexto.*
+    **Funcionamiento:**
+    1.  Carga los datos de recomendaciones y el marco de referencia.
+    2.  Calcula la similitud semántica (usando OpenAI Embeddings) entre cada recomendación y las definiciones de subdimensiones.
+    3.  Asigna la subdimensión más relevante.
+    4.  Visualiza la distribución mediante Treemaps interactivos.
     """)
 
-    # Chat section for querying similar recommendations
-    st.header("Búsqueda de Recomendaciones")
-    st.markdown("### Búsqueda")
+    # --- Persistent Cache Class ---
+    class EmbeddingsCache:
+        def __init__(self, cache_file="embeddings_cache.pkl"):
+            self.cache_file = cache_file
+            self.cache = {}
+            self.load_cache()
 
-    # Input for user query
-    user_query = st.text_input("Búsqueda en recomendaciones:", value="¿Qué aspectos deben mejorarse sobre coordinación con partes interesadas?", key='user_query_tab8')
+        def load_cache(self):
+            if os.path.exists(self.cache_file):
+                try:
+                    with open(self.cache_file, 'rb') as f:
+                        self.cache = pickle.load(f)
+                except Exception:
+                    self.cache = {}
 
-    # Search method selection
-    search_method = st.radio("Método de búsqueda:", ["Por Similitud", "Por Coincidencia de Términos"], key='search_method_tab8')
+        def save_cache(self):
+            try:
+                with open(self.cache_file, 'wb') as f:
+                    pickle.dump(self.cache, f)
+            except Exception:
+                pass
 
-    # Slider for similarity score threshold (only relevant for similarity search)
-    if search_method == "Por Similitud":
-        score_threshold = st.slider("Umbral de similitud:", min_value=0.0, max_value=1.0, value=0.5, step=0.01, key='score_threshold_tab8')
+        def get(self, text):
+            return self.cache.get(text)
 
-    # Function to display results
-    def display_results(results):
-        if results:
-            st.markdown("#### Recomendaciones similares")
-            for i, result in enumerate(results):
-                st.markdown(f"**Recomendación {i+1}:**")
-                st.markdown(f"**Texto:** {result['recommendation']}")
-                if "similarity" in result:
-                    st.markdown(f"**Puntuación de similitud:** {result['similarity']:.2f}")
-                st.markdown(f"**País:** {result['country']}")
-                st.markdown(f"**Año:** {result['year']}")
-                st.markdown(f"**Número de evaluación:** {result['eval_id']}")
-                st.markdown("---")
-        else:
-            st.write("No se encontraron recomendaciones para la búsqueda.")
+        def set(self, text, embedding):
+            self.cache[text] = embedding
 
-    # Button to search for recommendations
-    if st.button("Buscar Recomendaciones", key='search_button_tab8'):
-        if user_query:
-            with st.spinner('Buscando recomendaciones...'):
-                if search_method == "Por Similitud":
-                    query_embedding = get_embedding_with_retry(user_query)
-                    if query_embedding is not None:
-                        results = find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold)
-                        display_results(results)
-                    else:
-                        st.error("No se pudo generar el embedding para la consulta.")
-                else:
-                    results = find_recommendations_by_term_matching(user_query, doc_texts, structured_embeddings)
-                    display_results(results)
+        def save(self):
+            self.save_cache()
 
-    # Use the main recommendations dataset
-    filtered_df = df.copy()
+    # Initialize cache in session state if not exists
+    if 'embeddings_cache_obj' not in st.session_state:
+        st.session_state['embeddings_cache_obj'] = EmbeddingsCache()
 
-    # Check if this is the recommendations dataset (has required columns)
-    required_cols = ['Theme_cl', 'Recommendation_theme', 'Management_response']
-    has_required_cols = all(col in df.columns for col in required_cols)
+    # --- Load Data ---
+    @st.cache_data
+    def load_world_data():
+        try:
+            # Check if files exist
+            if not os.path.exists('Recommendations_World.xlsx') or not os.path.exists('Frame_Recommendations_English.xlsx'):
+                return None, None
+            
+            rec_df = pd.read_excel('Recommendations_World.xlsx')
+            frame_df = pd.read_excel('Frame_Recommendations_English.xlsx')
+            return rec_df, frame_df
+        except Exception as e:
+            st.error(f"Error cargando los archivos de datos: {e}")
+            return None, None
 
-    if not has_required_cols:
-        st.warning("⚠️ Esta sección requiere datos de recomendaciones. Por favor, carga el archivo de recomendaciones en la configuración inicial.")
+    
+    # --- Data Source Selection ---
+    st.markdown("### Fuente de Datos")
+    data_source = st.radio("Selecciona origen de las recomendaciones:", 
+                          ["Archivos Predeterminados (World)", "Cargar Archivo Propio (.xlsx)"], 
+                          horizontal=True,
+                          key="data_source_radio")
+    
+    rec_df_world = None
+    frame_df_world = None
+    
+    # helper to just get frame (reusing cached function for now)
+    _, frame_default = load_world_data()
+    frame_df_world = frame_default
+
+    if data_source == "Archivos Predeterminados (World)":
+        rec_default, _ = load_world_data()
+        rec_df_world = rec_default
+        
+        if rec_df_world is None:
+             st.warning("⚠️ No se encontró el archivo 'Recommendations_World.xlsx' por defecto.")
+
     else:
-        # --- FILTER ROW WITHIN TAB ---
-        st.markdown("### Filtros")
-        filter_container = st.container()
-
-        with filter_container:
-            # Create 3 columns for filters
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                # # Administrative unit filter
-                # office_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_administrative_unit'].unique() if not pd.isna(x)])
-                # selected_offices_viz = st.multiselect('Unidad Administrativa:',
-                #                                  options=office_options,
-                #                                  default='Todas',
-                #                                  key='unidad_administrativa_viz')
-    
-                # Country filter
-                country_col_candidates = ['Country(ies)', 'Country', 'Countries', 'country', 'Country (ies)', 'Country/ies']
-                country_col = next((c for c in country_col_candidates if c in df.columns), None)
-                if country_col:
-                    country_options = ['Todas'] + sorted([str(x) for x in df[country_col].unique() if not pd.isna(x)])
+        uploaded_file = st.file_uploader("Sube tu archivo de recomendaciones (Excel):", type=["xlsx"], key="custom_rec_upload")
+        if uploaded_file:
+            try:
+                rec_df_world = pd.read_excel(uploaded_file)
+                # Validation
+                if 'Recommendation description' not in rec_df_world.columns:
+                    st.error("❌ El archivo debe contener una columna llamada 'Recommendation description'.")
+                    rec_df_world = None
                 else:
-                    st.warning("No se encontró una columna de país en los datos.")
-                    country_options = ['Todas']
-                selected_countries_viz = st.multiselect('País:',
-                                                  options=country_options,
-                                                  default='Todas' if 'Todas' in country_options else [],
-                                                  key='pais_viz')
-    
-            with col2:
-                # Year filter with slider (only if year column exists)
-                if 'year' in df.columns:
-                    min_year = int(df['year'].min())
-                    max_year = max(int(df['year'].max()), 2025)
-                    selected_year_range_viz = st.slider('Rango de Años:',
-                                                  min_value=min_year,
-                                                  max_value=max_year,
-                                                  value=(min_year, max_year),
-                                                  key='rango_anos_viz')
-                else:
-                    selected_year_range_viz = None
-    
-                # Evaluation theme filter
-                evaltheme_options = ['Todas'] + sorted([str(x) for x in df['Theme_cl'].unique() if not pd.isna(x)])
-                selected_evaltheme_viz = st.multiselect('Tema (Evaluación):',
-                                                  options=evaltheme_options,
-                                                  default='Todas',
-                                                  key='tema_eval_viz')
-    
-            with col3:
-                # Recommendation theme filter
-                rectheme_options = ['Todas'] + sorted([str(x) for x in df['Recommendation_theme'].unique() if not pd.isna(x)])
-                selected_rectheme_viz = st.multiselect('Tema (Recomendación):',
-                                                 options=rectheme_options,
-                                                 default='Todas',
-                                                 key='tema_recomendacion_viz')
-    
-                # Management response filter
-                mgtres_options = ['Todas'] + sorted([str(x) for x in df['Management_response'].unique() if not pd.isna(x)])
-                selected_mgtres_viz = st.multiselect('Respuesta de gerencia:',
-                                               options=mgtres_options,
-                                               default='Todas',
-                                               key='respuesta_gerencia_viz')
-    
-        # Apply filters
-        # if 'Todas' not in selected_offices_viz and selected_offices_viz:
-        #     filtered_df = filtered_df[filtered_df['Recommendation_administrative_unit'].isin(selected_offices_viz)]
-    
-        if 'Todas' not in selected_countries_viz and selected_countries_viz and 'country_col' in locals() and country_col:
-            filtered_df = filtered_df[filtered_df[country_col].isin(selected_countries_viz)]
-    
-        if selected_year_range_viz is not None and 'year' in filtered_df.columns:
-            filtered_df = filtered_df[
-                (filtered_df['year'] >= selected_year_range_viz[0]) &
-                (filtered_df['year'] <= selected_year_range_viz[1])
-            ]
-    
-        if 'Todas' not in selected_evaltheme_viz and selected_evaltheme_viz:
-            filtered_df = filtered_df[filtered_df['Theme_cl'].isin(selected_evaltheme_viz)]
-    
-        if 'Todas' not in selected_rectheme_viz and selected_rectheme_viz:
-            filtered_df = filtered_df[filtered_df['Recommendation_theme'].isin(selected_rectheme_viz)]
-    
-        if 'Todas' not in selected_mgtres_viz and selected_mgtres_viz:
-            filtered_df = filtered_df[filtered_df['Management_response'].isin(selected_mgtres_viz)]
-    
-        # Remove duplicates for plotting
-        filtered_df_unique = filtered_df.drop_duplicates(subset=['index_df'])
-    
-        # --- KPIs FOR VISUALIZATION TAB ---
-        if not filtered_df_unique.empty:
-            # Main KPIs
-            total_kpi_labels = [
-                "Total Recomendaciones",
-                "Países",
-                "Evaluaciones",
-                "Años Cubiertos"
-            ]
-            total_kpi_values = [
-                filtered_df_unique.shape[0],
-                (filtered_df_unique[country_col].nunique() if 'country_col' in locals() and country_col and country_col in filtered_df_unique.columns else 0),
-                filtered_df_unique['Evaluation_number'].nunique() if 'Evaluation_number' in filtered_df_unique.columns else filtered_df_unique['Evaluation number'].nunique() if 'Evaluation number' in filtered_df_unique.columns else 0,
-                filtered_df_unique['year'].nunique()
-            ]
-    
-            total_cols = st.columns(4)
-            total_kpi_html = [
-                f"""
-                <div style='text-align:center;'>
-                    <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-                    <span style='font-size:2.3em; font-weight:700; color:#002F6C;'>{value}</span>
-                </div>
-                """
-                for label, value in zip(total_kpi_labels, total_kpi_values)
-            ]
-    
-            for col, html in zip(total_cols, total_kpi_html):
-                col.markdown(html, unsafe_allow_html=True)
-    
-            st.markdown("<hr style='border-top: 1px solid #e1e4e8;'>", unsafe_allow_html=True)
-    
-            # KPIs for management response statuses
-            mgmt_labels = [
-                ("Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Completed'].shape[0], '#27ae60'),
-                ("Parcialmente Completadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Partially Completed'].shape[0], '#f7b731'),
-                ("Acción no tomada aún", filtered_df_unique[filtered_df_unique['Management_response'] == 'Action not yet taken'].shape[0], '#fd9644'),
-                ("Rechazadas", filtered_df_unique[filtered_df_unique['Management_response'] == 'Rejected'].shape[0], '#8854d0'),
-                ("Acción no planificada", filtered_df_unique[filtered_df_unique['Management_response'] == 'No Action Planned'].shape[0], '#3867d6'),
-                ("Sin respuesta", filtered_df_unique[filtered_df_unique['Management_response'] == 'Sin respuesta'].shape[0], '#eb3b5a'),
-            ]
-    
-            st.markdown("<span style='font-size:1.6em; font-weight:700;'>Respuesta de Gerencia</span>", unsafe_allow_html=True)
-            kpi_cols = st.columns(3)
-            for i, (label, value, color) in enumerate(mgmt_labels):
-                kpi_cols[i % 3].markdown(
-                    f"""
-                    <div style='text-align:center;'>
-                        <span style='font-size:1.2em; font-weight:700;'>{label}</span><br>
-                        <span style='font-size:2.3em; font-weight:700; color:{color};'>{value}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-    
-            # Display plots if data is available
-            if not filtered_df.empty:
-                country_counts = (
-                    filtered_df_unique[country_col].value_counts()
-                    if 'country_col' in locals() and country_col and country_col in filtered_df_unique.columns
-                    else pd.Series(dtype=int)
-                )
-    
-                # Add CSS for dashboard styling
-                st.markdown('<style>.dashboard-subtitle {font-size: 1.3rem; font-weight: 600; margin-bottom: 0.2em; margin-top: 1.2em; color: #002F6C;}</style>', unsafe_allow_html=True)
-    
-                # Create two columns for charts
-                row1_col1, row1_col2 = st.columns(2)
-    
-                with row1_col1:
-                    st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por País</div>', unsafe_allow_html=True)
-                    fig1 = go.Figure()
-                    if not country_counts.empty:
-                        fig1.add_trace(go.Bar(
-                            y=country_counts.index.tolist(),
-                            x=country_counts.values.tolist(),
-                            orientation='h',
-                            text=country_counts.values.tolist(),
-                            textposition='auto',
-                            marker_color='#002F6C',
-                            hovertemplate='%{y}: %{x} recomendaciones'
-                        ))
-                    else:
-                        fig1.add_trace(go.Bar(y=[], x=[]))
-    
-                    # Fixed height for alignment with year plot
-                    fixed_height = 500
-                    fig1.update_layout(
-                        xaxis_title='Número de Recomendaciones',
-                        yaxis_title='País',
-                        margin=dict(t=10, l=10, r=10, b=40),
-                        font=dict(size=22),
-                        height=fixed_height,
-                        plot_bgcolor='white',
-                        showlegend=False
-                    )
-                    fig1.update_xaxes(showgrid=True, gridcolor='LightGray')
-                    fig1.update_yaxes(showgrid=False)
-                    st.plotly_chart(fig1, use_container_width=True)
-    
-                with row1_col2:
-                    st.markdown('<div class="dashboard-subtitle">Número de Recomendaciones por Año</div>', unsafe_allow_html=True)
-                    year_counts = filtered_df_unique['year'].value_counts().sort_index()
-                    fig2 = go.Figure()
-                    fig2.add_trace(go.Bar(
-                        x=year_counts.index.astype(str).tolist(),
-                        y=year_counts.values.tolist(),
-                        text=year_counts.values.tolist(),
-                        textposition='auto',
-                        marker_color='#002F6C',
-                        hovertemplate='Año %{x}: %{y} recomendaciones',
-                        textfont=dict(size=22)
-                    ))
-                    fig2.update_layout(
-                        xaxis_title='Año',
-                        yaxis_title='Número de Recomendaciones',
-                        margin=dict(t=10, l=10, r=10, b=40),
-                        font=dict(size=22),
-                        height=500,
-                        plot_bgcolor='white',
-                        showlegend=False
-                    )
-                    fig2.update_xaxes(showgrid=True, gridcolor='LightGray', tickangle=45, title_font=dict(size=22), tickfont=dict(size=20))
-                    fig2.update_yaxes(showgrid=True, gridcolor='LightGray', title_font=dict(size=22), tickfont=dict(size=20))
-                    st.plotly_chart(fig2, use_container_width=True)
-    
-                # Dimension treemap
-                st.markdown('<div class="dashboard-subtitle">Composición de Recomendaciones por Dimensión</div>', unsafe_allow_html=True)
-    
-                # Clean and prepare dimension data - use the same unique rows used for KPIs
-                import numpy as np
-                treemap_df = filtered_df_unique.copy()
-                treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.strip().str.lower().replace({
-                    'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-                })
-                treemap_df['dimension'] = treemap_df['dimension'].replace({'process': 'Process'})
-                treemap_df = treemap_df[treemap_df['dimension'].notna()]
-
-                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].astype(str).str.strip().str.lower().replace({
-                #     'processes': 'process', 'process': 'process', 'nan': np.nan, 'none': np.nan, '': np.nan
-                # })
-                # treemap_df['rec_intervention_approach'] = treemap_df['rec_intervention_approach'].replace({'process': 'Process'})
-                # treemap_df = treemap_df[treemap_df['rec_intervention_approach'].notna()]
-
-                # Count recommendations by dimension
-                dimension_counts = treemap_df.groupby('dimension').agg({
-                    'index_df': 'nunique'
-                }).reset_index()
-    
-                # Calculate percentages and format text
-                dimension_counts['percentage'] = dimension_counts['index_df'] / dimension_counts['index_df'].sum() * 100
-                dimension_counts['text'] = dimension_counts.apply(
-                    lambda row: f"{row['dimension']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%",
-                    axis=1
-                )
-                dimension_counts['font_size'] = dimension_counts['index_df'] / dimension_counts['index_df'].max() * 30 + 10  # Scale font size
-    
-                # Remove 'Sin Clasificar' and capitalize dimension labels
-                dimension_counts = dimension_counts[dimension_counts['dimension'].str.lower() != 'sin clasificar']
-                dimension_counts['dimension'] = dimension_counts['dimension'].astype(str).str.title()
-    
-                # Create treemap
-                fig3 = px.treemap(
-                    dimension_counts,
-                    path=['dimension'],
-                    values='index_df',
-                    title='Composición de Recomendaciones por Dimensión',
-                    hover_data={'text': True, 'index_df': False, 'percentage': False},
-                    custom_data=['text']
-                )
-                fig3.update_traces(
-                    textinfo='label+value',
-                    hovertemplate='%{customdata[0]}',
-                    textfont_size=32
-                )
-                fig3.update_layout(
-                    margin=dict(t=50, l=25, r=25, b=25),
-                    width=900,
-                    height=500,
-                    title_font_size=32,
-                    font=dict(size=28),
-                    legend_font_size=28
-                )
-                st.plotly_chart(fig3, use_container_width=True)
-    
-                # Subdimension treemap - use treemap_df which was already cleaned above
-                # Harmonize process/processes before plotting subdimensions
-                treemap_df['dimension'] = treemap_df['dimension'].replace({'processes': 'Process', 'process': 'Process', 'Process': 'Process'})
-
-                # Remove 'Sin Clasificar' from both dimension and subdimension
-                treemap_df = treemap_df[treemap_df['dimension'].str.lower() != 'sin clasificar']
-                treemap_df = treemap_df[treemap_df['subdim'].str.lower() != 'sin clasificar']
-
-                # Capitalize dimension and subdimension labels
-                treemap_df['dimension'] = treemap_df['dimension'].astype(str).str.title()
-                treemap_df['subdim'] = treemap_df['subdim'].astype(str).str.title()
-
-                # Count by subdimension
-                subdimension_counts = treemap_df.groupby(['dimension', 'subdim']).agg({
-                    'index_df': 'nunique'
-                }).reset_index()
-    
-                # Calculate percentages and format text
-                subdimension_counts['percentage'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].sum() * 100
-                subdimension_counts['text'] = subdimension_counts.apply(
-                    lambda row: f"{row['subdim']}<br>Recomendaciones: {row['index_df']}<br>Porcentaje: {row['percentage']:.2f}%",
-                    axis=1
-                )
-                subdimension_counts['font_size'] = subdimension_counts['index_df'] / subdimension_counts['index_df'].max() * 30 + 10
-    
-                # Create treemap
-                fig4 = px.treemap(
-                    subdimension_counts,
-                    path=['dimension', 'subdim'],
-                    values='index_df',
-                    title='Composición de Recomendaciones por Subdimensión',
-                    hover_data={'text': True, 'index_df': False, 'percentage': False},
-                    custom_data=['text']
-                )
-                fig4.update_traces(
-                    textinfo='label+value',
-                    hovertemplate='%{customdata[0]}',
-                    textfont_size=32
-                )
-                fig4.update_layout(
-                    margin=dict(t=50, l=25, r=25, b=25),
-                    width=900,
-                    height=500,
-                    title_font_size=32,
-                    font=dict(size=28),
-                    legend_font_size=28
-                )
-                st.plotly_chart(fig4, use_container_width=True)
-    
-                # Add the advanced visualization section
-                add_advanced_visualization_section(filtered_df, tab_id="tab8")
-            else:
-                st.warning("No hay datos disponibles para los filtros seleccionados.")
+                    st.success(f"Archivo cargado correctamente: {len(rec_df_world)} filas.")
+            except Exception as e:
+                st.error(f"Error al leer el archivo: {e}")
         else:
-            st.warning("No hay datos disponibles para los filtros seleccionados.")
+            st.info("Esperando archivo...")
 
+    if rec_df_world is None or frame_df_world is None:
+        if frame_df_world is None:
+             st.warning("⚠️ No se encontró el archivo 'Frame_Recommendations_English.xlsx'. es necesario para la clasificación.")
+    else:
+        
+        # --- DATA PREP: Extract Year ---
+        if 'Recommendation date' in rec_df_world.columns:
+            # Try parsing with existing format or coerse
+            rec_df_world['Recommendation date'] = pd.to_datetime(rec_df_world['Recommendation date'], errors='coerce')
+            rec_df_world['Year'] = rec_df_world['Recommendation date'].dt.year
+            # Fill NaNs with a placeholder if needed, or leave as NaN
+            # rec_df_world['Year'] = rec_df_world['Year'].fillna(0).astype(int)
+        
+        # --- Filters (PRE-PROCESSING) ---
+        st.markdown("### 1. Filtros de Selección")
+        st.caption("Selecciona los filtros para definir el subconjunto de datos a clasificar. Esto optimiza el tiempo y costo de procesamiento.")
+        
+        # Initialize filter selection dictionaries
+        filters = {}
+        
+        # --- Group 1: Ubicación y Tiempo ---
+        with st.expander("📍 Ubicación y Tiempo", expanded=True):
+            col_grp1_1, col_grp1_2 = st.columns(2)
+            
+            with col_grp1_1:
+                # Region Filter
+                regions = sorted([str(x) for x in rec_df_world['Region(s)'].unique() if not pd.isna(x)]) if 'Region(s)' in rec_df_world.columns else []
+                filters['Region(s)'] = st.multiselect("Región(es):", options=regions, default=[], key="tab6_region_filter")
+                
+                # Admin Unit
+                if 'Recommendation administrative unit' in rec_df_world.columns:
+                    admin_units = sorted([str(x) for x in rec_df_world['Recommendation administrative unit'].unique() if not pd.isna(x)])
+                    filters['Recommendation administrative unit'] = st.multiselect("Unidad Administrativa:", options=admin_units, default=[], key="tab6_admin_unit")
+            
+            with col_grp1_2:
+                # Country Filter (Cascading)
+                available_countries_df = rec_df_world.copy()
+                if filters['Region(s)']:
+                     if 'Region(s)' in available_countries_df.columns:
+                        available_countries_df = available_countries_df[available_countries_df['Region(s)'].isin(filters['Region(s)'])]
+                
+                countries = sorted([str(x) for x in available_countries_df['Country(ies)'].unique() if not pd.isna(x)]) if 'Country(ies)' in available_countries_df.columns else []
+                filters['Country(ies)'] = st.multiselect("País(es):", options=countries, default=[], key="tab6_country_filter")
+                
+                # Year Filter
+                if 'Year' in rec_df_world.columns:
+                    years = sorted([int(x) for x in rec_df_world['Year'].unique() if not pd.isna(x)])
+                    filters['Year'] = st.multiselect("Año:", options=years, default=[], key="tab6_year_filter")
+
+        # --- Group 2: Temática y Técnica ---
+        with st.expander("📚 Temática y Técnica", expanded=False):
+            col_grp2_1, col_grp2_2 = st.columns(2)
+            
+            with col_grp2_1:
+                if 'Evaluation theme(s)' in rec_df_world.columns:
+                    themes = sorted([str(x) for x in rec_df_world['Evaluation theme(s)'].unique() if not pd.isna(x)])
+                    filters['Evaluation theme(s)'] = st.multiselect("Temática de Evaluación:", options=themes, default=[], key="tab6_eval_theme")
+                
+                if 'Recommendation theme' in rec_df_world.columns:
+                    rec_themes = sorted([str(x) for x in rec_df_world['Recommendation theme'].unique() if not pd.isna(x)])
+                    filters['Recommendation theme'] = st.multiselect("Temática de Recomendación:", options=rec_themes, default=[], key="tab6_rec_theme")
+
+                if 'Technical unit(s)' in rec_df_world.columns:
+                    tech_units = sorted([str(x) for x in rec_df_world['Technical unit(s)'].unique() if not pd.isna(x)])
+                    filters['Technical unit(s)'] = st.multiselect("Unidad Técnica:", options=tech_units, default=[], key="tab6_tech_unit")
+
+            with col_grp2_2:
+                if 'Funding source(s)' in rec_df_world.columns:
+                    fundings = sorted([str(x) for x in rec_df_world['Funding source(s)'].unique() if not pd.isna(x)])
+                    filters['Funding source(s)'] = st.multiselect("Fuente de Financiamiento:", options=fundings, default=[], key="tab6_funding")
+                
+                if 'Evaluation nature' in rec_df_world.columns:
+                    natures = sorted([str(x) for x in rec_df_world['Evaluation nature'].unique() if not pd.isna(x)])
+                    filters['Evaluation nature'] = st.multiselect("Naturaleza de Evaluación:", options=natures, default=[], key="tab6_eval_nature")
+                
+                if 'Evaluation type' in rec_df_world.columns:
+                    types = sorted([str(x) for x in rec_df_world['Evaluation type'].unique() if not pd.isna(x)])
+                    filters['Evaluation type'] = st.multiselect("Tipo de Evaluación:", options=types, default=[], key="tab6_eval_type")
+
+        # --- Group 3: Gestión y Respuesta ---
+        with st.expander("⚙️ Gestión y Respuesta", expanded=False):
+             col_grp3_1, col_grp3_2 = st.columns(2)
+             
+             with col_grp3_1:
+                 if 'Evaluation timing' in rec_df_world.columns:
+                    timings = sorted([str(x) for x in rec_df_world['Evaluation timing'].unique() if not pd.isna(x)])
+                    filters['Evaluation timing'] = st.multiselect("Momento de Evaluación:", options=timings, default=[], key="tab6_eval_timing")
+
+                 if 'Progress' in rec_df_world.columns:
+                    progresses = sorted([str(x) for x in rec_df_world['Progress'].unique() if not pd.isna(x)])
+                    filters['Progress'] = st.multiselect("Progreso:", options=progresses, default=[], key="tab6_progress")
+
+             with col_grp3_2:
+                 if 'Management response' in rec_df_world.columns:
+                     responses = sorted([str(x) for x in rec_df_world['Management response'].unique() if not pd.isna(x)])
+                     filters['Management response'] = st.multiselect("Respuesta de Administración:", options=responses, default=[], key="tab6_mgmt_response")
+                 
+                 # Optional: Evaluation document type if needed
+                 if 'Evaluation document type' in rec_df_world.columns:
+                     doc_types = sorted([str(x) for x in rec_df_world['Evaluation document type'].unique() if not pd.isna(x)])
+                     filters['Evaluation document type'] = st.multiselect("Tipo de Documento:", options=doc_types, default=[], key="tab6_doc_type")
+
+
+        # Apply ALL filters
+        start_count = len(rec_df_world)
+        filtered_rec_df = rec_df_world.copy()
+        
+        for col_name, selected_values in filters.items():
+            if selected_values and col_name in filtered_rec_df.columns:
+                # Handle Year specifically if it's float/int comparison issues, but isin handles standard types well
+                filtered_rec_df = filtered_rec_df[filtered_rec_df[col_name].isin(selected_values)]
+
+            
+        end_count = len(filtered_rec_df)
+
+        # Show row count AND unique-recommendation count: a region with many rows
+        # may contain far fewer unique recommendations because the source file repeats
+        # rows for multi-attribute records (themes, sources, etc.). Embedding cost is
+        # driven by uniques, so analysts need both numbers before clicking process.
+        id_col_pre = 'Recommendation ID' if 'Recommendation ID' in filtered_rec_df.columns else 'Recommendation description'
+        unique_count_pre = filtered_rec_df[id_col_pre].nunique()
+        total_unique_pre = rec_df_world[id_col_pre].nunique()
+        st.markdown(
+            f"**Registros seleccionados:** {end_count} de {start_count}  |  "
+            f"**Recomendaciones únicas:** {unique_count_pre} de {total_unique_pre}"
+        )
+        st.caption("⚠️ El número de registros puede ser mayor que el número de recomendaciones únicas porque algunas recomendaciones tienen múltiples atributos (ej. múltiples temas), generando filas duplicadas en el archivo original. El costo de clasificación se basa en las recomendaciones únicas.")
+
+        # --- Classification Logic ---
+        
+        # Persistent state for classified data
+        if 'classified_world_df' not in st.session_state:
+            st.session_state['classified_world_df'] = None
+
+        def classify_recommendations(target_df, reference_df, cache_obj, use_llm_verification=False):
+            """
+            Classifies recommendations in target_df based on similarity to texts in reference_df.
+            Uses persistent cache and deduplication.
+            """
+            
+            progress_bar = st.progress(0, text="Iniciando proceso...")
+
+            # 1. Embed Reference Frame
+            ref_embeddings = []
+            ref_metadata = []
+            
+            # Check if we have 'texto_merged'
+            if 'texto_merged' not in reference_df.columns:
+                st.error("El archivo Frame debe tener la columna 'texto_merged'.")
+                return None
+
+            # Generate embeddings for Frame (with cache)
+            for idx, row in reference_df.iterrows():
+                text = str(row['texto_merged'])
+                
+                # Try cache first
+                emb = cache_obj.get(text)
+                if emb is None:
+                    emb = get_embedding_with_retry(text) 
+                    if emb is not None:
+                        cache_obj.set(text, emb)
+                
+                if emb is not None:
+                    ref_embeddings.append(emb)
+                    ref_metadata.append({
+                        'dimension': row.get('dimension', 'Unknown'),
+                        'subdim': row.get('subdim', 'Unknown'),
+                        'texto_merged': text
+                    })
+                
+                progress_val = 0.1 * (idx + 1) / len(reference_df)
+                progress_bar.progress(progress_val, text=f"Procesando marco de referencia {idx+1}/{len(reference_df)}")
+            
+            cache_obj.save() # Save frame embeddings
+            
+            if not ref_embeddings:
+                st.error("No se pudieron generar embeddings para el marco de referencia.")
+                return None
+
+            ref_embeddings = np.array(ref_embeddings)
+            
+            # Normalize frame embeddings
+            ref_norms = np.linalg.norm(ref_embeddings, axis=1, keepdims=True)
+            ref_embeddings_norm = ref_embeddings / (ref_norms + 1e-10)
+            
+            # 2. Embed Unique Recommendations (Deduplication)
+            start_time = time.time()
+            total_recs = len(target_df)
+            
+            # Identify unique texts to embed
+            unique_texts = target_df['Recommendation description'].dropna().unique()
+            unique_embeddings = {}
+            
+            new_embeddings_count = 0
+            
+            # Embed unique texts
+            BATCH_SIZE = 20
+            for i in range(0, len(unique_texts), BATCH_SIZE):
+                batch_texts = unique_texts[i:i+BATCH_SIZE]
+                for text in batch_texts:
+                    text_str = str(text)
+                    # Try cache
+                    emb = cache_obj.get(text_str)
+                    if emb is None:
+                        emb = get_embedding_with_retry(text_str)
+                        if emb is not None:
+                            cache_obj.set(text_str, emb)
+                            new_embeddings_count += 1
+                    
+                    if emb is not None:
+                        unique_embeddings[text_str] = emb
+                
+                progress_pct = 0.1 + (0.4 * (i + len(batch_texts)) / len(unique_texts))
+                progress_bar.progress(progress_pct, text=f"Generando embeddings únicos: {min(i+len(batch_texts), len(unique_texts))}/{len(unique_texts)}")
+                
+                # Save cache periodically
+                if new_embeddings_count > 50:
+                    cache_obj.save()
+                    new_embeddings_count = 0
+
+            cache_obj.save() # Final save
+
+        # 3. Classify Rows (Match) - Top 3
+            classified_rows = []
+            
+            progress_bar.progress(0.5, text="Asignando clasificaciones (Top 3) " + ("y verificando con LLM..." if use_llm_verification else "..."))
+            
+            for i, (idx, row) in enumerate(target_df.iterrows()):
+                rec_text = str(row.get('Recommendation description', ''))
+                
+                # Default values
+                vals = {
+                    'assigned_dimension': 'Unclassified',
+                    'assigned_subdim': 'Unclassified',
+                    'matched_frame_text': '',
+                    'similarity_score': 0.0,
+                    'Otras dimensiones': '',
+                    'Otras subdimensiones': ''
+                }
+
+                if rec_text in unique_embeddings:
+                    rec_emb = unique_embeddings[rec_text]
+                    
+                    # Cosine similarity
+                    rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
+                    similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
+                    
+                    # Get Top Matches for context
+                    # Even if verifying, we start with top candidates from embeddings
+                    
+                    if use_llm_verification:
+                        top_n_candidates = 10
+                    else:
+                        top_n_candidates = 3
+                        
+                    top_k_indices = np.argsort(similarities)[-top_n_candidates:][::-1]
+                    
+                    best_idx = top_k_indices[0] # Default to embedding top 1
+                    
+                    # LLM Verification (Reranking)
+                    if use_llm_verification:
+                        # Construct candidates list (Top 10)
+                        candidates = []
+                        for k in top_k_indices:
+                             candidates.append(ref_metadata[k])
+                        
+                        # Call LLM
+                        verified_idx = verify_match_with_llm(rec_text, candidates, openai_api_key)
+                        
+                        if verified_idx >= 0 and verified_idx < len(top_k_indices):
+                            best_idx = top_k_indices[verified_idx]
+                        # Else fallback to embedding best_idx (0)
+                    
+                    # Assign Best Match (Verified or Embedding)
+                    best_match = ref_metadata[best_idx]
+                    
+                    vals['assigned_dimension'] = best_match['dimension']
+                    vals['assigned_subdim'] = best_match['subdim']
+                    vals['matched_frame_text'] = best_match['texto_merged']
+                    vals['similarity_score'] = similarities[best_idx]
+                    
+                    # Process Top 2 & 3 (Alternatives)
+                    # Note: If LLM picked #2, then #1 and #3 become alternatives.
+                    # For simplicity, we stick to the Embedding Ranking for "Others" 
+                    # OR we could just list the other 2 from the Top 3 set.
+                    # Let's simple: List the *other* indices from top_k_indices that are NOT best_idx
+                    
+                    secondary_dims = []
+                    secondary_subdims = []
+                    
+                    similarity_threshold = 0.60
+                    
+                    for k_idx in top_k_indices:
+                        if k_idx == best_idx: continue # Skip the chosen one
+                        
+                        if similarities[k_idx] >= similarity_threshold:
+                            match_k = ref_metadata[k_idx]
+                            secondary_dims.append(match_k['dimension'])
+                            secondary_subdims.append(match_k['subdim'])
+                        
+                    vals['Otras dimensiones'] = "; ".join(secondary_dims)
+                    vals['Otras subdimensiones'] = "; ".join(secondary_subdims)
+                
+                # Merge original row data with new classification data
+                # We want to keep ALL original columns
+                row_dict = row.to_dict()
+                row_dict.update(vals)
+                classified_rows.append(row_dict)
+                
+                if i % 10 == 0: # Update faster if slow LLM
+                     progress_bar.progress(0.5 + (0.5 * (i + 1) / total_recs), text=f"Clasificando registros {i+1}/{total_recs}")
+
+            progress_bar.empty()
+            return pd.DataFrame(classified_rows)
+
+        # Button to run classification
+        st.markdown("### 2. Ejecución")
+        
+        # LLM Verification Toggle
+        use_llm_chk = st.checkbox("✅ Usar Verificación con LLM (Alta Precisión, Más Lento)", value=False, help="Si se activa, el sistema usará IA para leer las definiciones y corregir la clasificación (ej. distinguir 'Pensiones' financiera de 'Pensiones' política).")
+
+        if start_count == 0:
+            st.warning("El archivo de recomendaciones está vacío.")
+        elif end_count == 0:
+             st.warning("No hay registros que coincidan con los filtros seleccionados. Ajusta los filtros.")
+        else:
+            if st.button("🚀 Iniciar Clasificación", key="start_classification_tab6"):
+                with st.spinner("Ejecutando clasificación optimizada..."):
+                    classified_df = classify_recommendations(filtered_rec_df, frame_df_world, st.session_state['embeddings_cache_obj'], use_llm_verification=use_llm_chk)
+                    if classified_df is not None and not classified_df.empty:
+                        st.session_state['classified_world_df'] = classified_df
+                        st.success(f"¡Clasificación completada! {len(classified_df)} recomendaciones procesadas.")
+                    else:
+                        st.error("Hubo un problema durante la clasificación.")
+
+        # --- Visualization ---
+        df_viz = st.session_state['classified_world_df']
+        
+        if df_viz is not None:
+            st.markdown("---")
+            st.subheader("📊 Visualización de Resultados")
+            
+            
+            # --- Visual Filters (Post-Classification) ---
+            st.markdown("### 🔎 Filtros Visuales")
+            st.warning("Estos filtros afectan solo a los gráficos y tablas a continuación, sin re-ejecutar la clasificación.")
+            
+            # Prepare filter options (based on current results to be safe)
+            # Create a localized copy for filtering
+            df_filtered_viz = df_viz.copy()
+
+            # 1. Year Slider (Range)
+            if 'Year' in df_viz.columns:
+                 # Handle NaNs or zeros logic 
+                 valid_years = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x) and x > 1900])
+                 if valid_years:
+                     min_year, max_year = min(valid_years), max(valid_years)
+                     year_range = st.slider(
+                         "Intervalo de Años:",
+                         min_value=min_year,
+                         max_value=max_year,
+                         value=(min_year, max_year),
+                         key="viz_year_slider"
+                     )
+                     df_filtered_viz = df_filtered_viz[
+                         (df_filtered_viz['Year'] >= year_range[0]) & 
+                         (df_filtered_viz['Year'] <= year_range[1])
+                     ]
+
+            # 2. Metadata Filters (multiselects) - Grouped
+            with st.expander("Más Filtros Visuales (Metadatos)", expanded=False):
+                col_vf1, col_vf2, col_vf3 = st.columns(3)
+                
+                with col_vf1:
+                    # Admin Unit
+                    if 'Recommendation administrative unit' in df_filtered_viz.columns:
+                         opts = sorted([str(x) for x in df_viz['Recommendation administrative unit'].unique() if pd.notna(x)])
+                         sel_admin = st.multiselect("Unidad Admin:", options=opts, key="viz_admin_unit")
+                         if sel_admin:
+                             df_filtered_viz = df_filtered_viz[df_filtered_viz['Recommendation administrative unit'].isin(sel_admin)]
+
+                with col_vf2:
+                    # Country
+                    if 'Country(ies)' in df_filtered_viz.columns:
+                         opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
+                         sel_country = st.multiselect("País:", options=opts, key="viz_country")
+                         if sel_country:
+                             df_filtered_viz = df_filtered_viz[df_filtered_viz['Country(ies)'].isin(sel_country)]
+
+                with col_vf3:
+                    # Dimension (Pre-filter for everything?? Or just let the treemap handle it? User asked for filters)
+                    # Let's add Dimension here too affects everything
+                    opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
+                    sel_dim_global = st.multiselect("Dimensión:", options=opts, key="viz_dim_global")
+                    if sel_dim_global:
+                         df_filtered_viz = df_filtered_viz[df_filtered_viz['assigned_dimension'].isin(sel_dim_global)]
+
+
+            # Count Unique Recommendations
+            # Use 'Recommendation ID' if available, otherwise 'Recommendation description'
+            id_col = 'Recommendation ID' if 'Recommendation ID' in df_filtered_viz.columns else 'Recommendation description'
+            unique_count = df_filtered_viz[id_col].nunique()
+            
+            st.markdown(f"**Registros visualizados:** {len(df_filtered_viz)} | **Recomendaciones Únicas:** {unique_count}")
+            st.warning("⚠️ Nota: El número de registros puede ser mayor que el número de recomendaciones únicas debido a que algunas recomendaciones tienen múltiples atributos (ej. múltiples temas), generando filas duplicadas en el archivo original.")
+
+            st.markdown("---") 
+            
+            # Helper to get deduplicated DF for strict counts
+            # We use this for Treemaps and Single-Value Evolution
+            df_viz_dedup = df_filtered_viz.drop_duplicates(subset=[id_col]).copy() 
+
+            
+            # --- Chart Logic (Updated to use df_filtered_viz) ---
+            
+            # --- Treemap 1: Dimension ---
+            available_dims = sorted(df_filtered_viz['assigned_dimension'].unique())
+            
+            # We use a selectbox for explicit control (MOVED TO TOP)
+            manual_dim = st.selectbox(
+                "Filtrar Subdimensión por Dimensión (Treemaps):", 
+                options=["Todos"] + available_dims, 
+                index=0,
+                key="manual_dim_filter_top"
+            )
+            
+            selected_dim_label = None
+            if manual_dim != "Todos":
+                selected_dim_label = manual_dim
+            
+            # --- Treemap 1: Dimension ---
+            st.markdown("#### Por Dimensión")
+            st.caption("Selecciona una dimensión en el gráfico para ver detalles (opcional).")
+            
+            # USE DEDUPLICATED DATA FOR TREEMAPS
+            dim_counts = df_viz_dedup['assigned_dimension'].value_counts().reset_index()
+            dim_counts.columns = ['dimension', 'count']
+            
+            fig_dim = px.treemap(
+                dim_counts,
+                path=['dimension'],
+                values='count',
+                title='Recomendaciones Únicas por Dimensión',
+                color='dimension'
+            )
+            fig_dim.update_traces(textinfo="label+value", textfont_size=20)
+            
+            selection_dim = st.plotly_chart(fig_dim, on_select="rerun", key="treemap_dim_select", use_container_width=True)
+            
+            if isinstance(selection_dim, dict) and "selection" in selection_dim and "points" in selection_dim["selection"]:
+                 points = selection_dim["selection"]["points"]
+                 if points:
+                     pt = points[0]
+                     clicked_label = pt.get('label') or pt.get('x') or pt.get('id')
+                     if clicked_label and clicked_label in available_dims and manual_dim == "Todos":
+                         selected_dim_label = clicked_label
+                         st.info(f"Filtro aplicado por selección en gráfico: {selected_dim_label}")
+
+            # --- Treemap 2: Subdim ---
+            st.markdown("#### Por Subdimensión")
+            
+            # USE DEDUPLICATED DATA FOR TREEMAPS
+            df_sub = df_viz_dedup.copy()
+            title_suffix = ""
+            
+            if selected_dim_label:
+                if selected_dim_label in df_sub['assigned_dimension'].unique():
+                    df_sub = df_sub[df_sub['assigned_dimension'] == selected_dim_label]
+                    title_suffix = f" ({selected_dim_label})"
+            
+            if not df_sub.empty:
+                subdim_counts = df_sub['assigned_subdim'].value_counts().reset_index()
+                subdim_counts.columns = ['subdim', 'count']
+                
+                fig_sub = px.treemap(
+                    subdim_counts,
+                    path=['subdim'],
+                    values='count',
+                    title=f'Recomendaciones Únicas por Subdimensión{title_suffix}',
+                    color='subdim'
+                )
+                fig_sub.update_traces(textinfo="label+value", textfont_size=20)
+                st.plotly_chart(fig_sub, use_container_width=True)
+            else:
+                st.info("No hay datos para mostrar.")
+
+            st.markdown("---")
+            
+            # --- Evolution Plots (New) ---
+            st.subheader("📈 Evolución Temporal")
+            
+            evo_toggle = st.radio("Tipo de Gráfico:", ["Absoluto", "Porcentaje (100%)"], horizontal=True, key="evo_chart_type")
+            is_percent = (evo_toggle == "Porcentaje (100%)")
+            bar_norm_val = 'percent' if is_percent else None
+            
+            # Helper to plot evolution
+            def plot_evolution(df_in, cat_col, title_prefix):
+                if 'Year' not in df_in.columns or df_in.empty:
+                    st.info("No hay datos de Año para mostrar evolución.")
+                    return
+                    
+                # Filter out bad years (0, nan)
+                df_clean = df_in[df_in['Year'] > 1900].copy()
+                if df_clean.empty:
+                     st.info("No hay datos válidos de año.")
+                     return
+
+                # Check cardinality
+                unique_vals = df_clean[cat_col].nunique()
+                if unique_vals > 20: 
+                     st.warning(f"Hay muchos valores únicos ({unique_vals}) en {cat_col}. Se muestran los Top 20.")
+                     top_20 = df_clean[cat_col].value_counts().nlargest(20).index
+                     df_clean = df_clean[df_clean[cat_col].isin(top_20)]
+
+                # Group
+                df_grouped = df_clean.groupby(['Year', cat_col]).size().reset_index(name='count')
+                
+                # Determine title suffix
+                t_suffix = " (%)" if is_percent else ""
+                
+                # Create figure
+                # We use 'relative' barmode. If is_percent is true, we update layout with barnorm='percent'
+                fig = px.bar(
+                    df_grouped, 
+                    x="Year", 
+                    y="count", 
+                    color=cat_col, 
+                    title=f"Evolución de {title_prefix}{t_suffix}",
+                    barmode='relative', 
+                )
+                
+                if is_percent:
+                     fig.update_layout(barnorm='percent')
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            
+            # Define the tabs - Expanded List
+            tab_labels = [
+                "Por País", "Por Unidad Admin", "Por Dimensión", "Por Subdimensión",
+                "Resp. Gestión", "Temática Eval.", "Temática Rec.", "Unidad Técnica",
+                "Fuente Fondo", "Naturaleza", "Tipo Eval.", "Momento", "Progreso", "Tipo Doc."
+            ]
+            
+            tabs = st.tabs(tab_labels)
+            
+            # 0. Por País
+            with tabs[0]:
+                 if 'Country(ies)' in df_viz_dedup.columns:
+                     plot_evolution(df_viz_dedup, 'Country(ies)', "País")
+                 else:
+                     st.info("Columna 'Country(ies)' no disponible.")
+
+            # 1. Por Unidad Admin
+            with tabs[1]:
+                 if 'Recommendation administrative unit' in df_viz_dedup.columns:
+                     plot_evolution(df_viz_dedup, 'Recommendation administrative unit', "Unidad Administrativa")
+                 else:
+                     st.info("Columna 'Recommendation administrative unit' no disponible.")
+
+            # 2. Por Dimensión
+            with tabs[2]:
+                 plot_evolution(df_viz_dedup, 'assigned_dimension', "Dimensión")
+
+            # 3. Por Subdimensión
+            with tabs[3]:
+                 plot_evolution(df_viz_dedup, 'assigned_subdim', "Subdimensión")
+                 
+            # 4. Resp. Gestión (Management response) - Single value usually
+            with tabs[4]:
+                if 'Management response' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Management response', "Respuesta de Gestión")
+                else:
+                    st.info("Columna 'Management response' no disponible.")
+            
+            # 5. Temática Eval. (Evaluation theme(s)) - MULTI VALUE (Keep duplicates to show frequency)
+            with tabs[5]:
+                if 'Evaluation theme(s)' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Evaluation theme(s)', "Temática de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation theme(s)' no disponible.")
+
+            # 6. Temática Rec. (Recommendation theme) - MULTI VALUE (Keep duplicates)
+            with tabs[6]:
+                if 'Recommendation theme' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Recommendation theme', "Temática de Recomendación")
+                else:
+                    st.info("Columna 'Recommendation theme' no disponible.")
+
+            # 7. Unidad Técnica (Technical unit(s)) - MULTI VALUE ? (Likely yes if it has (s))
+            with tabs[7]:
+                if 'Technical unit(s)' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Technical unit(s)', "Unidad Técnica")
+                else:
+                    st.info("Columna 'Technical unit(s)' no disponible.")
+
+            # 8. Fuente Fondo (Funding source(s)) - MULTI VALUE
+            with tabs[8]:
+                if 'Funding source(s)' in df_filtered_viz.columns:
+                    plot_evolution(df_filtered_viz, 'Funding source(s)', "Fuente de Financiamiento")
+                else:
+                    st.info("Columna 'Funding source(s)' no disponible.")
+
+            # 9. Naturaleza (Evaluation nature) - Single
+            with tabs[9]:
+                if 'Evaluation nature' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation nature', "Naturaleza de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation nature' no disponible.")
+            
+            # 10. Tipo Eval. (Evaluation type) - Single
+            with tabs[10]:
+                if 'Evaluation type' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation type', "Tipo de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation type' no disponible.")
+
+            # 11. Momento (Evaluation timing) - Single
+            with tabs[11]:
+                if 'Evaluation timing' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation timing', "Momento de Evaluación")
+                else:
+                    st.info("Columna 'Evaluation timing' no disponible.")
+
+            # 12. Progreso (Progress) - Single
+            with tabs[12]:
+                if 'Progress' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Progress', "Progreso")
+                else:
+                    st.info("Columna 'Progress' no disponible.")
+
+            # 13. Tipo Doc. (Evaluation document type) - Single
+            with tabs[13]:
+                if 'Evaluation document type' in df_viz_dedup.columns:
+                    plot_evolution(df_viz_dedup, 'Evaluation document type', "Tipo de Documento")
+                else:
+                    st.info("Columna 'Evaluation document type' no disponible.")
+
+            # --- SECCION 3: HERRAMIENTAS AVANZADAS DE IA (NUEVA) ---
+            st.markdown("---")
+            st.subheader("🤖 3. Herramientas Avanzadas de IA")
+            st.info("Utiliza herramientas de Inteligencia Artificial para analizar en profundidad o resumir las recomendaciones filtradas.")
+
+            # --- Shared Filters for AI Tools ---
+            st.markdown("##### 1. Definir Subconjunto para Análisis")
+            
+            df_ai_base = df_filtered_viz.copy()
+            ai_filters = {}
+            
+            with st.expander("🔎 Filtros Globales para Análisis AI", expanded=True):
+                 c_ai1, c_ai2 = st.columns(2)
+                 
+                 with c_ai1:
+                      if 'Region(s)' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['Region(s)'].unique() if pd.notna(x)])
+                          ai_filters['Region(s)'] = st.multiselect("Región:", opts, key="ai_region")
+                      
+                      if 'Country(ies)' in df_viz.columns:
+                           opts = sorted([str(x) for x in df_viz['Country(ies)'].unique() if pd.notna(x)])
+                           ai_filters['Country(ies)'] = st.multiselect("País:", opts, key="ai_country")
+                      
+                      if 'Evaluation theme(s)' in df_viz.columns:
+                           opts = sorted([str(x) for x in df_viz['Evaluation theme(s)'].unique() if pd.notna(x)])
+                           ai_filters['Evaluation theme(s)'] = st.multiselect("Temática Eval:", opts, key="ai_eval_theme")
+
+                 with c_ai2:
+                      if 'Year' in df_viz.columns:
+                          opts = sorted([int(x) for x in df_viz['Year'].unique() if pd.notna(x)])
+                          ai_filters['Year'] = st.multiselect("Año:", opts, key="ai_year")
+                      
+                      if 'Management response' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['Management response'].unique() if pd.notna(x)])
+                          ai_filters['Management response'] = st.multiselect("Resp. Gestión:", opts, key="ai_mgmt")
+                      
+                      if 'assigned_dimension' in df_viz.columns:
+                          opts = sorted([str(x) for x in df_viz['assigned_dimension'].unique() if pd.notna(x)])
+                          ai_filters['assigned_dimension'] = st.multiselect("Dimensión:", opts, key="ai_dim")
+
+            # Apply Filters
+            for col, vals in ai_filters.items():
+                if vals and col in df_ai_base.columns:
+                    df_ai_base = df_ai_base[df_ai_base[col].isin(vals)]
+
+            id_col_ai = 'Recommendation ID' if 'Recommendation ID' in df_ai_base.columns else 'Recommendation description'
+            unique_recs_count = df_ai_base[id_col_ai].nunique() if id_col_ai in df_ai_base.columns else len(df_ai_base)
+
+            c_cnt1, c_cnt2 = st.columns(2)
+            c_cnt1.metric("Total Registros Filtrados", len(df_ai_base))
+            c_cnt2.metric("Recomendaciones Únicas", unique_recs_count)
+            
+            st.markdown("---")
+            
+            # --- Dual Action Buttons ---
+            col_deep, col_summ = st.columns(2)
+            
+            # --- LEFT: Deep Analysis ---
+            with col_deep:
+                st.markdown("#### 🧠 Análisis Profundo")
+                st.caption("Evalúa coherencia, calidad e innovación de planes de acción.")
+                
+                # Prepare Deep Data
+                df_deep_ready = df_ai_base.copy()
+                if 'Action plan' in df_deep_ready.columns:
+                    df_deep_ready = df_deep_ready[df_deep_ready['Action plan'].notna() & (df_deep_ready['Action plan'].astype(str).str.strip() != "")]
+                valid_deep_count = len(df_deep_ready)
+                
+                st.metric("Válidos (con Plan)", valid_deep_count)
+                
+                with st.expander("Configuración"):
+                    deep_model = st.selectbox("Modelo:", ["gpt-4o-mini", "gpt-4o"], index=0, key="deep_model_sel")
+                    limit_rows_deep = st.number_input("Límite (0=Todos):", min_value=0, value=0, step=10, key="deep_limit")
+                
+                if st.button("🚀 Iniciar Análisis", key="btn_run_deep"):
+                     if df_deep_ready.empty:
+                         st.warning("No hay datos válidos.")
+                     else:
+                         id_col_deep = 'Recommendation ID' if 'Recommendation ID' in df_deep_ready.columns else 'Recommendation description'
+                         df_deep_input = df_deep_ready.drop_duplicates(subset=[id_col_deep]).copy()
+                         if limit_rows_deep > 0:
+                             df_deep_input = df_deep_input.head(limit_rows_deep)
+                        
+                         st.info(f"Procesando all {len(df_deep_input)} recomendaciones..." if limit_rows_deep == 0 else f"Procesando {len(df_deep_input)} recomendaciones...")
+                         
+                         analysis_cache = AnalysisCache()
+                         args_list = []
+                         for idx, row in df_deep_input.iterrows():
+                             rec = str(row.get('Recommendation description', ''))
+                             plan = str(row.get('Action plan', ''))
+                             comments = str(row.get('Comments', '')) if 'Comments' in row else ""
+                             args_list.append((idx, rec, plan, comments, openai_api_key, analysis_cache))
+                         
+                         results_map = {}
+                         pbar_deep = st.progress(0, text="Analizando...")
+                         completed_count = 0
+                         
+                         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                             futures = [executor.submit(run_row_analysis, arg) for arg in args_list]
+                             for future in concurrent.futures.as_completed(futures):
+                                 idx, result, _ = future.result()
+                                 if result:
+                                    results_map[idx] = result
+                                 completed_count += 1
+                                 # Update progress every time, but with higher concurrency it will feel 'batched'
+                                 pbar_deep.progress(completed_count / len(args_list), text=f"Analizando... {completed_count}/{len(args_list)}")
+                         
+                         pbar_deep.empty()
+                         analysis_cache.save()
+                         
+                         analysis_list = []
+                         for idx, res in results_map.items():
+                             res['original_index'] = idx
+                             analysis_list.append(res)
+                         
+                         if analysis_list:
+                             df_res = pd.DataFrame(analysis_list)
+                             df_res.set_index('original_index', inplace=True)
+                             df_final_deep = df_deep_input.join(df_res)
+                             
+                             list_cols = ['extracted_actions_from_rec', 'actions_proposed_in_plan', 'rejection_difficulty_classification', 'tags', 'rec_additional_tags']
+                             for col in list_cols:
+                                 if col in df_final_deep.columns:
+                                     df_final_deep[col] = df_final_deep[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
+                             
+                             st.session_state['deep_analysis_df'] = df_final_deep
+                             st.success("¡Análisis completado!")
+
+            # --- RIGHT: Summary Generation ---
+            with col_summ:
+                st.markdown("#### ✨ Resumen Ejecutivo")
+                st.caption("Genera una síntesis narrativa de los hallazgos.")
+                
+                st.metric("Total a Resumir", len(df_ai_base))
+                
+                with st.expander("Configuración"):
+                    max_tokens_val = st.slider("Longitud (Tokens):", 500, 4000, 3000, 100, key="summ_len")
+                
+                if st.button("📝 Generar Resumen Global", key="btn_run_summ"):
+                    if df_ai_base.empty:
+                        st.warning("No hay datos.")
+                    else:
+                        with st.spinner("Generando resumen..."):
+                            id_col_summ = 'Recommendation ID' if 'Recommendation ID' in df_ai_base.columns else 'Recommendation description'
+                            df_summ_unique = df_ai_base.drop_duplicates(subset=[id_col_summ])
+                            
+                            text_list = []
+                            for idx, row in df_summ_unique.iterrows():
+                                 desc = str(row.get('Recommendation description', ''))
+                                 mgmt = str(row.get('Management response', '')) if 'Management response' in row else "N/A"
+                                 comments = str(row.get('Comments', '')) if 'Comments' in row else "N/A"
+                                 action = str(row.get('Action plan', '')) if 'Action plan' in row else "N/A"
+                                 text_list.append(f"--- Rec ---\nDesc: {desc}\nResp: {mgmt}\nCom: {comments}\nPlan: {action}\n")
+                            
+                            full_text = "\n".join(text_list)
+                            summary_text = generate_executive_summary(full_text, max_output_tokens=max_tokens_val)
+                            st.session_state['summary_result'] = summary_text
+                            st.success("¡Resumen generado!")
+
+            # --- Display Results Areas (Full Width) ---
+            
+            # 1. Deep Analysis Results
+            if 'deep_analysis_df' in st.session_state:
+                st.markdown("---")
+                st.subheader("📊 Resultados: Análisis Profundo")
+                df_final_deep = st.session_state['deep_analysis_df']
+                
+                c_m1, c_m2 = st.columns(2)
+                c_m1.metric("Coherencia Prom.", f"{df_final_deep['coherence_score'].mean():.2f}")
+                c_m2.metric("Calidad Plan Prom.", f"{df_final_deep['plan_quality_score'].mean():.2f}")
+                
+                st.dataframe(df_final_deep[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'rejection_difficulty_classification', 'tags']], use_container_width=True)
+                
+                # Export Deep
+                out_deep = BytesIO()
+                with pd.ExcelWriter(out_deep, engine='xlsxwriter') as writer:
+                    df_final_deep.to_excel(writer, index=False, sheet_name='Analisis_Profundo')
+                
+                st.download_button("📥 Descargar Reporte Análisis (.xlsx)", out_deep.getvalue(), "analisis_profundo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+                # Visualizations Deep
+                st.markdown("##### 📈 Distribución de Métricas Clave")
+                
+                col_v1, col_v2 = st.columns(2)
+                
+                if 'coherence_score' in df_final_deep.columns:
+                    with col_v1:
+                        fig_d1 = px.histogram(df_final_deep, x="coherence_score", nbins=10, title="Distribución de Coherencia", color_discrete_sequence=['#636EFA'])
+                        st.plotly_chart(fig_d1, use_container_width=True)
+                
+                if 'plan_quality_score' in df_final_deep.columns:
+                     with col_v2:
+                        fig_d2 = px.histogram(df_final_deep, x="plan_quality_score", nbins=10, title="Distribución de Calidad del Plan", color_discrete_sequence=['#EF553B'])
+                        st.plotly_chart(fig_d2, use_container_width=True)
+                
+                col_v3, col_v4 = st.columns(2)
+                
+                if 'attention_level_score' in df_final_deep.columns:
+                     with col_v3:
+                        fig_d3 = px.histogram(df_final_deep, x="attention_level_score", nbins=10, title="Nivel de Atención", color_discrete_sequence=['#00CC96'])
+                        st.plotly_chart(fig_d3, use_container_width=True)
+
+                if 'rec_innovation_score' in df_final_deep.columns:
+                     with col_v4:
+                         # Categorical
+                         fig_pie = px.pie(df_final_deep, names='rec_innovation_score', title="Nivel de Innovación", hole=0.3)
+                         st.plotly_chart(fig_pie, use_container_width=True)
+                
+                st.markdown("##### 🚦 Factibilidad e Impacto")
+                col_v5, col_v6 = st.columns(2)
+                
+                if 'rec_operational_feasibility' in df_final_deep.columns:
+                    with col_v5:
+                        fig_feas = px.histogram(df_final_deep, x='rec_operational_feasibility', title="Factibilidad Operativa", color='rec_operational_feasibility')
+                        st.plotly_chart(fig_feas, use_container_width=True)
+                
+                if 'rec_expected_impact' in df_final_deep.columns:
+                    with col_v6:
+                         fig_imp = px.histogram(df_final_deep, x='rec_expected_impact', title="Impacto Esperado", color='rec_expected_impact')
+                         st.plotly_chart(fig_imp, use_container_width=True)
+
+            # 2. Summary Results
+            if 'summary_result' in st.session_state:
+                st.markdown("---")
+                st.subheader("📄 Resultados: Resumen Ejecutivo (Results: Executive Summary)")
+                st.markdown(st.session_state['summary_result'])
+                
+                # Export Summary
+                out_summ = BytesIO()
+                with pd.ExcelWriter(out_summ, engine='xlsxwriter') as writer:
+                    # Save filtering data
+                    df_ai_base.to_excel(writer, index=False, sheet_name='Datos Base')
+                    pd.DataFrame({'Resumen': [st.session_state['summary_result']]}).to_excel(writer, index=False, sheet_name='Resumen')
+                
+                st.download_button("📥 Descargar Resumen + Datos (.xlsx)", out_summ.getvalue(), "resumen_ejecutivo.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+with tab6:
+    st.header("Recommendation Classification")
+    st.info("""
+    **🌍 Intelligent Recommendation Classification**
+
+    This tool automatically classifies the recommendations contained in the `Recommendations_World.xlsx` file,
+    assigning them to the subdimensions defined in the `Frame_Recommendations_English.xlsx` framework.
+
+    **Optimizations:**
+    1.  **Pre-filtering:** Filter by region/country before processing to save costs and time.
+    2.  **Persistent Cache:** Embeddings are saved locally to avoid regenerating them in future runs.
+    3.  **Deduplication:** Identical texts are processed only once.
+
+    **How it works:**
+    1.  Loads recommendation data and the reference framework.
+    2.  Calculates semantic similarity (using OpenAI Embeddings) between each recommendation and subdimension definitions.
+    3.  Assigns the most relevant subdimension.
+    4.  Visualizes the distribution using interactive Treemaps.
+    """)
+
+    # Reuse EmbeddingsCache and load_world_data defined in tab5
+    if 'embeddings_cache_obj' not in st.session_state:
+        st.session_state['embeddings_cache_obj'] = EmbeddingsCache()
+
+    # --- Data Source Selection ---
+    st.markdown("### Data Source")
+    data_source_en = st.radio("Select recommendations source:",
+                          ["Default Files (World)", "Upload Custom File (.xlsx)"],
+                          horizontal=True,
+                          key="data_source_radio_en")
+
+    rec_df_world_en = None
+    frame_df_world_en = None
+
+    _, frame_default_en = load_world_data()
+    frame_df_world_en = frame_default_en
+
+    if data_source_en == "Default Files (World)":
+        rec_default_en, _ = load_world_data()
+        rec_df_world_en = rec_default_en
+
+        if rec_df_world_en is None:
+             st.warning("⚠️ Default file 'Recommendations_World.xlsx' not found.")
+
+    else:
+        uploaded_file_en = st.file_uploader("Upload your recommendations file (Excel):", type=["xlsx"], key="custom_rec_upload_en")
+        if uploaded_file_en:
+            try:
+                rec_df_world_en = pd.read_excel(uploaded_file_en)
+                if 'Recommendation description' not in rec_df_world_en.columns:
+                    st.error("❌ The file must contain a column named 'Recommendation description'.")
+                    rec_df_world_en = None
+                else:
+                    st.success(f"File loaded successfully: {len(rec_df_world_en)} rows.")
+            except Exception as e:
+                st.error(f"Error reading the file: {e}")
+        else:
+            st.info("Waiting for file...")
+
+    if rec_df_world_en is None or frame_df_world_en is None:
+        if frame_df_world_en is None:
+             st.warning("⚠️ File 'Frame_Recommendations_English.xlsx' not found. It is required for classification.")
+    else:
+
+        # --- DATA PREP: Extract Year ---
+        if 'Recommendation date' in rec_df_world_en.columns:
+            rec_df_world_en['Recommendation date'] = pd.to_datetime(rec_df_world_en['Recommendation date'], errors='coerce')
+            rec_df_world_en['Year'] = rec_df_world_en['Recommendation date'].dt.year
+
+        # --- Filters (PRE-PROCESSING) ---
+        st.markdown("### 1. Selection Filters")
+        st.caption("Select filters to define the data subset to classify. This optimizes processing time and cost.")
+
+        filters_en = {}
+
+        # --- Group 1: Location and Time ---
+        with st.expander("📍 Location and Time", expanded=True):
+            col_grp1_1_en, col_grp1_2_en = st.columns(2)
+
+            with col_grp1_1_en:
+                regions_en = sorted([str(x) for x in rec_df_world_en['Region(s)'].unique() if not pd.isna(x)]) if 'Region(s)' in rec_df_world_en.columns else []
+                filters_en['Region(s)'] = st.multiselect("Region(s):", options=regions_en, default=[], key="tab6en_region_filter")
+
+                if 'Recommendation administrative unit' in rec_df_world_en.columns:
+                    admin_units_en = sorted([str(x) for x in rec_df_world_en['Recommendation administrative unit'].unique() if not pd.isna(x)])
+                    filters_en['Recommendation administrative unit'] = st.multiselect("Administrative Unit:", options=admin_units_en, default=[], key="tab6en_admin_unit")
+
+            with col_grp1_2_en:
+                available_countries_df_en = rec_df_world_en.copy()
+                if filters_en['Region(s)']:
+                     if 'Region(s)' in available_countries_df_en.columns:
+                        available_countries_df_en = available_countries_df_en[available_countries_df_en['Region(s)'].isin(filters_en['Region(s)'])]
+
+                countries_en = sorted([str(x) for x in available_countries_df_en['Country(ies)'].unique() if not pd.isna(x)]) if 'Country(ies)' in available_countries_df_en.columns else []
+                filters_en['Country(ies)'] = st.multiselect("Country(ies):", options=countries_en, default=[], key="tab6en_country_filter")
+
+                if 'Year' in rec_df_world_en.columns:
+                    years_en = sorted([int(x) for x in rec_df_world_en['Year'].unique() if not pd.isna(x)])
+                    filters_en['Year'] = st.multiselect("Year:", options=years_en, default=[], key="tab6en_year_filter")
+
+        # --- Group 2: Theme and Technical ---
+        with st.expander("📚 Theme and Technical", expanded=False):
+            col_grp2_1_en, col_grp2_2_en = st.columns(2)
+
+            with col_grp2_1_en:
+                if 'Evaluation theme(s)' in rec_df_world_en.columns:
+                    themes_en = sorted([str(x) for x in rec_df_world_en['Evaluation theme(s)'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation theme(s)'] = st.multiselect("Evaluation Theme:", options=themes_en, default=[], key="tab6en_eval_theme")
+
+                if 'Recommendation theme' in rec_df_world_en.columns:
+                    rec_themes_en = sorted([str(x) for x in rec_df_world_en['Recommendation theme'].unique() if not pd.isna(x)])
+                    filters_en['Recommendation theme'] = st.multiselect("Recommendation Theme:", options=rec_themes_en, default=[], key="tab6en_rec_theme")
+
+                if 'Technical unit(s)' in rec_df_world_en.columns:
+                    tech_units_en = sorted([str(x) for x in rec_df_world_en['Technical unit(s)'].unique() if not pd.isna(x)])
+                    filters_en['Technical unit(s)'] = st.multiselect("Technical Unit:", options=tech_units_en, default=[], key="tab6en_tech_unit")
+
+            with col_grp2_2_en:
+                if 'Funding source(s)' in rec_df_world_en.columns:
+                    fundings_en = sorted([str(x) for x in rec_df_world_en['Funding source(s)'].unique() if not pd.isna(x)])
+                    filters_en['Funding source(s)'] = st.multiselect("Funding Source:", options=fundings_en, default=[], key="tab6en_funding")
+
+                if 'Evaluation nature' in rec_df_world_en.columns:
+                    natures_en = sorted([str(x) for x in rec_df_world_en['Evaluation nature'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation nature'] = st.multiselect("Evaluation Nature:", options=natures_en, default=[], key="tab6en_eval_nature")
+
+                if 'Evaluation type' in rec_df_world_en.columns:
+                    types_en = sorted([str(x) for x in rec_df_world_en['Evaluation type'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation type'] = st.multiselect("Evaluation Type:", options=types_en, default=[], key="tab6en_eval_type")
+
+        # --- Group 3: Management and Response ---
+        with st.expander("⚙️ Management and Response", expanded=False):
+             col_grp3_1_en, col_grp3_2_en = st.columns(2)
+
+             with col_grp3_1_en:
+                 if 'Evaluation timing' in rec_df_world_en.columns:
+                    timings_en = sorted([str(x) for x in rec_df_world_en['Evaluation timing'].unique() if not pd.isna(x)])
+                    filters_en['Evaluation timing'] = st.multiselect("Evaluation Timing:", options=timings_en, default=[], key="tab6en_eval_timing")
+
+                 if 'Progress' in rec_df_world_en.columns:
+                    progresses_en = sorted([str(x) for x in rec_df_world_en['Progress'].unique() if not pd.isna(x)])
+                    filters_en['Progress'] = st.multiselect("Progress:", options=progresses_en, default=[], key="tab6en_progress")
+
+             with col_grp3_2_en:
+                 if 'Management response' in rec_df_world_en.columns:
+                     responses_en = sorted([str(x) for x in rec_df_world_en['Management response'].unique() if not pd.isna(x)])
+                     filters_en['Management response'] = st.multiselect("Management Response:", options=responses_en, default=[], key="tab6en_mgmt_response")
+
+                 if 'Evaluation document type' in rec_df_world_en.columns:
+                     doc_types_en = sorted([str(x) for x in rec_df_world_en['Evaluation document type'].unique() if not pd.isna(x)])
+                     filters_en['Evaluation document type'] = st.multiselect("Document Type:", options=doc_types_en, default=[], key="tab6en_doc_type")
+
+        # Apply ALL filters
+        start_count_en = len(rec_df_world_en)
+        filtered_rec_df_en = rec_df_world_en.copy()
+
+        for col_name_en, selected_values_en in filters_en.items():
+            if selected_values_en and col_name_en in filtered_rec_df_en.columns:
+                filtered_rec_df_en = filtered_rec_df_en[filtered_rec_df_en[col_name_en].isin(selected_values_en)]
+
+        end_count_en = len(filtered_rec_df_en)
+
+        # Show row count AND unique-recommendation count: source rows repeat for
+        # multi-attribute records (themes, sources, etc.). Embedding cost is driven
+        # by uniques, so analysts need both numbers before clicking process.
+        id_col_pre_en = 'Recommendation ID' if 'Recommendation ID' in filtered_rec_df_en.columns else 'Recommendation description'
+        unique_count_pre_en = filtered_rec_df_en[id_col_pre_en].nunique()
+        total_unique_pre_en = rec_df_world_en[id_col_pre_en].nunique()
+        st.markdown(
+            f"**Selected records:** {end_count_en} of {start_count_en}  |  "
+            f"**Unique recommendations:** {unique_count_pre_en} of {total_unique_pre_en}"
+        )
+        st.caption("⚠️ The number of records may be higher than the number of unique recommendations because some recommendations have multiple attributes (e.g. multiple themes), generating duplicate rows in the original file. Classification cost is driven by unique recommendations.")
+
+        # --- Classification Logic ---
+
+        if 'classified_world_df_en' not in st.session_state:
+            st.session_state['classified_world_df_en'] = None
+
+        def classify_recommendations_en(target_df, reference_df, cache_obj, use_llm_verification=False):
+            """
+            Classifies recommendations in target_df based on similarity to texts in reference_df.
+            Uses persistent cache and deduplication.
+            """
+
+            progress_bar = st.progress(0, text="Starting process...")
+
+            # 1. Embed Reference Frame
+            ref_embeddings = []
+            ref_metadata = []
+
+            if 'texto_merged' not in reference_df.columns:
+                st.error("The Frame file must have the column 'texto_merged'.")
+                return None
+
+            for idx, row in reference_df.iterrows():
+                text = str(row['texto_merged'])
+
+                emb = cache_obj.get(text)
+                if emb is None:
+                    emb = get_embedding_with_retry(text)
+                    if emb is not None:
+                        cache_obj.set(text, emb)
+
+                if emb is not None:
+                    ref_embeddings.append(emb)
+                    ref_metadata.append({
+                        'dimension': row.get('dimension', 'Unknown'),
+                        'subdim': row.get('subdim', 'Unknown'),
+                        'texto_merged': text
+                    })
+
+                progress_val = 0.1 * (idx + 1) / len(reference_df)
+                progress_bar.progress(progress_val, text=f"Processing reference framework {idx+1}/{len(reference_df)}")
+
+            cache_obj.save()
+
+            if not ref_embeddings:
+                st.error("Could not generate embeddings for the reference framework.")
+                return None
+
+            ref_embeddings = np.array(ref_embeddings)
+
+            ref_norms = np.linalg.norm(ref_embeddings, axis=1, keepdims=True)
+            ref_embeddings_norm = ref_embeddings / (ref_norms + 1e-10)
+
+            # 2. Embed Unique Recommendations (Deduplication)
+            start_time = time.time()
+            total_recs = len(target_df)
+
+            unique_texts = target_df['Recommendation description'].dropna().unique()
+            unique_embeddings = {}
+
+            new_embeddings_count = 0
+
+            BATCH_SIZE = 20
+            for i in range(0, len(unique_texts), BATCH_SIZE):
+                batch_texts = unique_texts[i:i+BATCH_SIZE]
+                for text in batch_texts:
+                    text_str = str(text)
+                    emb = cache_obj.get(text_str)
+                    if emb is None:
+                        emb = get_embedding_with_retry(text_str)
+                        if emb is not None:
+                            cache_obj.set(text_str, emb)
+                            new_embeddings_count += 1
+
+                    if emb is not None:
+                        unique_embeddings[text_str] = emb
+
+                progress_pct = 0.1 + (0.4 * (i + len(batch_texts)) / len(unique_texts))
+                progress_bar.progress(progress_pct, text=f"Generating unique embeddings: {min(i+len(batch_texts), len(unique_texts))}/{len(unique_texts)}")
+
+                if new_embeddings_count > 50:
+                    cache_obj.save()
+                    new_embeddings_count = 0
+
+            cache_obj.save()
+
+        # 3. Classify Rows (Match) - Top 3
+            classified_rows = []
+
+            progress_bar.progress(0.5, text="Assigning classifications (Top 3) " + ("and verifying with LLM..." if use_llm_verification else "..."))
+
+            for i, (idx, row) in enumerate(target_df.iterrows()):
+                rec_text = str(row.get('Recommendation description', ''))
+
+                vals = {
+                    'assigned_dimension': 'Unclassified',
+                    'assigned_subdim': 'Unclassified',
+                    'matched_frame_text': '',
+                    'similarity_score': 0.0,
+                    'Otras dimensiones': '',
+                    'Otras subdimensiones': ''
+                }
+
+                if rec_text in unique_embeddings:
+                    rec_emb = unique_embeddings[rec_text]
+
+                    rec_emb_norm = rec_emb / (np.linalg.norm(rec_emb) + 1e-10)
+                    similarities = np.dot(ref_embeddings_norm, rec_emb_norm)
+
+                    if use_llm_verification:
+                        top_n_candidates = 10
+                    else:
+                        top_n_candidates = 3
+
+                    top_k_indices = np.argsort(similarities)[-top_n_candidates:][::-1]
+
+                    best_idx = top_k_indices[0]
+
+                    if use_llm_verification:
+                        candidates = []
+                        for k in top_k_indices:
+                             candidates.append(ref_metadata[k])
+
+                        verified_idx = verify_match_with_llm(rec_text, candidates, openai_api_key)
+
+                        if verified_idx >= 0 and verified_idx < len(top_k_indices):
+                            best_idx = top_k_indices[verified_idx]
+
+                    best_match = ref_metadata[best_idx]
+
+                    vals['assigned_dimension'] = best_match['dimension']
+                    vals['assigned_subdim'] = best_match['subdim']
+                    vals['matched_frame_text'] = best_match['texto_merged']
+                    vals['similarity_score'] = similarities[best_idx]
+
+                    secondary_dims = []
+                    secondary_subdims = []
+
+                    similarity_threshold = 0.60
+
+                    for k_idx in top_k_indices:
+                        if k_idx == best_idx: continue
+
+                        if similarities[k_idx] >= similarity_threshold:
+                            match_k = ref_metadata[k_idx]
+                            secondary_dims.append(match_k['dimension'])
+                            secondary_subdims.append(match_k['subdim'])
+
+                    vals['Otras dimensiones'] = "; ".join(secondary_dims)
+                    vals['Otras subdimensiones'] = "; ".join(secondary_subdims)
+
+                row_dict = row.to_dict()
+                row_dict.update(vals)
+                classified_rows.append(row_dict)
+
+                if i % 10 == 0:
+                     progress_bar.progress(0.5 + (0.5 * (i + 1) / total_recs), text=f"Classifying records {i+1}/{total_recs}")
+
+            progress_bar.empty()
+            return pd.DataFrame(classified_rows)
+
+        # Button to run classification
+        st.markdown("### 2. Execution")
+
+        use_llm_chk_en = st.checkbox("✅ Use LLM Verification (High Precision, Slower)", value=False, help="If enabled, the system will use AI to read definitions and correct classification (e.g. distinguish financial 'Pensions' from policy 'Pensions').", key="tab6en_llm_chk")
+
+        if start_count_en == 0:
+            st.warning("The recommendations file is empty.")
+        elif end_count_en == 0:
+             st.warning("No records match the selected filters. Adjust the filters.")
+        else:
+            if st.button("🚀 Start Classification", key="start_classification_tab6en"):
+                with st.spinner("Running optimized classification..."):
+                    classified_df_en = classify_recommendations_en(filtered_rec_df_en, frame_df_world_en, st.session_state['embeddings_cache_obj'], use_llm_verification=use_llm_chk_en)
+                    if classified_df_en is not None and not classified_df_en.empty:
+                        st.session_state['classified_world_df_en'] = classified_df_en
+                        st.success(f"Classification complete! {len(classified_df_en)} recommendations processed.")
+                    else:
+                        st.error("There was a problem during classification.")
+
+        # --- Visualization ---
+        df_viz_en = st.session_state['classified_world_df_en']
+
+        if df_viz_en is not None:
+            st.markdown("---")
+            st.subheader("📊 Results Visualization")
+
+            # --- Visual Filters (Post-Classification) ---
+            st.markdown("### 🔎 Visual Filters")
+            st.warning("These filters only affect the charts and tables below, without re-running the classification.")
+
+            df_filtered_viz_en = df_viz_en.copy()
+
+            # 1. Year Slider (Range)
+            if 'Year' in df_viz_en.columns:
+                 valid_years_en = sorted([int(x) for x in df_viz_en['Year'].unique() if pd.notna(x) and x > 1900])
+                 if valid_years_en:
+                     min_year_en, max_year_en = min(valid_years_en), max(valid_years_en)
+                     year_range_en = st.slider(
+                         "Year Range:",
+                         min_value=min_year_en,
+                         max_value=max_year_en,
+                         value=(min_year_en, max_year_en),
+                         key="viz_year_slider_en"
+                     )
+                     df_filtered_viz_en = df_filtered_viz_en[
+                         (df_filtered_viz_en['Year'] >= year_range_en[0]) &
+                         (df_filtered_viz_en['Year'] <= year_range_en[1])
+                     ]
+
+            # 2. Metadata Filters (multiselects) - Grouped
+            with st.expander("More Visual Filters (Metadata)", expanded=False):
+                col_vf1_en, col_vf2_en, col_vf3_en = st.columns(3)
+
+                with col_vf1_en:
+                    if 'Recommendation administrative unit' in df_filtered_viz_en.columns:
+                         opts = sorted([str(x) for x in df_viz_en['Recommendation administrative unit'].unique() if pd.notna(x)])
+                         sel_admin_en = st.multiselect("Admin Unit:", options=opts, key="viz_admin_unit_en")
+                         if sel_admin_en:
+                             df_filtered_viz_en = df_filtered_viz_en[df_filtered_viz_en['Recommendation administrative unit'].isin(sel_admin_en)]
+
+                with col_vf2_en:
+                    if 'Country(ies)' in df_filtered_viz_en.columns:
+                         opts = sorted([str(x) for x in df_viz_en['Country(ies)'].unique() if pd.notna(x)])
+                         sel_country_en = st.multiselect("Country:", options=opts, key="viz_country_en")
+                         if sel_country_en:
+                             df_filtered_viz_en = df_filtered_viz_en[df_filtered_viz_en['Country(ies)'].isin(sel_country_en)]
+
+                with col_vf3_en:
+                    opts = sorted([str(x) for x in df_viz_en['assigned_dimension'].unique() if pd.notna(x)])
+                    sel_dim_global_en = st.multiselect("Dimension:", options=opts, key="viz_dim_global_en")
+                    if sel_dim_global_en:
+                         df_filtered_viz_en = df_filtered_viz_en[df_filtered_viz_en['assigned_dimension'].isin(sel_dim_global_en)]
+
+            # Count Unique Recommendations
+            id_col_en = 'Recommendation ID' if 'Recommendation ID' in df_filtered_viz_en.columns else 'Recommendation description'
+            unique_count_en = df_filtered_viz_en[id_col_en].nunique()
+
+            st.markdown(f"**Displayed records:** {len(df_filtered_viz_en)} | **Unique Recommendations:** {unique_count_en}")
+            st.warning("⚠️ Note: The number of records may be higher than the number of unique recommendations because some recommendations have multiple attributes (e.g. multiple themes), generating duplicate rows in the original file.")
+
+            st.markdown("---")
+
+            df_viz_dedup_en = df_filtered_viz_en.drop_duplicates(subset=[id_col_en]).copy()
+
+            # --- Treemap 1: Dimension ---
+            available_dims_en = sorted(df_filtered_viz_en['assigned_dimension'].unique())
+
+            manual_dim_en = st.selectbox(
+                "Filter Subdimension by Dimension (Treemaps):",
+                options=["All"] + available_dims_en,
+                index=0,
+                key="manual_dim_filter_top_en"
+            )
+
+            selected_dim_label_en = None
+            if manual_dim_en != "All":
+                selected_dim_label_en = manual_dim_en
+
+            # --- Treemap 1: Dimension ---
+            st.markdown("#### By Dimension")
+            st.caption("Select a dimension in the chart to see details (optional).")
+
+            dim_counts_en = df_viz_dedup_en['assigned_dimension'].value_counts().reset_index()
+            dim_counts_en.columns = ['dimension', 'count']
+
+            fig_dim_en = px.treemap(
+                dim_counts_en,
+                path=['dimension'],
+                values='count',
+                title='Unique Recommendations by Dimension',
+                color='dimension'
+            )
+            fig_dim_en.update_traces(textinfo="label+value", textfont_size=20)
+
+            selection_dim_en = st.plotly_chart(fig_dim_en, on_select="rerun", key="treemap_dim_select_en", use_container_width=True)
+
+            if isinstance(selection_dim_en, dict) and "selection" in selection_dim_en and "points" in selection_dim_en["selection"]:
+                 points_en = selection_dim_en["selection"]["points"]
+                 if points_en:
+                     pt_en = points_en[0]
+                     clicked_label_en = pt_en.get('label') or pt_en.get('x') or pt_en.get('id')
+                     if clicked_label_en and clicked_label_en in available_dims_en and manual_dim_en == "All":
+                         selected_dim_label_en = clicked_label_en
+                         st.info(f"Filter applied by chart selection: {selected_dim_label_en}")
+
+            # --- Treemap 2: Subdim ---
+            st.markdown("#### By Subdimension")
+
+            df_sub_en = df_viz_dedup_en.copy()
+            title_suffix_en = ""
+
+            if selected_dim_label_en:
+                if selected_dim_label_en in df_sub_en['assigned_dimension'].unique():
+                    df_sub_en = df_sub_en[df_sub_en['assigned_dimension'] == selected_dim_label_en]
+                    title_suffix_en = f" ({selected_dim_label_en})"
+
+            if not df_sub_en.empty:
+                subdim_counts_en = df_sub_en['assigned_subdim'].value_counts().reset_index()
+                subdim_counts_en.columns = ['subdim', 'count']
+
+                fig_sub_en = px.treemap(
+                    subdim_counts_en,
+                    path=['subdim'],
+                    values='count',
+                    title=f'Unique Recommendations by Subdimension{title_suffix_en}',
+                    color='subdim'
+                )
+                fig_sub_en.update_traces(textinfo="label+value", textfont_size=20)
+                st.plotly_chart(fig_sub_en, use_container_width=True)
+            else:
+                st.info("No data to display.")
+
+            st.markdown("---")
+
+            # --- Evolution Plots ---
+            st.subheader("📈 Temporal Evolution")
+
+            evo_toggle_en = st.radio("Chart Type:", ["Absolute", "Percentage (100%)"], horizontal=True, key="evo_chart_type_en")
+            is_percent_en = (evo_toggle_en == "Percentage (100%)")
+
+            def plot_evolution_en(df_in, cat_col, title_prefix):
+                if 'Year' not in df_in.columns or df_in.empty:
+                    st.info("No Year data to show evolution.")
+                    return
+
+                df_clean = df_in[df_in['Year'] > 1900].copy()
+                if df_clean.empty:
+                     st.info("No valid year data.")
+                     return
+
+                unique_vals = df_clean[cat_col].nunique()
+                if unique_vals > 20:
+                     st.warning(f"Too many unique values ({unique_vals}) in {cat_col}. Showing Top 20.")
+                     top_20 = df_clean[cat_col].value_counts().nlargest(20).index
+                     df_clean = df_clean[df_clean[cat_col].isin(top_20)]
+
+                df_grouped = df_clean.groupby(['Year', cat_col]).size().reset_index(name='count')
+
+                t_suffix = " (%)" if is_percent_en else ""
+
+                fig = px.bar(
+                    df_grouped,
+                    x="Year",
+                    y="count",
+                    color=cat_col,
+                    title=f"Evolution of {title_prefix}{t_suffix}",
+                    barmode='relative',
+                )
+
+                if is_percent_en:
+                     fig.update_layout(barnorm='percent')
+
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Define the tabs - Expanded List
+            tab_labels_en = [
+                "By Country", "By Admin Unit", "By Dimension", "By Subdimension",
+                "Mgmt. Response", "Eval. Theme", "Rec. Theme", "Technical Unit",
+                "Funding Source", "Nature", "Eval. Type", "Timing", "Progress", "Doc. Type"
+            ]
+
+            tabs_en = st.tabs(tab_labels_en)
+
+            # 0. By Country
+            with tabs_en[0]:
+                 if 'Country(ies)' in df_viz_dedup_en.columns:
+                     plot_evolution_en(df_viz_dedup_en, 'Country(ies)', "Country")
+                 else:
+                     st.info("Column 'Country(ies)' not available.")
+
+            # 1. By Admin Unit
+            with tabs_en[1]:
+                 if 'Recommendation administrative unit' in df_viz_dedup_en.columns:
+                     plot_evolution_en(df_viz_dedup_en, 'Recommendation administrative unit', "Administrative Unit")
+                 else:
+                     st.info("Column 'Recommendation administrative unit' not available.")
+
+            # 2. By Dimension
+            with tabs_en[2]:
+                 plot_evolution_en(df_viz_dedup_en, 'assigned_dimension', "Dimension")
+
+            # 3. By Subdimension
+            with tabs_en[3]:
+                 plot_evolution_en(df_viz_dedup_en, 'assigned_subdim', "Subdimension")
+
+            # 4. Management Response
+            with tabs_en[4]:
+                if 'Management response' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Management response', "Management Response")
+                else:
+                    st.info("Column 'Management response' not available.")
+
+            # 5. Evaluation Theme - MULTI VALUE (Keep duplicates to show frequency)
+            with tabs_en[5]:
+                if 'Evaluation theme(s)' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Evaluation theme(s)', "Evaluation Theme")
+                else:
+                    st.info("Column 'Evaluation theme(s)' not available.")
+
+            # 6. Recommendation Theme - MULTI VALUE (Keep duplicates)
+            with tabs_en[6]:
+                if 'Recommendation theme' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Recommendation theme', "Recommendation Theme")
+                else:
+                    st.info("Column 'Recommendation theme' not available.")
+
+            # 7. Technical Unit - MULTI VALUE
+            with tabs_en[7]:
+                if 'Technical unit(s)' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Technical unit(s)', "Technical Unit")
+                else:
+                    st.info("Column 'Technical unit(s)' not available.")
+
+            # 8. Funding Source - MULTI VALUE
+            with tabs_en[8]:
+                if 'Funding source(s)' in df_filtered_viz_en.columns:
+                    plot_evolution_en(df_filtered_viz_en, 'Funding source(s)', "Funding Source")
+                else:
+                    st.info("Column 'Funding source(s)' not available.")
+
+            # 9. Evaluation Nature
+            with tabs_en[9]:
+                if 'Evaluation nature' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation nature', "Evaluation Nature")
+                else:
+                    st.info("Column 'Evaluation nature' not available.")
+
+            # 10. Evaluation Type
+            with tabs_en[10]:
+                if 'Evaluation type' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation type', "Evaluation Type")
+                else:
+                    st.info("Column 'Evaluation type' not available.")
+
+            # 11. Evaluation Timing
+            with tabs_en[11]:
+                if 'Evaluation timing' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation timing', "Evaluation Timing")
+                else:
+                    st.info("Column 'Evaluation timing' not available.")
+
+            # 12. Progress
+            with tabs_en[12]:
+                if 'Progress' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Progress', "Progress")
+                else:
+                    st.info("Column 'Progress' not available.")
+
+            # 13. Document Type
+            with tabs_en[13]:
+                if 'Evaluation document type' in df_viz_dedup_en.columns:
+                    plot_evolution_en(df_viz_dedup_en, 'Evaluation document type', "Document Type")
+                else:
+                    st.info("Column 'Evaluation document type' not available.")
+
+            # --- SECTION 3: ADVANCED AI TOOLS ---
+            st.markdown("---")
+            st.subheader("🤖 3. Advanced AI Tools")
+            st.info("Use Artificial Intelligence tools to deeply analyze or summarize the filtered recommendations.")
+
+            # --- Shared Filters for AI Tools ---
+            st.markdown("##### 1. Define Subset for Analysis")
+
+            df_ai_base_en = df_filtered_viz_en.copy()
+            ai_filters_en = {}
+
+            with st.expander("🔎 Global Filters for AI Analysis", expanded=True):
+                 c_ai1_en, c_ai2_en = st.columns(2)
+
+                 with c_ai1_en:
+                      if 'Region(s)' in df_viz_en.columns:
+                          opts = sorted([str(x) for x in df_viz_en['Region(s)'].unique() if pd.notna(x)])
+                          ai_filters_en['Region(s)'] = st.multiselect("Region:", opts, key="ai_region_en")
+
+                      if 'Country(ies)' in df_viz_en.columns:
+                           opts = sorted([str(x) for x in df_viz_en['Country(ies)'].unique() if pd.notna(x)])
+                           ai_filters_en['Country(ies)'] = st.multiselect("Country:", opts, key="ai_country_en")
+
+                      if 'Evaluation theme(s)' in df_viz_en.columns:
+                           opts = sorted([str(x) for x in df_viz_en['Evaluation theme(s)'].unique() if pd.notna(x)])
+                           ai_filters_en['Evaluation theme(s)'] = st.multiselect("Eval. Theme:", opts, key="ai_eval_theme_en")
+
+                 with c_ai2_en:
+                      if 'Year' in df_viz_en.columns:
+                          opts = sorted([int(x) for x in df_viz_en['Year'].unique() if pd.notna(x)])
+                          ai_filters_en['Year'] = st.multiselect("Year:", opts, key="ai_year_en")
+
+                      if 'Management response' in df_viz_en.columns:
+                          opts = sorted([str(x) for x in df_viz_en['Management response'].unique() if pd.notna(x)])
+                          ai_filters_en['Management response'] = st.multiselect("Mgmt. Response:", opts, key="ai_mgmt_en")
+
+                      if 'assigned_dimension' in df_viz_en.columns:
+                          opts = sorted([str(x) for x in df_viz_en['assigned_dimension'].unique() if pd.notna(x)])
+                          ai_filters_en['assigned_dimension'] = st.multiselect("Dimension:", opts, key="ai_dim_en")
+
+            # Apply Filters
+            for col_ai, vals_ai in ai_filters_en.items():
+                if vals_ai and col_ai in df_ai_base_en.columns:
+                    df_ai_base_en = df_ai_base_en[df_ai_base_en[col_ai].isin(vals_ai)]
+
+            st.write(f"**Total Filtered Records:** {len(df_ai_base_en)}")
+
+            st.markdown("---")
+
+            # --- Dual Action Buttons ---
+            col_deep_en, col_summ_en = st.columns(2)
+
+            # --- LEFT: Deep Analysis ---
+            with col_deep_en:
+                st.markdown("#### 🧠 Deep Analysis")
+                st.caption("Evaluates coherence, quality and innovation of action plans.")
+
+                df_deep_ready_en = df_ai_base_en.copy()
+                if 'Action plan' in df_deep_ready_en.columns:
+                    df_deep_ready_en = df_deep_ready_en[df_deep_ready_en['Action plan'].notna() & (df_deep_ready_en['Action plan'].astype(str).str.strip() != "")]
+                valid_deep_count_en = len(df_deep_ready_en)
+
+                st.metric("Valid (with Plan)", valid_deep_count_en)
+
+                with st.expander("Configuration"):
+                    deep_model_en = st.selectbox("Model:", ["gpt-4o-mini", "gpt-4o"], index=0, key="deep_model_sel_en")
+                    limit_rows_deep_en = st.number_input("Limit (0=All):", min_value=0, value=0, step=10, key="deep_limit_en")
+
+                if st.button("🚀 Start Analysis", key="btn_run_deep_en"):
+                     if df_deep_ready_en.empty:
+                         st.warning("No valid data.")
+                     else:
+                         id_col_deep_en = 'Recommendation ID' if 'Recommendation ID' in df_deep_ready_en.columns else 'Recommendation description'
+                         df_deep_input_en = df_deep_ready_en.drop_duplicates(subset=[id_col_deep_en]).copy()
+                         if limit_rows_deep_en > 0:
+                             df_deep_input_en = df_deep_input_en.head(limit_rows_deep_en)
+
+                         st.info(f"Processing all {len(df_deep_input_en)} recommendations..." if limit_rows_deep_en == 0 else f"Processing {len(df_deep_input_en)} recommendations...")
+
+                         analysis_cache_en = AnalysisCache()
+                         args_list_en = []
+                         for idx, row in df_deep_input_en.iterrows():
+                             rec = str(row.get('Recommendation description', ''))
+                             plan = str(row.get('Action plan', ''))
+                             comments = str(row.get('Comments', '')) if 'Comments' in row else ""
+                             args_list_en.append((idx, rec, plan, comments, openai_api_key, analysis_cache_en))
+
+                         results_map_en = {}
+                         pbar_deep_en = st.progress(0, text="Analyzing...")
+                         completed_count_en = 0
+
+                         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                             futures_en = [executor.submit(run_row_analysis, arg) for arg in args_list_en]
+                             for future in concurrent.futures.as_completed(futures_en):
+                                 idx, result, _ = future.result()
+                                 if result:
+                                    results_map_en[idx] = result
+                                 completed_count_en += 1
+                                 pbar_deep_en.progress(completed_count_en / len(args_list_en), text=f"Analyzing... {completed_count_en}/{len(args_list_en)}")
+
+                         pbar_deep_en.empty()
+                         analysis_cache_en.save()
+
+                         analysis_list_en = []
+                         for idx, res in results_map_en.items():
+                             res['original_index'] = idx
+                             analysis_list_en.append(res)
+
+                         if analysis_list_en:
+                             df_res_en = pd.DataFrame(analysis_list_en)
+                             df_res_en.set_index('original_index', inplace=True)
+                             df_final_deep_en = df_deep_input_en.join(df_res_en)
+
+                             list_cols_en = ['extracted_actions_from_rec', 'actions_proposed_in_plan', 'rejection_difficulty_classification', 'tags', 'rec_additional_tags']
+                             for col in list_cols_en:
+                                 if col in df_final_deep_en.columns:
+                                     df_final_deep_en[col] = df_final_deep_en[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
+
+                             st.session_state['deep_analysis_df_en'] = df_final_deep_en
+                             st.success("Analysis complete!")
+
+            # --- RIGHT: Summary Generation ---
+            with col_summ_en:
+                st.markdown("#### ✨ Executive Summary")
+                st.caption("Generates a narrative synthesis of findings.")
+
+                st.metric("Total to Summarize", len(df_ai_base_en))
+
+                with st.expander("Configuration"):
+                    max_tokens_val_en = st.slider("Length (Tokens):", 500, 4000, 3000, 100, key="summ_len_en")
+
+                if st.button("📝 Generate Global Summary", key="btn_run_summ_en"):
+                    if df_ai_base_en.empty:
+                        st.warning("No data.")
+                    else:
+                        with st.spinner("Generating summary..."):
+                            id_col_summ_en = 'Recommendation ID' if 'Recommendation ID' in df_ai_base_en.columns else 'Recommendation description'
+                            df_summ_unique_en = df_ai_base_en.drop_duplicates(subset=[id_col_summ_en])
+
+                            text_list_en = []
+                            for idx, row in df_summ_unique_en.iterrows():
+                                 desc = str(row.get('Recommendation description', ''))
+                                 mgmt = str(row.get('Management response', '')) if 'Management response' in row else "N/A"
+                                 comments = str(row.get('Comments', '')) if 'Comments' in row else "N/A"
+                                 action = str(row.get('Action plan', '')) if 'Action plan' in row else "N/A"
+                                 text_list_en.append(f"--- Rec ---\nDesc: {desc}\nResp: {mgmt}\nCom: {comments}\nPlan: {action}\n")
+
+                            full_text_en = "\n".join(text_list_en)
+                            summary_text_en = generate_executive_summary(full_text_en, max_output_tokens=max_tokens_val_en)
+                            st.session_state['summary_result_en'] = summary_text_en
+                            st.success("Summary generated!")
+
+            # --- Display Results Areas (Full Width) ---
+
+            # 1. Deep Analysis Results
+            if 'deep_analysis_df_en' in st.session_state:
+                st.markdown("---")
+                st.subheader("📊 Results: Deep Analysis")
+                df_final_deep_en = st.session_state['deep_analysis_df_en']
+
+                c_m1_en, c_m2_en = st.columns(2)
+                c_m1_en.metric("Avg. Coherence", f"{df_final_deep_en['coherence_score'].mean():.2f}")
+                c_m2_en.metric("Avg. Plan Quality", f"{df_final_deep_en['plan_quality_score'].mean():.2f}")
+
+                st.dataframe(df_final_deep_en[['Recommendation description', 'coherence_score', 'plan_quality_score', 'rec_innovation_score', 'rejection_difficulty_classification', 'tags']], use_container_width=True)
+
+                # Export Deep
+                out_deep_en = BytesIO()
+                with pd.ExcelWriter(out_deep_en, engine='xlsxwriter') as writer:
+                    df_final_deep_en.to_excel(writer, index=False, sheet_name='Deep_Analysis')
+
+                st.download_button("📥 Download Analysis Report (.xlsx)", out_deep_en.getvalue(), "deep_analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+                # Visualizations Deep
+                st.markdown("##### 📈 Key Metrics Distribution")
+
+                col_v1_en, col_v2_en = st.columns(2)
+
+                if 'coherence_score' in df_final_deep_en.columns:
+                    with col_v1_en:
+                        fig_d1_en = px.histogram(df_final_deep_en, x="coherence_score", nbins=10, title="Coherence Distribution", color_discrete_sequence=['#636EFA'])
+                        st.plotly_chart(fig_d1_en, use_container_width=True)
+
+                if 'plan_quality_score' in df_final_deep_en.columns:
+                     with col_v2_en:
+                        fig_d2_en = px.histogram(df_final_deep_en, x="plan_quality_score", nbins=10, title="Plan Quality Distribution", color_discrete_sequence=['#EF553B'])
+                        st.plotly_chart(fig_d2_en, use_container_width=True)
+
+                col_v3_en, col_v4_en = st.columns(2)
+
+                if 'attention_level_score' in df_final_deep_en.columns:
+                     with col_v3_en:
+                        fig_d3_en = px.histogram(df_final_deep_en, x="attention_level_score", nbins=10, title="Attention Level", color_discrete_sequence=['#00CC96'])
+                        st.plotly_chart(fig_d3_en, use_container_width=True)
+
+                if 'rec_innovation_score' in df_final_deep_en.columns:
+                     with col_v4_en:
+                         fig_pie_en = px.pie(df_final_deep_en, names='rec_innovation_score', title="Innovation Level", hole=0.3)
+                         st.plotly_chart(fig_pie_en, use_container_width=True)
+
+                st.markdown("##### 🚦 Feasibility and Impact")
+                col_v5_en, col_v6_en = st.columns(2)
+
+                if 'rec_operational_feasibility' in df_final_deep_en.columns:
+                    with col_v5_en:
+                        fig_feas_en = px.histogram(df_final_deep_en, x='rec_operational_feasibility', title="Operational Feasibility", color='rec_operational_feasibility')
+                        st.plotly_chart(fig_feas_en, use_container_width=True)
+
+                if 'rec_expected_impact' in df_final_deep_en.columns:
+                    with col_v6_en:
+                         fig_imp_en = px.histogram(df_final_deep_en, x='rec_expected_impact', title="Expected Impact", color='rec_expected_impact')
+                         st.plotly_chart(fig_imp_en, use_container_width=True)
+
+            # 2. Summary Results
+            if 'summary_result_en' in st.session_state:
+                st.markdown("---")
+                st.subheader("📄 Results: Executive Summary")
+                st.markdown(st.session_state['summary_result_en'])
+
+                # Export Summary
+                out_summ_en = BytesIO()
+                with pd.ExcelWriter(out_summ_en, engine='xlsxwriter') as writer:
+                    df_ai_base_en.to_excel(writer, index=False, sheet_name='Base Data')
+                    pd.DataFrame({'Summary': [st.session_state['summary_result_en']]}).to_excel(writer, index=False, sheet_name='Summary')
+
+                st.download_button("📥 Download Summary + Data (.xlsx)", out_summ_en.getvalue(), "executive_summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
