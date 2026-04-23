@@ -128,6 +128,134 @@ RUBRIC_SCHEMA_SINGLE = {
     },
 }
 
+# Structured schema for the critic stage. Forcing A–E enumeration as separate enum
+# fields (not free text) prevents the model from skipping the count or rebranding
+# Part-1 content as "dedicated". Each A–E has a mandatory evidence snippet so the
+# code layer can later sanity-check that "presente" is backed by a verbatim quote.
+CRITIC_SCHEMA_TWO_PART = {
+    "name": "critic_response_two_part",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "subject_part2": {"type": "string"},
+            "dedicated_A_sub_objective": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_A_evidence": {"type": "string"},
+            "dedicated_B_indicator": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_B_evidence": {"type": "string"},
+            "dedicated_C_activity": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_C_evidence": {"type": "string"},
+            "dedicated_D_budget": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_D_evidence": {"type": "string"},
+            "dedicated_E_target": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_E_evidence": {"type": "string"},
+            "dedicated_total": {"type": "integer"},
+            "verdict": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found", "Keep"]},
+            "justification": {"type": "string"},
+            "recommendations": {"type": "string"},
+        },
+        "required": [
+            "subject_part2",
+            "dedicated_A_sub_objective", "dedicated_A_evidence",
+            "dedicated_B_indicator", "dedicated_B_evidence",
+            "dedicated_C_activity", "dedicated_C_evidence",
+            "dedicated_D_budget", "dedicated_D_evidence",
+            "dedicated_E_target", "dedicated_E_evidence",
+            "dedicated_total", "verdict", "justification", "recommendations",
+        ],
+    },
+}
+
+CRITIC_SCHEMA_SINGLE = {
+    "name": "critic_response_single",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "subject": {"type": "string"},
+            "dedicated_A_sub_objective": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_A_evidence": {"type": "string"},
+            "dedicated_B_indicator": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_B_evidence": {"type": "string"},
+            "dedicated_C_activity": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_C_evidence": {"type": "string"},
+            "dedicated_D_budget": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_D_evidence": {"type": "string"},
+            "dedicated_E_target": {"type": "string", "enum": ["presente", "ausente"]},
+            "dedicated_E_evidence": {"type": "string"},
+            "dedicated_total": {"type": "integer"},
+            "verdict": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found", "Keep"]},
+            "justification": {"type": "string"},
+            "recommendations": {"type": "string"},
+        },
+        "required": [
+            "subject",
+            "dedicated_A_sub_objective", "dedicated_A_evidence",
+            "dedicated_B_indicator", "dedicated_B_evidence",
+            "dedicated_C_activity", "dedicated_C_evidence",
+            "dedicated_D_budget", "dedicated_D_evidence",
+            "dedicated_E_target", "dedicated_E_evidence",
+            "dedicated_total", "verdict", "justification", "recommendations",
+        ],
+    },
+}
+
+
+def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
+    """Enforce the A–E → verdict mapping at the code layer and render the display text.
+
+    The model can still lie field-by-field, but it can no longer skip the enumeration
+    or slip Part-1 content into the verdict. If the model says Partial at TOTAL=0 the
+    code rewrites the verdict to No — that override is logged in the justification.
+    """
+    letters = ['A', 'B', 'C', 'D', 'E']
+    fields = {
+        'A': ('dedicated_A_sub_objective', 'dedicated_A_evidence', 'sub-objetivo/output'),
+        'B': ('dedicated_B_indicator',     'dedicated_B_evidence', 'indicador'),
+        'C': ('dedicated_C_activity',      'dedicated_C_evidence', 'actividad dedicada'),
+        'D': ('dedicated_D_budget',        'dedicated_D_evidence', 'línea presupuestaria'),
+        'E': ('dedicated_E_target',        'dedicated_E_evidence', 'meta cuantificable'),
+    }
+    states = {ltr: (result.get(fields[ltr][0], 'ausente') or 'ausente') for ltr in letters}
+    actual_total = sum(1 for ltr in letters if states[ltr] == 'presente')
+
+    model_verdict = (result.get('verdict') or '').strip() or 'No'
+    subject = (result.get('subject_part2') or result.get('subject') or 'el sujeto específico').strip()
+
+    # Code-layer override: the one rule the prompt kept failing on.
+    override_note = ''
+    if actual_total == 0 and model_verdict not in ('No', 'Not Found'):
+        override_note = f" [Ajuste automático: el modelo propuso '{model_verdict}' pero TOTAL=0 obliga a 'No'.]"
+        model_verdict = 'No'
+    elif actual_total >= 1 and model_verdict in ('No', 'Not Found') and actual_total >= 3:
+        # A conservative inverse: if 3+ dedicated elements exist and model says No, flag it.
+        override_note = f" [Nota: TOTAL={actual_total} con modelo='{model_verdict}'; revisar manualmente.]"
+
+    conteo_line = (
+        f"Elementos dedicados Parte 2 [{subject}]: "
+        f"A={states['A']}, B={states['B']}, C={states['C']}, "
+        f"D={states['D']}, E={states['E']}. TOTAL={actual_total}."
+    ) if is_two_part else (
+        f"Elementos dedicados [{subject}]: "
+        f"A={states['A']}, B={states['B']}, C={states['C']}, "
+        f"D={states['D']}, E={states['E']}. TOTAL={actual_total}."
+    )
+
+    justification = (result.get('justification') or '').strip()
+    recommendations = (result.get('recommendations') or '').strip()
+
+    body_parts = [conteo_line + override_note]
+    if justification:
+        body_parts.append(justification)
+    if recommendations and model_verdict in ('No', 'Partial', 'Not Found'):
+        if not recommendations.lower().startswith('para mejorar la calificación'):
+            recommendations = f"**Para mejorar la calificación** debiese incluirse {recommendations}"
+        body_parts.append(recommendations)
+
+    return f"VEREDICTO: {model_verdict}\n\n" + "\n\n".join(body_parts)
+
 # ============= MAIN APP CODE =============
 
 # Set page config
@@ -3784,613 +3912,169 @@ If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Foun
             'Status': 'Error'
         }
 
-def analyze_question_with_critical_opinion_tab1(question, answer, reasoning, evidence, document_text=""):
-    """
-    TAB1-SPECIFIC VERSION: Critically assess if the document's answer to a specific question is adequate.
-    Explicitly checks if the reasoning properly identifies and addresses two-part questions.
+def _critic_impl(question, answer, reasoning, evidence, document_text=""):
+    """Shared critic implementation used by both public wrappers below.
+
+    Uses structured output (JSON schema) to force the model to commit to each A–E
+    element explicitly. The code layer then renders the display text and overrides
+    the verdict when it is inconsistent with the A–E count (e.g., model said Partial
+    but all five elements are ausente → verdict forced to No).
     """
     try:
-        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
         doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
-
-        # Parse question to detect two-part structure
         parsed = parse_two_part_question(question)
 
-        # Customize critical evaluation based on question structure
         if parsed['is_two_part']:
-            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
+            system_content = _CRITIC_TWO_PART_SYSTEM
+            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA LA PARTE 2 EXCLUSIVAMENTE.
 
-**CRITICAL EVALUATION FOR TWO-PART QUESTIONS:**
-
-This is a TWO-PART question where:
-- **Part 1 (Broader)**: Sets general context
-- **Part 2 (Specific - PRIMARY)**: The critical detail that needs focused assessment
-
-**Your Critical Assessment Must Evaluate:**
-
-1. **FIRST - Check Structure**: Does the reasoning BEGIN with "Se identificaron 2 partes en esta pregunta" or similar acknowledgment?
-   - If NO: This is a CRITICAL FAILURE - the analysis didn't recognize the question structure
-
-2. **PRIMARY FOCUS - Part 2 (Specific Question):**
-   - Does the answer adequately address the SPECIFIC question (Part 2)?
-   - Is the evidence for Part 2 substantive and concrete?
-   - Are there critical gaps or superficial treatment of Part 2?
-   - Does the document truly deliver on the specific requirement?
-
-3. **SECONDARY - Part 1 (Broader Context):**
-   - Does the answer address the broader context (Part 1)?
-   - How do the Part 2 findings affect the Part 1 assessment?
-
-4. **INTEGRATION:**
-   - Is there coherence between how Part 2 relates to Part 1?
-   - Are there contradictions or misalignments?
-
-**Be especially critical if:**
-- The reasoning doesn't acknowledge the two-part structure
-- Part 2 (specific question) is answered superficially or avoided
-- Evidence focuses on Part 1 but neglects Part 2
-- The answer leans on Part 1 generalities to claim Part 2 is addressed
-
-**WEIGHTING (ULTRA-FOCUS ON PART 2):** Your critique must allocate ~99% of its attention to Part 2 and effectively IGNORE Part 1. Part 1 is framing only and is analyzed separately at the subsection level — do NOT evaluate Part 1 here, do NOT penalize limited Part 1 depth, and do NOT let Part 1 coverage inflate the verdict. The verdict and body must be driven almost entirely by whether Part 2 is substantively addressed.
-
-**SCOPE LOCK CHECK (CRITICAL):**
-The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
-- If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
-- Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
-
-**EVIDENCE-ROLE FILTER & DECISION GATE FOR PART 2 (APPLY FIRST — DRIVES THE VERDICT):**
-
-Before choosing a verdict, classify every quoted or candidate evidence passage about the Part-2 subject (e.g., personas con discapacidad, género, pueblos indígenas) as either FRAMING or DEDICATED.
-
-FRAMING mention (does NOT count toward Part 2, even if the subject is named):
-  - Overall objective / impact statement naming multiple groups
-  - Stakeholder, consultation, or research participant lists
-  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
-  - Boilerplate inclusion language
-  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
-
-DEDICATED element (counts toward Part 2):
-  A. A sub-objective, outcome, or output whose title/purpose names the subject
-  B. An indicator disaggregated by or specifically targeting the subject
-  C. An activity whose primary purpose addresses the subject
-  D. A budget line or resource allocation for the subject
-  E. A quantifiable target for the subject
-
-Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
-  - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
-  - 1–2 dedicated elements                         → "Partial"
-  - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive and at-par with any label/claim in Part 1)
-  - 5 dedicated elements with substantive evidence → "Yes"
-
-If every citable evidence quote for Part 2 is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
-
-In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
-
-**ABSOLUTE SEPARATION RULE — PART 1 CANNOT UPGRADE A FAILING PART 2 (MANDATORY):**
-
-The verdict scores ONLY Part 2. Part 1 content is INVISIBLE to the decision gate.
-
-- If the Part-2 DEDICATED count is 0, the verdict MUST be "No" or "Not Found" — even if Part 1 is fully developed (clear general/specific objectives, multiple outputs, activities, indicators, budget for the broader topic).
-- Strength of Part 1 CANNOT offset, soften, or upgrade a failing Part 2. A well-developed Part 1 paired with an empty Part 2 is STILL a failure for this question.
-- The following are PROHIBITED justifications for "Partial":
-  * "el documento sí define claramente el Objetivo General y el Específico…"
-  * "presenta múltiples outputs/actividades sobre [tema general]…"
-  * "el marco lógico está bien estructurado…"
-  * Any variant that credits broader-topic / Part-1 content while the named Part-2 subject has 0 dedicated elements.
-- Do NOT use contrastive hedging ("sí define X, sin embargo falta Y sobre discapacidad") to justify Partial. If Y has 0 DEDICATED elements, the verdict is No. Period. Acknowledge the gap without citing Part-1 strengths as mitigation.
-
-**PRE-VERDICT SELF-AUDIT (MANDATORY — apply before emitting the verdict):**
-
-Read your draft Justificación. Check:
-1. Does it cite Part-1 strengths (general objective, specific objective, broader-topic outputs, broader-topic activities, broader-topic indicators, broader-topic budget) as any part of the reasoning for Partial/Yes?
-2. Does it use "sin embargo" / "however" contrastive structure where the first half praises Part 1?
-
-If the answer to either is YES AND the Part-2 DEDICATED count is 0, the verdict MUST be downgraded to "No" or "Not Found" and the Justificación MUST be rewritten to omit Part-1 praise entirely. Justificación must lead with the Part-2 failure, not with Part-1 strengths.
-
-**VERDICT CONSISTENCY RULES (MANDATORY):**
-
-- **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
-- **Partial**: AVAILABLE ONLY when the Part-2 DEDICATED TOTAL (A–E count) is 1, 2, 3, or 4. **If TOTAL = 0, Partial is PROHIBITED — verdict MUST be "No" or "Not Found".** Within the 1–4 eligibility band, Partial is REQUIRED when any of the following is true:
-  * a missing required detail
-  * superficial or generic treatment
-  * evidence that is thin, indirect, or insufficient
-  Do NOT use the "original answer was Yes → must downgrade to Partial" rationale if TOTAL = 0; in that case the correct downgrade is to No, not Partial.
-- **No**: The document claims to address the question but fails to.
-- **Not Found**: The subject is not covered, or SCOPE LOCK fails.
-- **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
-
-**CONSISTENCY CHECK (apply before emitting the verdict):**
-Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
-
-**OUTPUT FORMAT (MANDATORY):**
-Your response MUST begin with exactly one line in this format:
-VEREDICTO: <Yes|No|Partial|Not Found|Keep>
-
-- Use "Keep" if the document's original answer is adequate and should stand.
-- Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
-
-**BODY STRUCTURE (MANDATORY):**
-After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
-
-(1) **Justification.** The FIRST sentence MUST be the enumeration line in this exact format:
-
-"Elementos dedicados Parte 2 [sujeto]: A=<presente|ausente>, B=<presente|ausente>, C=<presente|ausente>, D=<presente|ausente>, E=<presente|ausente>. TOTAL=<0|1|2|3|4|5>."
-
-Where A–E refer to the DECISION GATE elements (A=sub-objetivo/output; B=indicador; C=actividad dedicada; D=línea presupuestaria; E=meta cuantificable). You MUST commit to presente/ausente for EACH letter — do NOT write "(ausente D/E)" or any abbreviated form. All five letters must appear.
-
-The VEREDICTO line MUST be consistent with TOTAL:
-  TOTAL=0 → VEREDICTO = "No" (or "Not Found" if subject is completely unmentioned)
-  TOTAL=1-2 → VEREDICTO = "Partial"
-  TOTAL=3-4 → VEREDICTO = "Partial" (or "Yes" only if evidence is substantive and at-par)
-  TOTAL=5 → VEREDICTO = "Yes"
-
-If your CONTEO shows TOTAL=0, your VEREDICTO line MUST say "No" or "Not Found" — if it says "Partial", the output is INVALID and you must rewrite it.
-
-After the enumeration line, lead the justification body with "El No se asignó debido a…" / "Se asignó Partial porque…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific Part-2 gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT open with Part-1 praise ("el Objetivo General está claramente enunciado…", "hay múltiples actividades e indicadores…"). Do NOT use "sin embargo" contrastive structure where Part 1 is praised before flagging Part-2 gaps. Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado", "si bien…"). In THIS part, do NOT recommend inclusions — only flag what is missing.
-
-(2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
-
-**STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
-Be strict. Err on the side of downgrading.
-- **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
-- **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-- **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
-- **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
-- **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
-- If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
-
-No preamble, no filler. No JSON, no extra formatting."""
-
-            # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
-            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
-
-**PARTE 2 (Enfoque Específico - PRIORITARIO):**
+**PARTE 2 (Sujeto Específico - el único que debe evaluarse):**
 {parsed['part2']}
 
-**PARTE 1 (Contexto General — solo para enmarcar):**
+**PARTE 1 (Contexto — solo referencia, NO evaluar, NO contar hacia A–E):**
 {parsed['part1']}
 
 **Respuesta del Documento:** {answer}
-
 **Razonamiento del Documento:** {reasoning}
-
 **Evidencia del Documento:** {evidence}
 
 **Contexto Completo del Documento:**
 {doc_context}
 
-Evalúa críticamente:
-1. ¿El razonamiento reconoce explícitamente que hay 2 partes en la pregunta?
-2. ¿La respuesta aborda adecuadamente la Parte 2 (pregunta específica) — el foco prioritario?
-3. ¿La evidencia para la Parte 2 es concreta y suficiente, o se quedó en generalidades de la Parte 1?"""
-
+Completa los campos estructurados. Para CADA elemento A–E, decide presente/ausente basándote en si hay contenido del documento DEDICADO al sujeto de la Parte 2. El Objetivo General, outputs generales, listas de grupos consultados, y cualquier contenido de la Parte 1 NO cuentan."""
+            schema = CRITIC_SCHEMA_TWO_PART
         else:
-            # Original single-question critical evaluation
-            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
-                    Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
+            system_content = _CRITIC_SINGLE_SYSTEM
+            user_content = f"""Pregunta: {question}
 
-                    Review the answer, reasoning, evidence, AND full document context together to evaluate:
-                    - Does the answer fully address the concern raised in the question?
-                    - Is the evidence substantive enough to support the answer?
-                    - Does the full document context confirm or contradict the claimed answer?
-                    - Is the proposed approach sufficient according to best practices?
-                    - Are there gaps, risks, or inadequacies in what the document claims?
-                    - Should the project have included additional measures or details?
-                    - Is the reasoning robust or superficial?
-                    - What is NOT mentioned that should be?
+**Respuesta del Documento:** {answer}
+**Razonamiento del Documento:** {reasoning}
+**Evidencia del Documento:** {evidence}
 
-                    **SCOPE LOCK CHECK (CRITICAL):**
-                    The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
-
-                    **EVIDENCE-ROLE FILTER & DECISION GATE (APPLY FIRST — DRIVES THE VERDICT):**
-
-                    Before choosing a verdict, classify every quoted or candidate evidence passage about the named specific subject as either FRAMING or DEDICATED.
-
-                    FRAMING mention (does NOT count, even if the subject is named):
-                      - Overall objective / impact statement naming multiple groups
-                      - Stakeholder, consultation, or research participant lists
-                      - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
-                      - Boilerplate inclusion language
-                      - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
-
-                    DEDICATED element (counts):
-                      A. A sub-objective, outcome, or output whose title/purpose names the subject
-                      B. An indicator disaggregated by or specifically targeting the subject
-                      C. An activity whose primary purpose addresses the subject
-                      D. A budget line or resource allocation for the subject
-                      E. A quantifiable target for the subject
-
-                    Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
-                      - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
-                      - 1–2 dedicated elements                         → "Partial"
-                      - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive)
-                      - 5 dedicated elements with substantive evidence → "Yes"
-
-                    If every citable evidence quote is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named.
-
-                    In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
-
-                    **VERDICT CONSISTENCY RULES (MANDATORY):**
-
-                    - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
-                    - **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
-                      * a missing required detail
-                      * superficial or generic treatment
-                      * evidence that is thin, indirect, or insufficient
-                      If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
-                      **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the named subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
-                    - **No**: The document claims to address the question but fails to.
-                    - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
-                    - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
-
-                    **CONSISTENCY CHECK (apply before emitting the verdict):**
-                    Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
-
-                    **OUTPUT FORMAT (MANDATORY):**
-                    Your response MUST begin with exactly one line in this format:
-                    VEREDICTO: <Yes|No|Partial|Not Found|Keep>
-
-                    - Use "Keep" if the document's original answer is adequate and should stand.
-                    - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
-
-                    **BODY STRUCTURE (MANDATORY):**
-                    After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
-
-                    (1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
-
-                    (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
-
-                    **STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
-                    Be strict. Err on the side of downgrading.
-                    - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
-                    - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-                    - **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
-                    - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
-                    - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
-                    - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
-
-                    No preamble, no filler. No JSON, no extra formatting."""
-
-            user_content = f"""Question: {question}
-
-Document's Answer: {answer}
-
-Document's Reasoning: {reasoning}
-
-Document's Evidence: {evidence}
-
-Full Document Context (complete):
+**Contexto Completo del Documento:**
 {doc_context}
 
-Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
+Completa los campos estructurados. Para CADA elemento A–E, decide presente/ausente basándote en si hay contenido dedicado al sujeto específico de la pregunta."""
+            schema = CRITIC_SCHEMA_SINGLE
 
-        # Single API call for critical evaluation - focuses on answer adequacy
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": system_content
-                },
-                {
-                    "role": "user",
-                    "content": user_content
-                }
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
-            max_completion_tokens=400,
-            reasoning_effort="minimal"
+            max_completion_tokens=2000,
+            reasoning_effort="minimal",
+            response_format={"type": "json_schema", "json_schema": schema},
         )
 
         content = resp.choices[0].message.content
         if not content or not content.strip():
-            return "No se generó evaluación crítica."
+            return "VEREDICTO: Keep\n\nNo se generó evaluación crítica."
 
-        return content.strip()
+        try:
+            result = json.loads(content.strip())
+        except json.JSONDecodeError:
+            return "VEREDICTO: Keep\n\nError al procesar la evaluación crítica estructurada."
+
+        return _apply_critic_gate_and_render(result, is_two_part=parsed['is_two_part'])
 
     except Exception as e:
-        return f"Error en evaluación crítica: {str(e)}"
+        return f"VEREDICTO: Keep\n\nError en evaluación crítica: {str(e)}"
+
+
+_CRITIC_TWO_PART_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
+
+You assess whether a document adequately addresses the SPECIFIC Part-2 subject of a two-part question. Your output is a structured JSON (enforced by schema). The verdict is derived mechanically from the A–E count.
+
+**WHAT IS A "DEDICATED" ELEMENT FOR PART 2:**
+For the EXACT named Part-2 subject (e.g., "personas con discapacidad", "género", "pueblos indígenas"), decide presente/ausente for each:
+  A. Sub-objective / outcome / output whose title or primary purpose EXPLICITLY names the subject
+  B. Indicator disaggregated by, or specifically targeting, the subject
+  C. Activity whose PRIMARY purpose is to address the subject (not incidental mention)
+  D. Budget line or resource allocation specifically for the subject
+  E. Quantifiable target for the subject (e.g., "N personas con discapacidad beneficiadas")
+
+**WHAT DOES NOT COUNT — always mark ausente:**
+- Overall Objective / Specific Objective / Impact statements naming multiple groups (e.g., "inclusive economic development", "vulnerable populations including X, Y, Z")
+- Stakeholder lists, consultation rosters, research participant lists where the subject appears among others
+- Phrases like "...among others", "...including X, Y, Z", "...such as"
+- Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+- Part-1 (broader context) content — it is invisible to the A–E test
+- General project activities that merely mention the subject once
+
+**FOR EACH A–E ELEMENT:**
+- If presente: dedicated_X_evidence MUST contain the verbatim quote (max 50 words) from the document. The quote must name the Part-2 subject specifically. If the quote is a list of 3+ groups, the element is NOT presente — mark ausente. If you cannot produce a qualifying verbatim quote, mark ausente.
+- If ausente: dedicated_X_evidence should be "No aparece en el documento" or a brief gap note.
+
+**verdict FIELD (your proposal — the code layer will override if inconsistent with A–E):**
+  TOTAL=0 → "No" (or "Not Found" if subject is completely unmentioned)
+  TOTAL=1-2 → "Partial"
+  TOTAL=3-4 → "Partial" (or "Yes" only if evidence is substantive and at-par with any Part-1 claim)
+  TOTAL=5 → "Yes"
+
+**justification FIELD (Spanish, 2-4 sentences):**
+Lead with the verdict: "El No se asignó debido a…" / "Se asignó Partial porque existen N elementos dedicados…" / "Se asignó Yes porque…".
+PROHIBITED openings and phrasings:
+- "el documento define claramente el Objetivo General…"
+- "presenta múltiples outputs/actividades sobre [tema general]…"
+- "si bien… sin embargo…" (any contrastive structure praising Part 1)
+- Any mention of Overall Objective, Specific Objective, or broader-topic outputs as strengths
+- Hedging softeners: "en cierta medida", "aunque de forma general", "podría considerarse adecuado"
+Focus ENTIRELY on Part-2 gaps. If TOTAL=0, say so plainly; do not soften.
+
+**recommendations FIELD (Spanish):**
+Specific items needed to reach Yes. Example: "un sub-objetivo específico sobre personas con discapacidad, indicadores desagregados, línea presupuestaria dedicada, actividades con accesibilidad, meta cuantificable". Empty if verdict is Yes or Keep.
+
+Focus 99% on Part 2. Part 1 is framing — do NOT evaluate it, do NOT count it toward A–E, do NOT cite it as a strength."""
+
+_CRITIC_SINGLE_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
+
+You assess whether a document adequately addresses the SPECIFIC subject named in the question. Your output is a structured JSON (enforced by schema). The verdict is derived mechanically from the A–E count.
+
+**WHAT IS A "DEDICATED" ELEMENT:**
+For the EXACT named subject of the question, decide presente/ausente for each:
+  A. Sub-objective / outcome / output whose title or primary purpose EXPLICITLY names the subject
+  B. Indicator disaggregated by, or specifically targeting, the subject
+  C. Activity whose PRIMARY purpose is to address the subject
+  D. Budget line or resource allocation specifically for the subject
+  E. Quantifiable target for the subject
+
+**WHAT DOES NOT COUNT — always ausente:**
+- Overall objectives or impact statements naming multiple groups
+- Stakeholder, consultation, or research-participant lists
+- Phrases like "...among others", "...including X, Y, Z"
+- Any list of 3+ groups without dedicated follow-up
+
+**FOR EACH A–E:**
+- If presente: dedicated_X_evidence MUST be a verbatim quote (max 50 words) that names the subject specifically. If you cannot, mark ausente.
+- If ausente: brief gap note or "No aparece en el documento".
+
+**verdict GUIDANCE (your proposal — code may override):**
+  TOTAL=0 → "No" (or "Not Found")
+  TOTAL=1-2 → "Partial"
+  TOTAL=3-4 → "Partial" (or "Yes" if substantive)
+  TOTAL=5 → "Yes"
+
+**justification FIELD:** Spanish, 2-4 sentences. Lead with verdict. PROHIBITED: opening with praise of broader-topic content, "sin embargo" contrastive structure, "si bien…" hedging. Focus on the named subject's gaps.
+
+**recommendations FIELD:** Spanish, specific items needed to reach Yes. Empty for Yes/Keep."""
+
+
+def analyze_question_with_critical_opinion_tab1(question, answer, reasoning, evidence, document_text=""):
+    """TAB1-SPECIFIC wrapper. Delegates to the shared structured-output critic.
+
+    The structured schema (CRITIC_SCHEMA_TWO_PART / CRITIC_SCHEMA_SINGLE) forces the
+    model to commit to each A–E element; _apply_critic_gate_and_render then overrides
+    the verdict at the code layer when the count and verdict disagree.
+    """
+    return _critic_impl(question, answer, reasoning, evidence, document_text)
+
 
 def analyze_question_with_critical_opinion(question, answer, reasoning, evidence, document_text=""):
-    """
-    Critically assess if the document's answer to a specific question is adequate and appropriate.
-    Evaluates whether the document's response truly addresses the concern raised in the question.
-    Uses answer, reasoning, evidence AND complete document context for comprehensive critical assessment.
-    Uses up to 110K tokens for complete document understanding - maximizes context window usage.
-    Enhanced to handle two-part questions with proper focus on the specific (Part 2) aspect.
-    """
-    try:
-        # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
-        doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
+    """General wrapper. Delegates to the shared structured-output critic."""
+    return _critic_impl(question, answer, reasoning, evidence, document_text)
 
-        # Parse question to detect two-part structure
-        parsed = parse_two_part_question(question)
-
-        # Customize critical evaluation based on question structure
-        if parsed['is_two_part']:
-            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
-
-**CRITICAL EVALUATION FOR TWO-PART QUESTIONS:**
-
-This is a TWO-PART question where:
-- **Part 1 (Broader)**: Sets general context
-- **Part 2 (Specific - PRIMARY)**: The critical detail that needs focused assessment
-
-**Your Critical Assessment Must Evaluate:**
-
-1. **PRIMARY FOCUS - Part 2 (Specific Question):**
-   - Does the answer adequately address the SPECIFIC question (Part 2)?
-   - Is the evidence for Part 2 substantive and concrete?
-   - Are there critical gaps or superficial treatment of Part 2?
-   - Does the document truly deliver on the specific requirement?
-
-2. **SECONDARY - Part 1 (Broader Context):**
-   - Does the answer address the broader context (Part 1)?
-   - How do the Part 2 findings affect the Part 1 assessment?
-
-3. **INTEGRATION:**
-   - Is there coherence between how Part 2 relates to Part 1?
-   - Are there contradictions or misalignments?
-
-**Be especially critical if:**
-- Part 2 (specific question) is answered superficially or avoided
-- Evidence focuses on Part 1 but neglects Part 2
-- The reasoning doesn't connect Part 2's findings to Part 1's context
-
-**WEIGHTING (ULTRA-FOCUS ON PART 2):** Your critique must allocate ~99% of its attention to Part 2 and effectively IGNORE Part 1. Part 1 is framing only and is analyzed separately at the subsection level — do NOT evaluate Part 1 here, do NOT penalize limited Part 1 depth, and do NOT let Part 1 coverage inflate the verdict. The verdict and body must be driven almost entirely by whether Part 2 is substantively addressed.
-
-**SCOPE LOCK CHECK (CRITICAL):**
-The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples).
-- If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
-- Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
-
-**EVIDENCE-ROLE FILTER & DECISION GATE FOR PART 2 (APPLY FIRST — DRIVES THE VERDICT):**
-
-Before choosing a verdict, classify every quoted or candidate evidence passage about the Part-2 subject (e.g., personas con discapacidad, género, pueblos indígenas) as either FRAMING or DEDICATED.
-
-FRAMING mention (does NOT count toward Part 2, even if the subject is named):
-  - Overall objective / impact statement naming multiple groups
-  - Stakeholder, consultation, or research participant lists
-  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
-  - Boilerplate inclusion language
-  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
-
-DEDICATED element (counts toward Part 2):
-  A. A sub-objective, outcome, or output whose title/purpose names the subject
-  B. An indicator disaggregated by or specifically targeting the subject
-  C. An activity whose primary purpose addresses the subject
-  D. A budget line or resource allocation for the subject
-  E. A quantifiable target for the subject
-
-Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
-  - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
-  - 1–2 dedicated elements                         → "Partial"
-  - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive and at-par with any label/claim in Part 1)
-  - 5 dedicated elements with substantive evidence → "Yes"
-
-If every citable evidence quote for Part 2 is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
-
-In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
-
-**ABSOLUTE SEPARATION RULE — PART 1 CANNOT UPGRADE A FAILING PART 2 (MANDATORY):**
-
-The verdict scores ONLY Part 2. Part 1 content is INVISIBLE to the decision gate.
-
-- If the Part-2 DEDICATED count is 0, the verdict MUST be "No" or "Not Found" — even if Part 1 is fully developed (clear general/specific objectives, multiple outputs, activities, indicators, budget for the broader topic).
-- Strength of Part 1 CANNOT offset, soften, or upgrade a failing Part 2. A well-developed Part 1 paired with an empty Part 2 is STILL a failure for this question.
-- The following are PROHIBITED justifications for "Partial":
-  * "el documento sí define claramente el Objetivo General y el Específico…"
-  * "presenta múltiples outputs/actividades sobre [tema general]…"
-  * "el marco lógico está bien estructurado…"
-  * Any variant that credits broader-topic / Part-1 content while the named Part-2 subject has 0 dedicated elements.
-- Do NOT use contrastive hedging ("sí define X, sin embargo falta Y sobre discapacidad") to justify Partial. If Y has 0 DEDICATED elements, the verdict is No. Period. Acknowledge the gap without citing Part-1 strengths as mitigation.
-
-**PRE-VERDICT SELF-AUDIT (MANDATORY — apply before emitting the verdict):**
-
-Read your draft Justificación. Check:
-1. Does it cite Part-1 strengths (general objective, specific objective, broader-topic outputs, broader-topic activities, broader-topic indicators, broader-topic budget) as any part of the reasoning for Partial/Yes?
-2. Does it use "sin embargo" / "however" contrastive structure where the first half praises Part 1?
-
-If the answer to either is YES AND the Part-2 DEDICATED count is 0, the verdict MUST be downgraded to "No" or "Not Found" and the Justificación MUST be rewritten to omit Part-1 praise entirely. Justificación must lead with the Part-2 failure, not with Part-1 strengths.
-
-**VERDICT CONSISTENCY RULES (MANDATORY):**
-
-- **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
-- **Partial**: AVAILABLE ONLY when the Part-2 DEDICATED TOTAL (A–E count) is 1, 2, 3, or 4. **If TOTAL = 0, Partial is PROHIBITED — verdict MUST be "No" or "Not Found".** Within the 1–4 eligibility band, Partial is REQUIRED when any of the following is true:
-  * a missing required detail
-  * superficial or generic treatment
-  * evidence that is thin, indirect, or insufficient
-  Do NOT use the "original answer was Yes → must downgrade to Partial" rationale if TOTAL = 0; in that case the correct downgrade is to No, not Partial.
-- **No**: The document claims to address the question but fails to.
-- **Not Found**: The subject is not covered, or SCOPE LOCK fails.
-- **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
-
-**CONSISTENCY CHECK (apply before emitting the verdict):**
-Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
-
-**OUTPUT FORMAT (MANDATORY):**
-Your response MUST begin with exactly one line in this format:
-VEREDICTO: <Yes|No|Partial|Not Found|Keep>
-
-- Use "Keep" if the document's original answer is adequate and should stand.
-- Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails or Part-2 focus is lost).
-
-**BODY STRUCTURE (MANDATORY):**
-After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
-
-(1) **Justification.** The FIRST sentence MUST be the enumeration line in this exact format:
-
-"Elementos dedicados Parte 2 [sujeto]: A=<presente|ausente>, B=<presente|ausente>, C=<presente|ausente>, D=<presente|ausente>, E=<presente|ausente>. TOTAL=<0|1|2|3|4|5>."
-
-Where A–E refer to the DECISION GATE elements (A=sub-objetivo/output; B=indicador; C=actividad dedicada; D=línea presupuestaria; E=meta cuantificable). You MUST commit to presente/ausente for EACH letter — do NOT write "(ausente D/E)" or any abbreviated form. All five letters must appear.
-
-The VEREDICTO line MUST be consistent with TOTAL:
-  TOTAL=0 → VEREDICTO = "No" (or "Not Found" if subject is completely unmentioned)
-  TOTAL=1-2 → VEREDICTO = "Partial"
-  TOTAL=3-4 → VEREDICTO = "Partial" (or "Yes" only if evidence is substantive and at-par)
-  TOTAL=5 → VEREDICTO = "Yes"
-
-If your CONTEO shows TOTAL=0, your VEREDICTO line MUST say "No" or "Not Found" — if it says "Partial", the output is INVALID and you must rewrite it.
-
-After the enumeration line, lead the justification body with "El No se asignó debido a…" / "Se asignó Partial porque…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific Part-2 gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT open with Part-1 praise ("el Objetivo General está claramente enunciado…", "hay múltiples actividades e indicadores…"). Do NOT use "sin embargo" contrastive structure where Part 1 is praised before flagging Part-2 gaps. Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado", "si bien…"). In THIS part, do NOT recommend inclusions — only flag what is missing.
-
-(2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
-
-**STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
-Be strict. Err on the side of downgrading.
-- **Yes**: Requires Part 2 to be concretely and fully addressed with substantive evidence. No material gaps.
-- **Partial**: Requires substantial, good-faith effort. The bulk of the required elements of Part 2 must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-- **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
-- **No**: Token/minimal coverage, isolated mentions, or the bulk of what Part 2 asks is missing even when something is mentioned.
-- **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
-- If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
-
-No preamble, no filler. No JSON, no extra formatting."""
-
-            # Part 2 listed FIRST to keep the critical-opinion stage focused on the priority clause.
-            user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA PRIMERO LA PARTE 2.
-
-**PARTE 2 (Enfoque Específico - PRIORITARIO):**
-{parsed['part2']}
-
-**PARTE 1 (Contexto General — solo para enmarcar):**
-{parsed['part1']}
-
-**Respuesta del Documento:** {answer}
-
-**Razonamiento del Documento:** {reasoning}
-
-**Evidencia del Documento:** {evidence}
-
-**Contexto Completo del Documento:**
-{doc_context}
-
-Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta específica) — el foco prioritario? ¿La evidencia para la Parte 2 es concreta y suficiente, o se quedó en generalidades de la Parte 1?"""
-
-        else:
-            # Original single-question critical evaluation
-            system_content = """You are an expert in project quality appraisal and international development (ILO standards).
-                    Critically assess whether the document's answer to a specific question is adequate, appropriate, and complete.
-
-                    Review the answer, reasoning, evidence, AND full document context together to evaluate:
-                    - Does the answer fully address the concern raised in the question?
-                    - Is the evidence substantive enough to support the answer?
-                    - Does the full document context confirm or contradict the claimed answer?
-                    - Is the proposed approach sufficient according to best practices?
-                    - Are there gaps, risks, or inadequacies in what the document claims?
-                    - Should the project have included additional measures or details?
-                    - Is the reasoning robust or superficial?
-                    - What is NOT mentioned that should be?
-
-                    **SCOPE LOCK CHECK (CRITICAL):**
-                    The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
-
-                    **EVIDENCE-ROLE FILTER & DECISION GATE (APPLY FIRST — DRIVES THE VERDICT):**
-
-                    Before choosing a verdict, classify every quoted or candidate evidence passage about the named specific subject as either FRAMING or DEDICATED.
-
-                    FRAMING mention (does NOT count, even if the subject is named):
-                      - Overall objective / impact statement naming multiple groups
-                      - Stakeholder, consultation, or research participant lists
-                      - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
-                      - Boilerplate inclusion language
-                      - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
-
-                    DEDICATED element (counts):
-                      A. A sub-objective, outcome, or output whose title/purpose names the subject
-                      B. An indicator disaggregated by or specifically targeting the subject
-                      C. An activity whose primary purpose addresses the subject
-                      D. A budget line or resource allocation for the subject
-                      E. A quantifiable target for the subject
-
-                    Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
-                      - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
-                      - 1–2 dedicated elements                         → "Partial"
-                      - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive)
-                      - 5 dedicated elements with substantive evidence → "Yes"
-
-                    If every citable evidence quote is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named.
-
-                    In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
-
-                    **VERDICT CONSISTENCY RULES (MANDATORY):**
-
-                    - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
-                    - **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
-                      * a missing required detail
-                      * superficial or generic treatment
-                      * evidence that is thin, indirect, or insufficient
-                      If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
-                      **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the named subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
-                    - **No**: The document claims to address the question but fails to.
-                    - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
-                    - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
-
-                    **CONSISTENCY CHECK (apply before emitting the verdict):**
-                    Re-read your body text. If it names any gap, weakness, or missing element, the verdict must be Partial, No, or Not Found — not Yes and not Keep. A positive verdict paired with a critical body is invalid output.
-
-                    **OUTPUT FORMAT (MANDATORY):**
-                    Your response MUST begin with exactly one line in this format:
-                    VEREDICTO: <Yes|No|Partial|Not Found|Keep>
-
-                    - Use "Keep" if the document's original answer is adequate and should stand.
-                    - Use "Yes", "No", "Partial", or "Not Found" to OVERRIDE the original answer when your critical assessment warrants re-grading (especially when SCOPE LOCK CHECK fails).
-
-                    **BODY STRUCTURE (MANDATORY):**
-                    After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
-
-                    (1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
-
-                    (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
-
-                    **STRICTNESS & PARTIAL vs NO BOUNDARY (MANDATORY):**
-                    Be strict. Err on the side of downgrading.
-                    - **Yes**: Requires the question to be concretely and fully addressed with substantive evidence. No material gaps.
-                    - **Partial**: Requires substantial, good-faith effort. The bulk of the required elements must be substantively present; only specific or bounded items are missing (example: a specific budget figure is absent while activities, objectives, and indicators are fully developed).
-                    - **NOT Partial — downgrade to No — when:** the core specific subject of the question (e.g., "personas con discapacidad", "género", "pueblos indígenas") is completely absent or has only token/passing mentions. Do NOT grant Partial simply because other general project details (general objectives, other vulnerable groups) are present. Total absence of the precise target subject means it is a CRITICAL FAILURE = No or Not Found.
-                    - **No**: Token/minimal coverage, isolated mentions, or the bulk of what the question asks is missing even when something is mentioned.
-                    - **Not Found**: Nothing relevant; scope substituted; SCOPE LOCK fails.
-                    - If in doubt between Yes and Partial → Partial. If in doubt between Partial and No → No.
-
-                    No preamble, no filler. No JSON, no extra formatting."""
-
-            user_content = f"""Question: {question}
-
-Document's Answer: {answer}
-
-Document's Reasoning: {reasoning}
-
-Document's Evidence: {evidence}
-
-Full Document Context (complete):
-{doc_context}
-
-Provide a critical assessment: Is this answer truly adequate from an expert perspective, considering the quality of the reasoning, evidence, and complete document context provided?"""
-
-        # Single API call for critical evaluation - focuses on answer adequacy
-        resp = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_content
-                },
-                {
-                    "role": "user",
-                    "content": user_content
-                }
-            ],
-            max_completion_tokens=400,
-            reasoning_effort="minimal"
-        )
-
-        content = resp.choices[0].message.content
-        if not content or not content.strip():
-            return "No se generó evaluación crítica."
-
-        return content.strip()
-
-    except Exception as e:
-        return f"Error en evaluación crítica: {str(e)}"
 
 def extract_section_number(question_text):
     """Extract section number from question text (e.g., '1.1 ¿Pregunta?' -> 1)"""
