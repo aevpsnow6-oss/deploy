@@ -8247,10 +8247,18 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
         filtered_df = results_df.copy()
         if response_filter != 'Todas':
             filtered_df = filtered_df[filtered_df['Respuesta'] == response_filter]
-        
+
+        # Interleave by subsection so each pass cycles 1.1 -> 1.2 -> 1.3 -> ...
+        # instead of grouping all 1.1 variants, then all 1.2 variants.
+        display_df = filtered_df.copy()
+        if '_subsection' in display_df.columns and '_sort_key' in display_df.columns:
+            display_df = display_df.sort_values(by=['_sort_key'], kind='stable')
+            display_df['_within_sub'] = display_df.groupby('_subsection').cumcount()
+            display_df = display_df.sort_values(by=['_within_sub', '_sort_key'], kind='stable').reset_index(drop=True)
+
         # Display filtered results
         st.dataframe(
-            filtered_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia']], 
+            display_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia']],
             use_container_width=True,
             height=400
         )
@@ -8367,10 +8375,18 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
             filtered_df = results_df.copy()
             if response_filter != 'Todas':
                 filtered_df = filtered_df[filtered_df['Respuesta'] == response_filter]
-            
+
+            # Interleave by subsection so each pass cycles 1.1 -> 1.2 -> 1.3 -> ...
+            # instead of grouping all 1.1 variants, then all 1.2 variants.
+            display_df = filtered_df.copy()
+            if '_subsection' in display_df.columns and '_sort_key' in display_df.columns:
+                display_df = display_df.sort_values(by=['_sort_key'], kind='stable')
+                display_df['_within_sub'] = display_df.groupby('_subsection').cumcount()
+                display_df = display_df.sort_values(by=['_within_sub', '_sort_key'], kind='stable').reset_index(drop=True)
+
             # Display filtered results
             st.dataframe(
-                filtered_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia']], 
+                display_df[['Pregunta', 'Respuesta', 'Razonamiento', 'Evidencia']],
                 use_container_width=True,
                 height=400
             )
