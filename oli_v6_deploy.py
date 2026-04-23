@@ -194,12 +194,46 @@ CRITIC_SCHEMA_SINGLE = {
 }
 
 
+def _is_framing_evidence(evidence: str) -> tuple:
+    """Heuristic detector for FRAMING-style evidence.
+
+    Returns (is_framing, reason). Conservative by design — we only flag the clearest
+    FRAMING patterns so legitimate DEDICATED quotes are not downgraded.
+    """
+    if not evidence or not evidence.strip():
+        return True, "evidence empty"
+    ev_lower = evidence.lower()
+
+    # Enumeration markers — these almost always indicate the subject is in a list.
+    framing_markers = [
+        "among others", "among which", "including,", "including ",
+        "such as", "inter alia", "and others", "etc.", "etcetera",
+        "entre otros", "entre otras", "incluyendo", "incluidos",
+        "incluidas", "como por ejemplo",
+    ]
+    for m in framing_markers:
+        if m in ev_lower:
+            return True, f"contains enumeration marker '{m.strip()}'"
+
+    # 3+ commas → likely a list of groups.
+    if ev_lower.count(",") >= 3:
+        return True, f"{ev_lower.count(',')} comma-separated items (list pattern)"
+
+    # Very short stubs (< 12 chars) are unlikely to describe a dedicated element.
+    if len(evidence.strip()) < 12:
+        return True, "evidence too short to describe a dedicated element"
+
+    return False, ""
+
+
 def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
     """Enforce the A–E → verdict mapping at the code layer and render the display text.
 
-    The model can still lie field-by-field, but it can no longer skip the enumeration
-    or slip Part-1 content into the verdict. If the model says Partial at TOTAL=0 the
-    code rewrites the verdict to No — that override is logged in the justification.
+    Two layers of protection:
+      1. Evidence validation: each 'presente' is downgraded to 'ausente' if its
+         evidence quote looks like a FRAMING list (enumeration markers or 3+ commas).
+      2. Verdict override: if TOTAL=0 after validation and the model proposed
+         Partial/Yes, the verdict is forced to No, with an audit note.
     """
     letters = ['A', 'B', 'C', 'D', 'E']
     fields = {
@@ -210,19 +244,32 @@ def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
         'E': ('dedicated_E_target',        'dedicated_E_evidence', 'meta cuantificable'),
     }
     states = {ltr: (result.get(fields[ltr][0], 'ausente') or 'ausente') for ltr in letters}
+
+    # Layer 1: evidence validation. Downgrade FRAMING-backed 'presente' to 'ausente'.
+    downgrades = []
+    for ltr in letters:
+        if states[ltr] == 'presente':
+            evidence = result.get(fields[ltr][1], '') or ''
+            is_framing, reason = _is_framing_evidence(evidence)
+            if is_framing:
+                states[ltr] = 'ausente'
+                downgrades.append(f"{ltr} ({reason})")
+
     actual_total = sum(1 for ltr in letters if states[ltr] == 'presente')
 
     model_verdict = (result.get('verdict') or '').strip() or 'No'
     subject = (result.get('subject_part2') or result.get('subject') or 'el sujeto específico').strip()
 
-    # Code-layer override: the one rule the prompt kept failing on.
+    # Layer 2: verdict override at TOTAL=0.
     override_note = ''
     if actual_total == 0 and model_verdict not in ('No', 'Not Found'):
         override_note = f" [Ajuste automático: el modelo propuso '{model_verdict}' pero TOTAL=0 obliga a 'No'.]"
         model_verdict = 'No'
-    elif actual_total >= 1 and model_verdict in ('No', 'Not Found') and actual_total >= 3:
-        # A conservative inverse: if 3+ dedicated elements exist and model says No, flag it.
+    elif actual_total >= 3 and model_verdict in ('No', 'Not Found'):
         override_note = f" [Nota: TOTAL={actual_total} con modelo='{model_verdict}'; revisar manualmente.]"
+
+    if downgrades:
+        override_note += f" [Downgrade por evidencia FRAMING: {'; '.join(downgrades)}.]"
 
     conteo_line = (
         f"Elementos dedicados Parte 2 [{subject}]: "
@@ -248,7 +295,6 @@ def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
     return f"VEREDICTO: {model_verdict}\n\n" + "\n\n".join(body_parts)
 
 
-# Function to get embeddings from OpenAI
 def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
     if not openai_api_key:
         st.error("No se encontró la clave de API de OpenAI. Por favor, configura la variable de entorno OPENAI_API_KEY.")
