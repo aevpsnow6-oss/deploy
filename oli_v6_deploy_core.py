@@ -3866,6 +3866,27 @@ If every citable evidence quote for Part 2 is a FRAMING mention, the verdict MUS
 
 In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
 
+**ABSOLUTE SEPARATION RULE — PART 1 CANNOT UPGRADE A FAILING PART 2 (MANDATORY):**
+
+The verdict scores ONLY Part 2. Part 1 content is INVISIBLE to the decision gate.
+
+- If the Part-2 DEDICATED count is 0, the verdict MUST be "No" or "Not Found" — even if Part 1 is fully developed (clear general/specific objectives, multiple outputs, activities, indicators, budget for the broader topic).
+- Strength of Part 1 CANNOT offset, soften, or upgrade a failing Part 2. A well-developed Part 1 paired with an empty Part 2 is STILL a failure for this question.
+- The following are PROHIBITED justifications for "Partial":
+  * "el documento sí define claramente el Objetivo General y el Específico…"
+  * "presenta múltiples outputs/actividades sobre [tema general]…"
+  * "el marco lógico está bien estructurado…"
+  * Any variant that credits broader-topic / Part-1 content while the named Part-2 subject has 0 dedicated elements.
+- Do NOT use contrastive hedging ("sí define X, sin embargo falta Y sobre discapacidad") to justify Partial. If Y has 0 DEDICATED elements, the verdict is No. Period. Acknowledge the gap without citing Part-1 strengths as mitigation.
+
+**PRE-VERDICT SELF-AUDIT (MANDATORY — apply before emitting the verdict):**
+
+Read your draft Justificación. Check:
+1. Does it cite Part-1 strengths (general objective, specific objective, broader-topic outputs, broader-topic activities, broader-topic indicators, broader-topic budget) as any part of the reasoning for Partial/Yes?
+2. Does it use "sin embargo" / "however" contrastive structure where the first half praises Part 1?
+
+If the answer to either is YES AND the Part-2 DEDICATED count is 0, the verdict MUST be downgraded to "No" or "Not Found" and the Justificación MUST be rewritten to omit Part-1 praise entirely. Justificación must lead with the Part-2 failure, not with Part-1 strengths.
+
 **VERDICT CONSISTENCY RULES (MANDATORY):**
 
 - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
@@ -4137,6 +4158,27 @@ Count of DEDICATED elements (A–E) — NOT raw mention count — drives the ver
 If every citable evidence quote for Part 2 is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
 
 In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
+
+**ABSOLUTE SEPARATION RULE — PART 1 CANNOT UPGRADE A FAILING PART 2 (MANDATORY):**
+
+The verdict scores ONLY Part 2. Part 1 content is INVISIBLE to the decision gate.
+
+- If the Part-2 DEDICATED count is 0, the verdict MUST be "No" or "Not Found" — even if Part 1 is fully developed (clear general/specific objectives, multiple outputs, activities, indicators, budget for the broader topic).
+- Strength of Part 1 CANNOT offset, soften, or upgrade a failing Part 2. A well-developed Part 1 paired with an empty Part 2 is STILL a failure for this question.
+- The following are PROHIBITED justifications for "Partial":
+  * "el documento sí define claramente el Objetivo General y el Específico…"
+  * "presenta múltiples outputs/actividades sobre [tema general]…"
+  * "el marco lógico está bien estructurado…"
+  * Any variant that credits broader-topic / Part-1 content while the named Part-2 subject has 0 dedicated elements.
+- Do NOT use contrastive hedging ("sí define X, sin embargo falta Y sobre discapacidad") to justify Partial. If Y has 0 DEDICATED elements, the verdict is No. Period. Acknowledge the gap without citing Part-1 strengths as mitigation.
+
+**PRE-VERDICT SELF-AUDIT (MANDATORY — apply before emitting the verdict):**
+
+Read your draft Justificación. Check:
+1. Does it cite Part-1 strengths (general objective, specific objective, broader-topic outputs, broader-topic activities, broader-topic indicators, broader-topic budget) as any part of the reasoning for Partial/Yes?
+2. Does it use "sin embargo" / "however" contrastive structure where the first half praises Part 1?
+
+If the answer to either is YES AND the Part-2 DEDICATED count is 0, the verdict MUST be downgraded to "No" or "Not Found" and the Justificación MUST be rewritten to omit Part-1 praise entirely. Justificación must lead with the Part-2 failure, not with Part-1 strengths.
 
 **VERDICT CONSISTENCY RULES (MANDATORY):**
 
