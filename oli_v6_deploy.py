@@ -6267,6 +6267,34 @@ La pregunta nombra un sujeto o alcance específico (p.ej. "personas con discapac
 3. Si el sujeto nombrado está ausente del documento pero sujetos relacionados están ampliamente cubiertos, Respuesta debe ser "Not Found" o "No" — NO "Partial" ni "Yes". Sub-inclusión es preferible a sobre-inclusión.
 4. En tu Razonamiento, declara explícitamente cuál sujeto exacto se analizó y confirma que la evidencia trata sobre ese sujeto (no sobre uno relacionado).
 
+**EVIDENCE-ROLE FILTER & DECISION GATE FOR PARTE 2 (APPLY FIRST — DRIVES THE Respuesta):**
+
+Before choosing a Respuesta, classify every candidate evidence passage about the Parte-2 subject (e.g., personas con discapacidad, género, pueblos indígenas, mujeres rurales) as either FRAMING or DEDICATED.
+
+FRAMING mention (does NOT count toward Parte 2, even if the subject is named):
+  - Overall objective / impact statement naming multiple groups
+  - Stakeholder, consultation, or research participant lists
+  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+  - Boilerplate inclusion language
+  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+DEDICATED element (counts toward Parte 2):
+  A. A sub-objective, outcome, or output whose title/purpose names the subject
+  B. An indicator disaggregated by or specifically targeting the subject
+  C. An activity whose primary purpose addresses the subject
+  D. A budget line or resource allocation for the subject
+  E. A quantifiable target for the subject
+
+Count of DEDICATED elements (A–E) — NOT raw mention count — drives Respuesta:
+  - 0 dedicated elements (only FRAMING mentions)      → "No" or "Not Found"
+  - 1–2 dedicated elements                            → "Partial"
+  - 3–4 dedicated elements                            → "Partial" (or "Yes" only if substantive and at-par with any claim/label in Parte 1)
+  - 5 dedicated elements with substantive evidence    → "Yes"
+
+If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
+
+In "Evidencia", prefix each cited quote with [DEDICATED] or [FRAMING]. You may NOT justify "Partial" or "Yes" using only [FRAMING] quotes.
+
 Siempre responder en español. Enfoque: 95% en Parte 2, 5% en su relación con Parte 1. La Parte 1 solo existe para enmarcar brevemente; NO analices la Parte 1 de forma independiente."""
 
             # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
@@ -6304,7 +6332,33 @@ The question names a specific subject/scope (e.g., a specific population like pe
 1. Identify the exact subject of the question before answering.
 2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors/regions/periods) does NOT count. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
 3. If the named subject is absent but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
-4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one)."""
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one).
+
+**EVIDENCE-ROLE FILTER & DECISION GATE (APPLY FIRST — DRIVES Respuesta):**
+
+Classify every candidate evidence passage about the named specific subject as either FRAMING or DEDICATED.
+
+FRAMING mention (does NOT count, even if the subject is named):
+  - Overall objective / impact statement naming multiple groups
+  - Stakeholder, consultation, or research participant lists
+  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+  - Boilerplate inclusion language
+  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+DEDICATED element (counts):
+  A. A sub-objective, outcome, or output whose title/purpose names the subject
+  B. An indicator disaggregated by or targeting the subject
+  C. An activity whose primary purpose addresses the subject
+  D. A budget line or resource allocation for the subject
+  E. A quantifiable target for the subject
+
+Count of DEDICATED elements (A–E) — NOT raw mention count — drives Respuesta:
+  - 0 (only FRAMING mentions)                        → "No" or "Not Found"
+  - 1–2                                              → "Partial"
+  - 3–4                                              → "Partial" (or "Yes" only if substantive)
+  - 5 with substantive evidence                      → "Yes"
+
+If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Found". In "Evidencia", prefix each quote with [DEDICATED] or [FRAMING]. You may NOT justify "Partial" or "Yes" using only [FRAMING] quotes."""
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
             response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
@@ -6412,6 +6466,34 @@ The question names a specific subject or scope (e.g., "people with disabilities"
 3. If the named subject is absent from the document but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
 4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one).
 
+**EVIDENCE-ROLE FILTER & DECISION GATE FOR PART 2 (APPLY FIRST — DRIVES THE Respuesta):**
+
+Before choosing a Respuesta, classify every candidate evidence passage about the Part-2 subject (e.g., personas con discapacidad, género, pueblos indígenas, rural women) as either FRAMING or DEDICATED.
+
+FRAMING mention (does NOT count toward Part 2, even if the subject is named):
+  - Overall objective / impact statement naming multiple groups
+  - Stakeholder, consultation, or research participant lists
+  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+  - Boilerplate inclusion language
+  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+DEDICATED element (counts toward Part 2):
+  A. A sub-objective, outcome, or output whose title/purpose names the subject
+  B. An indicator disaggregated by or specifically targeting the subject
+  C. An activity whose primary purpose addresses the subject
+  D. A budget line or resource allocation for the subject
+  E. A quantifiable target for the subject
+
+Count of DEDICATED elements (A–E) — NOT raw mention count — drives Respuesta:
+  - 0 dedicated elements (only FRAMING mentions)      → "No" or "Not Found"
+  - 1–2 dedicated elements                            → "Partial"
+  - 3–4 dedicated elements                            → "Partial" (or "Yes" only if substantive and at-par with any claim/label in Part 1)
+  - 5 dedicated elements with substantive evidence    → "Yes"
+
+If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
+
+In "Evidencia", prefix each cited quote with [DEDICATED] or [FRAMING]. You may NOT justify "Partial" or "Yes" using only [FRAMING] quotes.
+
 Always respond in Spanish. Focus 95% on Part 2, 5% on how it relates to Part 1. Part 1 exists only for brief framing; do NOT analyze Part 1 independently."""
 
             # Part 2 listed FIRST to exploit primacy bias toward the priority clause.
@@ -6445,7 +6527,33 @@ The question names a specific subject/scope (e.g., a specific population like pe
 1. Identify the exact subject of the question before answering.
 2. Evidence about related-but-different subjects (other vulnerable populations, other groups, other sectors/regions/periods) does NOT count. Example: if the question is about disability, evidence about women, indigenous peoples, or youth does NOT satisfy it.
 3. If the named subject is absent but related subjects are extensively covered, Respuesta must be "Not Found" or "No" — NOT "Partial" and NOT "Yes". Under-inclusion is preferred over over-inclusion.
-4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one)."""
+4. In your Razonamiento, explicitly state which exact subject was analyzed and confirm the evidence concerns that subject (not a related one).
+
+**EVIDENCE-ROLE FILTER & DECISION GATE (APPLY FIRST — DRIVES Respuesta):**
+
+Classify every candidate evidence passage about the named specific subject as either FRAMING or DEDICATED.
+
+FRAMING mention (does NOT count, even if the subject is named):
+  - Overall objective / impact statement naming multiple groups
+  - Stakeholder, consultation, or research participant lists
+  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+  - Boilerplate inclusion language
+  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+DEDICATED element (counts):
+  A. A sub-objective, outcome, or output whose title/purpose names the subject
+  B. An indicator disaggregated by or targeting the subject
+  C. An activity whose primary purpose addresses the subject
+  D. A budget line or resource allocation for the subject
+  E. A quantifiable target for the subject
+
+Count of DEDICATED elements (A–E) — NOT raw mention count — drives Respuesta:
+  - 0 (only FRAMING mentions)                        → "No" or "Not Found"
+  - 1–2                                              → "Partial"
+  - 3–4                                              → "Partial" (or "Yes" only if substantive)
+  - 5 with substantive evidence                      → "Yes"
+
+If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Found". In "Evidencia", prefix each quote with [DEDICATED] or [FRAMING]. You may NOT justify "Partial" or "Yes" using only [FRAMING] quotes."""
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
             response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
@@ -6560,6 +6668,34 @@ The question names a specific subject/scope. Verify the document's answer did NO
 - If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
 - Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
 
+**EVIDENCE-ROLE FILTER & DECISION GATE FOR PART 2 (APPLY FIRST — DRIVES THE VERDICT):**
+
+Before choosing a verdict, classify every quoted or candidate evidence passage about the Part-2 subject (e.g., personas con discapacidad, género, pueblos indígenas) as either FRAMING or DEDICATED.
+
+FRAMING mention (does NOT count toward Part 2, even if the subject is named):
+  - Overall objective / impact statement naming multiple groups
+  - Stakeholder, consultation, or research participant lists
+  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+  - Boilerplate inclusion language
+  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+DEDICATED element (counts toward Part 2):
+  A. A sub-objective, outcome, or output whose title/purpose names the subject
+  B. An indicator disaggregated by or specifically targeting the subject
+  C. An activity whose primary purpose addresses the subject
+  D. A budget line or resource allocation for the subject
+  E. A quantifiable target for the subject
+
+Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
+  - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
+  - 1–2 dedicated elements                         → "Partial"
+  - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive and at-par with any label/claim in Part 1)
+  - 5 dedicated elements with substantive evidence → "Yes"
+
+If every citable evidence quote for Part 2 is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
+
+In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
+
 **VERDICT CONSISTENCY RULES (MANDATORY):**
 
 - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
@@ -6569,6 +6705,7 @@ The question names a specific subject/scope. Verify the document's answer did NO
   * evidence that is thin, indirect, or insufficient
   * Part 2 (specific focus) answered weakly while Part 1 was handled well
   If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+  **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the Part-2 subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
 - **No**: The document claims to address the question but fails to.
 - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
 - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
@@ -6642,6 +6779,34 @@ Evalúa críticamente:
                     **SCOPE LOCK CHECK (CRITICAL):**
                     The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
 
+                    **EVIDENCE-ROLE FILTER & DECISION GATE (APPLY FIRST — DRIVES THE VERDICT):**
+
+                    Before choosing a verdict, classify every quoted or candidate evidence passage about the named specific subject as either FRAMING or DEDICATED.
+
+                    FRAMING mention (does NOT count, even if the subject is named):
+                      - Overall objective / impact statement naming multiple groups
+                      - Stakeholder, consultation, or research participant lists
+                      - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+                      - Boilerplate inclusion language
+                      - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+                    DEDICATED element (counts):
+                      A. A sub-objective, outcome, or output whose title/purpose names the subject
+                      B. An indicator disaggregated by or specifically targeting the subject
+                      C. An activity whose primary purpose addresses the subject
+                      D. A budget line or resource allocation for the subject
+                      E. A quantifiable target for the subject
+
+                    Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
+                      - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
+                      - 1–2 dedicated elements                         → "Partial"
+                      - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive)
+                      - 5 dedicated elements with substantive evidence → "Yes"
+
+                    If every citable evidence quote is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named.
+
+                    In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
+
                     **VERDICT CONSISTENCY RULES (MANDATORY):**
 
                     - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
@@ -6650,6 +6815,7 @@ Evalúa críticamente:
                       * superficial or generic treatment
                       * evidence that is thin, indirect, or insufficient
                       If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+                      **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the named subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
                     - **No**: The document claims to address the question but fails to.
                     - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
                     - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
@@ -6774,6 +6940,34 @@ The question names a specific subject/scope. Verify the document's answer did NO
 - If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No".
 - Under-inclusion (acknowledging the specific subject is not covered) is correct. Over-inclusion (answering about a broader category) is incorrect.
 
+**EVIDENCE-ROLE FILTER & DECISION GATE FOR PART 2 (APPLY FIRST — DRIVES THE VERDICT):**
+
+Before choosing a verdict, classify every quoted or candidate evidence passage about the Part-2 subject (e.g., personas con discapacidad, género, pueblos indígenas) as either FRAMING or DEDICATED.
+
+FRAMING mention (does NOT count toward Part 2, even if the subject is named):
+  - Overall objective / impact statement naming multiple groups
+  - Stakeholder, consultation, or research participant lists
+  - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+  - Boilerplate inclusion language
+  - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+DEDICATED element (counts toward Part 2):
+  A. A sub-objective, outcome, or output whose title/purpose names the subject
+  B. An indicator disaggregated by or specifically targeting the subject
+  C. An activity whose primary purpose addresses the subject
+  D. A budget line or resource allocation for the subject
+  E. A quantifiable target for the subject
+
+Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
+  - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
+  - 1–2 dedicated elements                         → "Partial"
+  - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive and at-par with any label/claim in Part 1)
+  - 5 dedicated elements with substantive evidence → "Yes"
+
+If every citable evidence quote for Part 2 is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named. Passing mentions in stakeholder lists, consultation rosters, or "among others" phrases DO NOT qualify for "Partial".
+
+In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
+
 **VERDICT CONSISTENCY RULES (MANDATORY):**
 
 - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
@@ -6783,6 +6977,7 @@ The question names a specific subject/scope. Verify the document's answer did NO
   * evidence that is thin, indirect, or insufficient
   * Part 2 (specific focus) answered weakly while Part 1 was handled well
   If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+  **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the Part-2 subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
 - **No**: The document claims to address the question but fails to.
 - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
 - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
@@ -6853,6 +7048,34 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                     **SCOPE LOCK CHECK (CRITICAL):**
                     The question names a specific subject/scope. Verify the document's answer did NOT substitute that subject for a broader category (e.g., treating "disability" as "vulnerable populations" and citing evidence about women or indigenous peoples). If evidence refers to subjects related-to-but-distinct-from the exact named subject, this is a CRITICAL FAILURE: flag it explicitly and recommend re-grading to "Not Found" / "No". Under-inclusion is correct; over-inclusion is incorrect.
 
+                    **EVIDENCE-ROLE FILTER & DECISION GATE (APPLY FIRST — DRIVES THE VERDICT):**
+
+                    Before choosing a verdict, classify every quoted or candidate evidence passage about the named specific subject as either FRAMING or DEDICATED.
+
+                    FRAMING mention (does NOT count, even if the subject is named):
+                      - Overall objective / impact statement naming multiple groups
+                      - Stakeholder, consultation, or research participant lists
+                      - Monitoring scope enumerations ("...among others", "...including X, Y, Z")
+                      - Boilerplate inclusion language
+                      - Any passage where the subject appears in a list of 3+ groups without dedicated follow-up
+
+                    DEDICATED element (counts):
+                      A. A sub-objective, outcome, or output whose title/purpose names the subject
+                      B. An indicator disaggregated by or specifically targeting the subject
+                      C. An activity whose primary purpose addresses the subject
+                      D. A budget line or resource allocation for the subject
+                      E. A quantifiable target for the subject
+
+                    Count of DEDICATED elements (A–E) — NOT raw mention count — drives the verdict:
+                      - 0 dedicated elements (only FRAMING mentions)   → "No" or "Not Found"
+                      - 1–2 dedicated elements                         → "Partial"
+                      - 3–4 dedicated elements                         → "Partial" (or "Yes" only if substantive)
+                      - 5 dedicated elements with substantive evidence → "Yes"
+
+                    If every citable evidence quote is a FRAMING mention, the verdict MUST be "No" or "Not Found" — regardless of how many times the subject is named.
+
+                    In your Justificación, state the DEDICATED count explicitly (e.g., "Elementos dedicados para [sujeto]: 0/A–E; todas las menciones son FRAMING").
+
                     **VERDICT CONSISTENCY RULES (MANDATORY):**
 
                     - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
@@ -6861,6 +7084,7 @@ Evalúa críticamente: ¿La respuesta aborda adecuadamente la Parte 2 (pregunta 
                       * superficial or generic treatment
                       * evidence that is thin, indirect, or insufficient
                       If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
+                      **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the named subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
                     - **No**: The document claims to address the question but fails to.
                     - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
                     - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
