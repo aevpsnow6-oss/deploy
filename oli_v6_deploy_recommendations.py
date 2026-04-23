@@ -1369,7 +1369,7 @@ with tab1:
             # --- LEFT: Deep Analysis ---
             with col_deep:
                 st.markdown("#### 🧠 Análisis Profundo")
-                st.caption("Evalúa coherencia, calidad e innovación de planes de acción.")
+                st.caption("Evalúa innovación de planes de acción.")
                 
                 # Prepare Deep Data
                 df_deep_ready = df_ai_base.copy()
