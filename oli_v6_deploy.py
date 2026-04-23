@@ -7099,16 +7099,25 @@ def synthesize_subsection_analysis(subsection_id, subsection_questions_df):
         prompt = f"""Based on the following individual question answers from subsection {subsection_id} of a document evaluation, 
 synthesize a comprehensive subsection-level analysis.
 
+**IMPORTANT — STRUCTURED DATA IN EACH QUESTION:**
+Each question's Razonamiento may begin with an enumeration line in the form:
+  "Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=.... TOTAL=<N>."
+where A=sub-objetivo/output, B=indicador, C=actividad dedicada, D=línea presupuestaria, E=meta cuantificable.
+These enumerations are the authoritative evidence base — you MUST aggregate them, not restate them.
+
 Subsection {subsection_id} - Individual Q&A:
 {qa_context}
 
 Provide a concise subsection-level analysis (1-2 paragraphs) that:
-1. Integrates findings across all questions in this subsection
-2. Identifies key strengths and gaps
-3. Provides a clear assessment
+1. Identifies the specific subject(s) evaluated across the questions (e.g., personas con discapacidad, género).
+2. Aggregates the A–E pattern: for each element (A through E), state how many questions found it presente vs ausente. Name the systematic gap (e.g., "en 4 de 5 preguntas la línea presupuestaria y la meta cuantificable están ausentes").
+3. Synthesizes 2–3 concrete, evidence-backed strengths or gaps.
+4. Provides a clear overall assessment (Yes / Partial / No distribution across the subsection).
+
+If different questions in the subsection address different subjects, aggregate A–E separately per subject.
 
 Format as JSON with exactly this structure:
-{{"subsection_analysis": "your analysis here (1-2 paragraphs)"}}
+{{"subsection_analysis": "Spanish text, 1-2 paragraphs, ending with the aggregated A-E summary"}}
 
 Return ONLY the JSON, no other text."""
 
@@ -7148,16 +7157,19 @@ def synthesize_section_analysis(section_num, subsection_analyses_dict):
         prompt = f"""Based on the following subsection analyses from section {section_num} of a document evaluation, 
 synthesize a comprehensive section-level analysis.
 
+**IMPORTANT — STRUCTURED DATA IN EACH SUBSECTION:**
+Each subsection analysis may include an aggregated A–E summary (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable, per specific subject such as personas con discapacidad, género, pueblos indígenas). Roll these up at the section level: identify which elements are systematically missing across the entire section, and for which subjects.
+
 Section {section_num} - Subsection Analyses:
 {subsection_context}
 
 Provide a detailed section-level analysis (2-3 paragraphs) that:
-1. Integrates key findings across all subsections
-2. Identifies overarching patterns, strengths, and gaps
-3. Provides strategic, actionable insights for improvement
+1. Rolls up the A–E patterns across subsections: which dedicated elements are consistently absent for which specific subjects?
+2. Identifies overarching structural gaps (e.g., "budget allocation and quantifiable targets are absent across inclusion-focused questions in this section").
+3. Provides strategic recommendations prioritized by which missing elements would have the largest effect if added.
 
 Format as JSON with exactly this structure:
-{{"section_analysis": "your detailed analysis here (2-3 paragraphs)"}}
+{{"section_analysis": "Spanish text, 2-3 paragraphs, explicitly naming which A-E elements are the most common gaps"}}
 
 Return ONLY the JSON, no other text."""
 
@@ -7197,17 +7209,22 @@ def synthesize_critical_evaluation_subsection(subsection_id, critical_opinions_d
         prompt = f"""Based on the following individual critical evaluations from subsection {subsection_id}, 
 synthesize a comprehensive subsection-level critical assessment.
 
+**IMPORTANT — STRUCTURED DATA IN EACH CRITICAL EVALUATION:**
+Each critical evaluation may begin with an enumeration line in the form:
+  "Elementos dedicados [Parte 2] [<sujeto>]: A=..., B=..., C=..., D=..., E=.... TOTAL=<N>."
+and may include audit notes like "[Ajuste automático: ... obliga a 'No']" or "[Cláusula general ignorada: ...]" or "[Downgrade por evidencia FRAMING: ...]". Read these as authoritative — they record where the automated grading intervened.
+
 Subsection {subsection_id} - Individual Critical Evaluations:
 {critical_context}
 
 Provide a concise subsection-level critical assessment (1-2 paragraphs) that:
-1. Integrates critical findings across all questions in this subsection
-2. Identifies major gaps, risks, and inadequacies
-3. Highlights patterns in insufficient responses
-4. Provides clear recommendations for improvement
+1. Aggregates the A–E pattern across the subsection and identifies the most common absent elements per specific subject.
+2. Counts and reports how many questions received an automatic verdict override (e.g., "3 de 5 preguntas tuvieron veredicto ajustado a 'No' por TOTAL=0") — this is a strong signal of systematic weakness.
+3. Flags FRAMING-evidence downgrades and cláusula-general ignoradas that reveal where the document relies on boilerplate instead of dedicated attention.
+4. Recommends the 2–3 highest-priority interventions for the subsection (tied to the missing A–E elements).
 
 Format as JSON with exactly this structure:
-{{"critical_evaluation": "your critical assessment here (1-2 paragraphs)"}}
+{{"critical_evaluation": "Spanish text, 1-2 paragraphs, including explicit counts of overrides and the dominant missing element"}}
 
 Return ONLY the JSON, no other text."""
 
@@ -7247,17 +7264,20 @@ def synthesize_critical_evaluation_section(section_num, critical_subsection_dict
         prompt = f"""Based on the following subsection critical evaluations from section {section_num}, 
 synthesize a comprehensive section-level critical assessment.
 
+**IMPORTANT — STRUCTURED DATA IN EACH SUBSECTION EVALUATION:**
+Each subsection critical evaluation may reference A–E aggregated patterns (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable) and may report automatic verdict overrides ("TOTAL=0 obliga a 'No'"), FRAMING downgrades, or cláusula-general ignoradas. Treat these as hard signals, not narrative flourishes.
+
 Section {section_num} - Subsection Critical Evaluations:
 {critical_context}
 
 Provide a detailed section-level critical assessment (2-3 paragraphs) that:
-1. Integrates critical findings across all subsections
-2. Identifies overarching gaps, risks, and systemic inadequacies
-3. Highlights critical patterns of insufficient responses
-4. Provides strategic recommendations for improving the overall section
+1. Rolls up the A–E absences across the entire section: which elements are most systematically missing, and for which specific subjects?
+2. Counts and reports the total automatic verdict overrides across the section (a high count signals a systemic issue, not isolated gaps).
+3. Identifies cross-subsection patterns of reliance on FRAMING mentions or general-clause substitution.
+4. Provides a prioritized list of strategic actions — ordered by which missing elements would close the most gaps if added.
 
 Format as JSON with exactly this structure:
-{{"critical_evaluation": "your critical assessment here (2-3 paragraphs)"}}
+{{"critical_evaluation": "Spanish text, 2-3 paragraphs, grounded in the aggregated A-E counts and override counts"}}
 
 Return ONLY the JSON, no other text."""
 
@@ -8153,6 +8173,47 @@ with tab1:
         
         # Display results
         st.markdown("### 📊 Resultados del análisis")
+        # Interpretation guide — documents the A-E framework and verdict mapping.
+        with st.expander("📖 ¿Cómo interpretar los resultados?", expanded=False):
+            st.markdown("""
+**Marco de evaluación A–E (para preguntas con sujeto específico)**
+
+Cuando la pregunta nombra un sujeto o tema específico (ej. *personas con discapacidad*, *género*, *pueblos indígenas*, *mujeres rurales*), el sistema evalúa cinco elementos dedicados a ese sujeto:
+
+- **A. Sub-objetivo / output** cuyo título o propósito nombra explícitamente al sujeto
+- **B. Indicador** desagregado por o específico para el sujeto
+- **C. Actividad** cuyo propósito principal es abordar al sujeto (no mención incidental)
+- **D. Línea presupuestaria** o asignación de recursos específica para el sujeto
+- **E. Meta cuantificable** para el sujeto (ej. "N personas con discapacidad beneficiadas")
+
+Cada pregunta muestra una línea de enumeración al inicio de la Razonamiento:
+
+> `Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=... . TOTAL=<N>.`
+
+El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
+
+| TOTAL | Respuesta | Interpretación |
+|-------|-----------|----------------|
+| 0 | **No** (o Not Found) | El sujeto no recibe atención dedicada; las menciones son solo contextuales |
+| 1–2 | **Partial** | Inclusión parcial; existen algunos elementos dedicados pero faltan otros esenciales |
+| 3–4 | **Partial** (o Yes si la evidencia es sustantiva y al-par con Parte 1) | Inclusión mayormente integrada |
+| 5 | **Yes** | Inclusión completa y verificable |
+
+**Qué cuenta como DEDICATED vs FRAMING**
+
+- **DEDICATED** (cuenta para A–E): una frase que nombra al sujeto específicamente Y describe un elemento concreto (un output, indicador, actividad, línea de presupuesto, meta). Ejemplo: *"Output 2.3: 100 personas con discapacidad capacitadas en derechos laborales para 2027."*
+- **FRAMING** (NO cuenta): menciones al sujeto dentro de listas de grupos, declaraciones generales o lenguaje de inclusión genérico. Ejemplos: *"incluyendo personas con discapacidad, mujeres, pueblos indígenas, entre otros"*, o *"consultas con organizaciones de personas con discapacidad"* dentro de una lista de actores.
+
+**Notas de auditoría que puede ver en la Razonamiento**
+
+- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el sistema detectó que el modelo hedged y corrigió el veredicto automáticamente.
+- `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
+- `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
+
+**Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
+""")
+
+
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -8225,6 +8286,47 @@ with tab1:
             
             # Display persisted results
             st.markdown("### 📊 Resultados del análisis (guardados)")
+            # Interpretation guide — documents the A-E framework and verdict mapping.
+            with st.expander("📖 ¿Cómo interpretar los resultados?", expanded=False):
+                st.markdown("""
+**Marco de evaluación A–E (para preguntas con sujeto específico)**
+
+Cuando la pregunta nombra un sujeto o tema específico (ej. *personas con discapacidad*, *género*, *pueblos indígenas*, *mujeres rurales*), el sistema evalúa cinco elementos dedicados a ese sujeto:
+
+- **A. Sub-objetivo / output** cuyo título o propósito nombra explícitamente al sujeto
+- **B. Indicador** desagregado por o específico para el sujeto
+- **C. Actividad** cuyo propósito principal es abordar al sujeto (no mención incidental)
+- **D. Línea presupuestaria** o asignación de recursos específica para el sujeto
+- **E. Meta cuantificable** para el sujeto (ej. "N personas con discapacidad beneficiadas")
+
+Cada pregunta muestra una línea de enumeración al inicio de la Razonamiento:
+
+> `Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=... . TOTAL=<N>.`
+
+El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
+
+| TOTAL | Respuesta | Interpretación |
+|-------|-----------|----------------|
+| 0 | **No** (o Not Found) | El sujeto no recibe atención dedicada; las menciones son solo contextuales |
+| 1–2 | **Partial** | Inclusión parcial; existen algunos elementos dedicados pero faltan otros esenciales |
+| 3–4 | **Partial** (o Yes si la evidencia es sustantiva y al-par con Parte 1) | Inclusión mayormente integrada |
+| 5 | **Yes** | Inclusión completa y verificable |
+
+**Qué cuenta como DEDICATED vs FRAMING**
+
+- **DEDICATED** (cuenta para A–E): una frase que nombra al sujeto específicamente Y describe un elemento concreto (un output, indicador, actividad, línea de presupuesto, meta). Ejemplo: *"Output 2.3: 100 personas con discapacidad capacitadas en derechos laborales para 2027."*
+- **FRAMING** (NO cuenta): menciones al sujeto dentro de listas de grupos, declaraciones generales o lenguaje de inclusión genérico. Ejemplos: *"incluyendo personas con discapacidad, mujeres, pueblos indígenas, entre otros"*, o *"consultas con organizaciones de personas con discapacidad"* dentro de una lista de actores.
+
+**Notas de auditoría que puede ver en la Razonamiento**
+
+- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el sistema detectó que el modelo hedged y corrigió el veredicto automáticamente.
+- `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
+- `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
+
+**Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
+""")
+
+
             
             if doc_stats:
                 st.info(f"""
