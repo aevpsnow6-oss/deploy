@@ -131,6 +131,8 @@ CRITIC_SCHEMA_TWO_PART = {
         "additionalProperties": False,
         "properties": {
             "subject_part2": {"type": "string"},
+            "named_subject_specific": {"type": "string"},
+            "general_clause_ignored": {"type": "string"},
             "dedicated_A_sub_objective": {"type": "string", "enum": ["presente", "ausente"]},
             "dedicated_A_evidence": {"type": "string"},
             "dedicated_B_indicator": {"type": "string", "enum": ["presente", "ausente"]},
@@ -148,6 +150,7 @@ CRITIC_SCHEMA_TWO_PART = {
         },
         "required": [
             "subject_part2",
+            "named_subject_specific", "general_clause_ignored",
             "dedicated_A_sub_objective", "dedicated_A_evidence",
             "dedicated_B_indicator", "dedicated_B_evidence",
             "dedicated_C_activity", "dedicated_C_evidence",
@@ -166,6 +169,8 @@ CRITIC_SCHEMA_SINGLE = {
         "additionalProperties": False,
         "properties": {
             "subject": {"type": "string"},
+            "named_subject_specific": {"type": "string"},
+            "general_clause_ignored": {"type": "string"},
             "dedicated_A_sub_objective": {"type": "string", "enum": ["presente", "ausente"]},
             "dedicated_A_evidence": {"type": "string"},
             "dedicated_B_indicator": {"type": "string", "enum": ["presente", "ausente"]},
@@ -183,6 +188,7 @@ CRITIC_SCHEMA_SINGLE = {
         },
         "required": [
             "subject",
+            "named_subject_specific", "general_clause_ignored",
             "dedicated_A_sub_objective", "dedicated_A_evidence",
             "dedicated_B_indicator", "dedicated_B_evidence",
             "dedicated_C_activity", "dedicated_C_evidence",
@@ -258,7 +264,13 @@ def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
     actual_total = sum(1 for ltr in letters if states[ltr] == 'presente')
 
     model_verdict = (result.get('verdict') or '').strip() or 'No'
-    subject = (result.get('subject_part2') or result.get('subject') or 'el sujeto específico').strip()
+    subject = (
+        result.get('named_subject_specific')
+        or result.get('subject_part2')
+        or result.get('subject')
+        or 'el sujeto específico'
+    ).strip()
+    ignored = (result.get('general_clause_ignored') or '').strip()
 
     # Layer 2: verdict override at TOTAL=0.
     override_note = ''
@@ -270,6 +282,8 @@ def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
 
     if downgrades:
         override_note += f" [Downgrade por evidencia FRAMING: {'; '.join(downgrades)}.]"
+    if ignored:
+        override_note += f" [Cláusula general ignorada: '{ignored}'.]"
 
     conteo_line = (
         f"Elementos dedicados Parte 2 [{subject}]: "
@@ -6349,7 +6363,46 @@ def parse_two_part_question(question):
     """
     import re
 
-    if not isinstance(question, str) or question.count('?') < 2:
+    if not isinstance(question, str):
+        return {'is_two_part': False, 'part1': None, 'part2': None, 'full_question': question}
+
+    # New: statement-then-question form. "X clause. ¿Specific clause?" — total ? count = 1
+    # but the period+¿ boundary makes it clearly two-clause.
+    m = re.search(r'^([^¿]+[\.:])\s*¿\s*(.+\?)\s*$', question.strip(), re.UNICODE)
+    if m:
+        p1 = m.group(1).strip().rstrip('.:').strip()
+        p2 = '¿' + m.group(2).strip()
+        if len(p1) > 8 and len(p2) > 8:
+            return {'is_two_part': True, 'part1': p1, 'part2': p2, 'full_question': question}
+
+    # New: single-? conjunctive split. "X y se integra Y" — one question mark but two
+    # clauses joined by " y (se|la|el|los|las) ". Fire only when the question mentions a
+    # specific subject marker (disability, gender, indigenous, etc.) to avoid over-splitting.
+    specific_markers = [
+        'discapacidad', 'género', 'genero', 'mujeres', 'indígena', 'indigena',
+        'juventud', 'jóvenes', 'jovenes', 'afro', 'migrante', 'rural',
+        'infancia', 'niñas', 'niños', 'lgbt', 'personas con discapacidad',
+    ]
+    if question.count('?') < 2:
+        lower = question.lower()
+        if any(mk in lower for mk in specific_markers):
+            # Find the last " y (se|la|el|los|las) " split point. "Last" so we keep the
+            # specific clause intact on the right side.
+            split_m = None
+            for m2 in re.finditer(r'\s+y\s+(se|la|el|los|las|con|de|una?)\s+', question, re.IGNORECASE | re.UNICODE):
+                split_m = m2
+            if split_m:
+                p1 = question[:split_m.start()].strip()
+                p2 = question[split_m.end():].strip()
+                # Ensure each side is substantive and the specific marker ended up on the right.
+                if len(p1) > 8 and len(p2) > 8 and any(mk in p2.lower() for mk in specific_markers):
+                    if not p1.endswith('?'):
+                        p1 = p1.rstrip('.,;:') + '?'
+                    if not p2.endswith('?'):
+                        p2 = p2.rstrip('.,;:') + '?'
+                    if not p2.startswith('¿'):
+                        p2 = '¿' + p2[0].lower() + p2[1:] if p2 else p2
+                    return {'is_two_part': True, 'part1': p1, 'part2': p2, 'full_question': question}
         return {'is_two_part': False, 'part1': None, 'part2': None, 'full_question': question}
 
     # Pattern 1: Explicit keyword separator ("específicamente", "además", ...).
@@ -6861,7 +6914,29 @@ Completa los campos estructurados. Para CADA elemento A–E, decide presente/aus
 
 _CRITIC_TWO_PART_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
 
-You assess whether a document adequately addresses the SPECIFIC Part-2 subject of a two-part question. Your output is a structured JSON (enforced by schema). The verdict is derived mechanically from the A–E count.
+You assess whether a document adequately addresses the SPECIFIC subject of the question. Your output is a structured JSON (enforced by schema). The verdict is derived mechanically from the A–E count.
+
+**SUBJECT EXTRACTION (MANDATORY — DO THIS FIRST):**
+
+Before filling any A–E field, populate:
+- named_subject_specific: the MOST SPECIFIC subject the question asks about. If the question names a target population or theme (personas con discapacidad, género, pueblos indígenas, mujeres rurales, juventud, afrodescendientes, migrantes), that is the subject — always. Never use the broader framing clause.
+- general_clause_ignored: if the question has a broader framing clause (e.g., "¿se identifica el objetivo general del programa/proyecto?"), put its text here. This clause is IGNORED in the evaluation. If the question has no broader clause, set this to "".
+
+**EXAMPLES (study these carefully):**
+
+Q: "¿Se identifica claramente el objetivo general del programa/proyecto y se integra la inclusión de personas con discapacidad a la par de la etiqueta CPO?"
+→ named_subject_specific: "personas con discapacidad / inclusión de la discapacidad a la par de la etiqueta CPO"
+→ general_clause_ignored: "¿Se identifica claramente el objetivo general del programa/proyecto?"
+
+Q: "Se identifica el objetivo general. ¿Se aborda la inclusión de personas con discapacidad?"
+→ named_subject_specific: "personas con discapacidad"
+→ general_clause_ignored: "Se identifica el objetivo general."
+
+Q: "¿El programa incluye actividades dirigidas a personas con discapacidad?"
+→ named_subject_specific: "personas con discapacidad"
+→ general_clause_ignored: ""
+
+NEVER set named_subject_specific to "objetivo general", "marco lógico", or any other structural/framing concept when the question also names a population or theme. The population/theme ALWAYS wins.
 
 **WHAT IS A "DEDICATED" ELEMENT FOR PART 2:**
 For the EXACT named Part-2 subject (e.g., "personas con discapacidad", "género", "pueblos indígenas"), decide presente/ausente for each:
@@ -6907,6 +6982,28 @@ Focus 99% on Part 2. Part 1 is framing — do NOT evaluate it, do NOT count it t
 _CRITIC_SINGLE_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
 
 You assess whether a document adequately addresses the SPECIFIC subject named in the question. Your output is a structured JSON (enforced by schema). The verdict is derived mechanically from the A–E count.
+
+**SUBJECT EXTRACTION (MANDATORY — DO THIS FIRST):**
+
+Before filling any A–E field, populate:
+- named_subject_specific: the MOST SPECIFIC subject the question asks about. If the question names a target population or theme (personas con discapacidad, género, pueblos indígenas, mujeres rurales, juventud, afrodescendientes, migrantes), that is the subject — always. Never use the broader framing clause.
+- general_clause_ignored: if the question has a broader framing clause (e.g., "¿se identifica el objetivo general del programa/proyecto?"), put its text here. This clause is IGNORED in the evaluation. If the question has no broader clause, set this to "".
+
+**EXAMPLES (study these carefully):**
+
+Q: "¿Se identifica claramente el objetivo general del programa/proyecto y se integra la inclusión de personas con discapacidad a la par de la etiqueta CPO?"
+→ named_subject_specific: "personas con discapacidad / inclusión de la discapacidad a la par de la etiqueta CPO"
+→ general_clause_ignored: "¿Se identifica claramente el objetivo general del programa/proyecto?"
+
+Q: "Se identifica el objetivo general. ¿Se aborda la inclusión de personas con discapacidad?"
+→ named_subject_specific: "personas con discapacidad"
+→ general_clause_ignored: "Se identifica el objetivo general."
+
+Q: "¿El programa incluye actividades dirigidas a personas con discapacidad?"
+→ named_subject_specific: "personas con discapacidad"
+→ general_clause_ignored: ""
+
+NEVER set named_subject_specific to "objetivo general", "marco lógico", or any other structural/framing concept when the question also names a population or theme. The population/theme ALWAYS wins.
 
 **WHAT IS A "DEDICATED" ELEMENT:**
 For the EXACT named subject of the question, decide presente/ausente for each:
