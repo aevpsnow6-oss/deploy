@@ -6720,13 +6720,11 @@ If the answer to either is YES AND the Part-2 DEDICATED count is 0, the verdict 
 **VERDICT CONSISTENCY RULES (MANDATORY):**
 
 - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
-- **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+- **Partial**: AVAILABLE ONLY when the Part-2 DEDICATED TOTAL (A–E count) is 1, 2, 3, or 4. **If TOTAL = 0, Partial is PROHIBITED — verdict MUST be "No" or "Not Found".** Within the 1–4 eligibility band, Partial is REQUIRED when any of the following is true:
   * a missing required detail
   * superficial or generic treatment
   * evidence that is thin, indirect, or insufficient
-  * Part 2 (specific focus) answered weakly while Part 1 was handled well
-  If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
-  **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the Part-2 subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
+  Do NOT use the "original answer was Yes → must downgrade to Partial" rationale if TOTAL = 0; in that case the correct downgrade is to No, not Partial.
 - **No**: The document claims to address the question but fails to.
 - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
 - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
@@ -6744,7 +6742,21 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 **BODY STRUCTURE (MANDATORY):**
 After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
 
-(1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps in Part 2. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
+(1) **Justification.** The FIRST sentence MUST be the enumeration line in this exact format:
+
+"Elementos dedicados Parte 2 [sujeto]: A=<presente|ausente>, B=<presente|ausente>, C=<presente|ausente>, D=<presente|ausente>, E=<presente|ausente>. TOTAL=<0|1|2|3|4|5>."
+
+Where A–E refer to the DECISION GATE elements (A=sub-objetivo/output; B=indicador; C=actividad dedicada; D=línea presupuestaria; E=meta cuantificable). You MUST commit to presente/ausente for EACH letter — do NOT write "(ausente D/E)" or any abbreviated form. All five letters must appear.
+
+The VEREDICTO line MUST be consistent with TOTAL:
+  TOTAL=0 → VEREDICTO = "No" (or "Not Found" if subject is completely unmentioned)
+  TOTAL=1-2 → VEREDICTO = "Partial"
+  TOTAL=3-4 → VEREDICTO = "Partial" (or "Yes" only if evidence is substantive and at-par)
+  TOTAL=5 → VEREDICTO = "Yes"
+
+If your CONTEO shows TOTAL=0, your VEREDICTO line MUST say "No" or "Not Found" — if it says "Partial", the output is INVALID and you must rewrite it.
+
+After the enumeration line, lead the justification body with "El No se asignó debido a…" / "Se asignó Partial porque…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific Part-2 gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT open with Part-1 praise ("el Objetivo General está claramente enunciado…", "hay múltiples actividades e indicadores…"). Do NOT use "sin embargo" contrastive structure where Part 1 is praised before flagging Part-2 gaps. Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado", "si bien…"). In THIS part, do NOT recommend inclusions — only flag what is missing.
 
 (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
 
@@ -7013,13 +7025,11 @@ If the answer to either is YES AND the Part-2 DEDICATED count is 0, the verdict 
 **VERDICT CONSISTENCY RULES (MANDATORY):**
 
 - **Yes**: The document fully and concretely addresses the question. No material gaps, no missing required elements, evidence is substantive.
-- **Partial**: REQUIRED whenever you identify ANY of the following — even if the main claim is directionally correct:
+- **Partial**: AVAILABLE ONLY when the Part-2 DEDICATED TOTAL (A–E count) is 1, 2, 3, or 4. **If TOTAL = 0, Partial is PROHIBITED — verdict MUST be "No" or "Not Found".** Within the 1–4 eligibility band, Partial is REQUIRED when any of the following is true:
   * a missing required detail
   * superficial or generic treatment
   * evidence that is thin, indirect, or insufficient
-  * Part 2 (specific focus) answered weakly while Part 1 was handled well
-  If the original answer was "Yes" and your body flags any shortcoming, the verdict MUST be "Partial" — never "Yes" and never "Keep".
-  **BUT**: If the DECISION GATE above yields 0 DEDICATED elements for the Part-2 subject, the verdict MUST be "No" or "Not Found" — NEVER "Partial", regardless of how many FRAMING mentions exist. The DECISION GATE overrides this Partial rule.
+  Do NOT use the "original answer was Yes → must downgrade to Partial" rationale if TOTAL = 0; in that case the correct downgrade is to No, not Partial.
 - **No**: The document claims to address the question but fails to.
 - **Not Found**: The subject is not covered, or SCOPE LOCK fails.
 - **Keep**: ONLY when the original answer is fully adequate AND your body contains no substantive critique. If you flag any issue in the body, you may NOT output "Keep".
@@ -7037,7 +7047,21 @@ VEREDICTO: <Yes|No|Partial|Not Found|Keep>
 **BODY STRUCTURE (MANDATORY):**
 After the verdict line, write a terse Spanish body (max 180 words total) in TWO parts:
 
-(1) **Justification.** Lead with "Se asignó Partial porque…" / "El No se asignó debido a…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific gaps in Part 2. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado"). In THIS part, do NOT recommend inclusions — only flag what is missing.
+(1) **Justification.** The FIRST sentence MUST be the enumeration line in this exact format:
+
+"Elementos dedicados Parte 2 [sujeto]: A=<presente|ausente>, B=<presente|ausente>, C=<presente|ausente>, D=<presente|ausente>, E=<presente|ausente>. TOTAL=<0|1|2|3|4|5>."
+
+Where A–E refer to the DECISION GATE elements (A=sub-objetivo/output; B=indicador; C=actividad dedicada; D=línea presupuestaria; E=meta cuantificable). You MUST commit to presente/ausente for EACH letter — do NOT write "(ausente D/E)" or any abbreviated form. All five letters must appear.
+
+The VEREDICTO line MUST be consistent with TOTAL:
+  TOTAL=0 → VEREDICTO = "No" (or "Not Found" if subject is completely unmentioned)
+  TOTAL=1-2 → VEREDICTO = "Partial"
+  TOTAL=3-4 → VEREDICTO = "Partial" (or "Yes" only if evidence is substantive and at-par)
+  TOTAL=5 → VEREDICTO = "Yes"
+
+If your CONTEO shows TOTAL=0, your VEREDICTO line MUST say "No" or "Not Found" — if it says "Partial", the output is INVALID and you must rewrite it.
+
+After the enumeration line, lead the justification body with "El No se asignó debido a…" / "Se asignó Partial porque…" / "Se mantiene la calificación dado que…". Explain WHY the verdict was assigned by naming the specific Part-2 gaps. Flag missing elements directly as missing: "Falta X", "No se aborda Y", "Ausente Z", "No se menciona W". Do NOT open with Part-1 praise ("el Objetivo General está claramente enunciado…", "hay múltiples actividades e indicadores…"). Do NOT use "sin embargo" contrastive structure where Part 1 is praised before flagging Part-2 gaps. Do NOT write "La respuesta es adecuada/inadecuada porque…" — the verdict is the evaluation; the body explains it. Do NOT use hedging softeners ("en cierta medida", "aunque de forma general", "podría considerarse adecuado", "si bien…"). In THIS part, do NOT recommend inclusions — only flag what is missing.
 
 (2) **Recomendaciones para mejorar la calificación** (ONLY if verdict is Partial, No, or Not Found). End the body with a separate, final sentence starting with "**Para mejorar la calificación** debiese incluirse…" followed by a firm, specific list of the concrete items that would be required to reach "Yes" (example: "un presupuesto desglosado por objetivo, actividades específicas para igualdad de género, indicadores de desempeño medibles para la población con discapacidad"). This is the ONLY place where recommendation verbs ("debiese incluirse", "corresponde incluir", "es necesario añadir") are permitted. If the verdict is Yes or Keep, OMIT this block entirely.
 
