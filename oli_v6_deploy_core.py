@@ -2262,7 +2262,7 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
 
 **Notas de auditoría que puede ver en la Razonamiento**
 
-- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el sistema detectó que el modelo hedged y corrigió el veredicto automáticamente.
+- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el veredicto propuesto no correspondía al conteo de elementos dedicados y el sistema lo corrigió automáticamente.
 - `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
 - `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
 
@@ -2375,7 +2375,7 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
 
 **Notas de auditoría que puede ver en la Razonamiento**
 
-- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el sistema detectó que el modelo hedged y corrigió el veredicto automáticamente.
+- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el veredicto propuesto no correspondía al conteo de elementos dedicados y el sistema lo corrigió automáticamente.
 - `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
 - `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
 
