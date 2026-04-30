@@ -7747,6 +7747,60 @@ Distribución de respuestas:
     zip_buffer.seek(0)
     return zip_buffer
 
+TAB1_RESULTS_INTERPRETATION_MD = """
+**Cómo decidir qué regla aplica**
+
+La app usa dos criterios de interpretación en Tab 1:
+
+| Tipo de pregunta | Regla aplicada | Línea de auditoría en el razonamiento |
+|-------|-------|-------|
+| Tema transversal configurado | Regla reducida A/B | `Criterios transversales Parte 2 [...]` |
+| Otros sujetos específicos | Marco general A-E | `Elementos dedicados Parte 2 [...]` |
+
+**Temas transversales configurados**
+
+Para *género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, y *sostenibilidad medioambiental*, la app NO usa el total A-E. Usa esta regla:
+
+| Criterio | Qué se evalúa |
+|-------|-------|
+| **A** | Presencia operacional del tema en objetivo, producto o actividad |
+| **B** | Presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente |
+
+| Resultado | Criterio |
+|-------|-------|
+| **Yes** | A y B están presentes |
+| **Partial** | A o B está presente |
+| **No** | No están presentes ni A ni B |
+
+**Marco general A-E para otros sujetos específicos**
+
+Cuando la pregunta nombra un sujeto específico que no está en la lista transversal configurada, el sistema evalúa cinco elementos dedicados a ese sujeto:
+
+- **A. Sub-objetivo / output** cuyo título o propósito nombra explícitamente al sujeto
+- **B. Indicador** desagregado por o específico para el sujeto
+- **C. Actividad** cuyo propósito principal es abordar al sujeto (no mención incidental)
+- **D. Línea presupuestaria** o asignación de recursos específica para el sujeto
+- **E. Meta cuantificable** para el sujeto
+
+| TOTAL A-E | Respuesta | Interpretación |
+|-------|-------|-------|
+| 0 | **No** (o Not Found) | El sujeto no recibe atención dedicada; las menciones son solo contextuales |
+| 1-2 | **Partial** | Inclusión parcial; existen algunos elementos dedicados pero faltan otros esenciales |
+| 3-4 | **Partial** (o Yes si la evidencia es sustantiva) | Inclusión mayormente integrada |
+| 5 | **Yes** | Inclusión completa y verificable |
+
+**Qué cuenta como dedicado vs. contextual**
+
+- **Dedicado**: una frase que nombra al sujeto específicamente y describe un elemento concreto (output, indicador, actividad, presupuesto o meta).
+- **Contextual / framing**: menciones dentro de listas de grupos, declaraciones generales o lenguaje de inclusión genérico. Estas menciones no justifican por sí solas un Partial o Yes.
+
+**Notas de auditoría que puede ver**
+
+- `[Ajuste automático: ...]` indica que el código ajustó el veredicto para cumplir la regla aplicable.
+- `[Downgrade por evidencia FRAMING: ...]` indica que una evidencia contextual fue reclasificada como ausente.
+- `[Cláusula general ignorada: ...]` indica que la Parte 1 de una pregunta compuesta fue tratada solo como contexto.
+"""
+
 # Main tab interface
 with tab1:
     st.header("📋 Valoración Preliminar de Calidad de Proyectos (Preliminary Project Quality Appraisal)")
@@ -8437,50 +8491,7 @@ with tab1:
         st.markdown("### 📊 Resultados del análisis")
         # Interpretation guide — documents the A-E framework and verdict mapping.
         with st.expander("📖 ¿Cómo interpretar los resultados?", expanded=False):
-            st.markdown("""
-**Marco de evaluación A–E (para preguntas con sujeto específico)**
-
-Cuando la pregunta nombra un sujeto o tema específico (ej. *personas con discapacidad*, *género*, *pueblos indígenas*, *mujeres rurales*), el sistema evalúa cinco elementos dedicados a ese sujeto:
-
-- **A. Sub-objetivo / output** cuyo título o propósito nombra explícitamente al sujeto
-- **B. Indicador** desagregado por o específico para el sujeto
-- **C. Actividad** cuyo propósito principal es abordar al sujeto (no mención incidental)
-- **D. Línea presupuestaria** o asignación de recursos específica para el sujeto
-- **E. Meta cuantificable** para el sujeto (ej. "N personas con discapacidad beneficiadas")
-
-Cada pregunta muestra una línea de enumeración al inicio de la Razonamiento:
-
-> `Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=... . TOTAL=<N>.`
-
-El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
-
-| TOTAL | Respuesta | Interpretación |
-|-------|-----------|----------------|
-| 0 | **No** (o Not Found) | El sujeto no recibe atención dedicada; las menciones son solo contextuales |
-| 1–2 | **Partial** | Inclusión parcial; existen algunos elementos dedicados pero faltan otros esenciales |
-| 3–4 | **Partial** (o Yes si la evidencia es sustantiva y al-par con Parte 1) | Inclusión mayormente integrada |
-| 5 | **Yes** | Inclusión completa y verificable |
-
-**Qué cuenta como DEDICATED vs FRAMING**
-
-- **DEDICATED** (cuenta para A–E): una frase que nombra al sujeto específicamente Y describe un elemento concreto (un output, indicador, actividad, línea de presupuesto, meta). Ejemplo: *"Output 2.3: 100 personas con discapacidad capacitadas en derechos laborales para 2027."*
-- **FRAMING** (NO cuenta): menciones al sujeto dentro de listas de grupos, declaraciones generales o lenguaje de inclusión genérico. Ejemplos: *"incluyendo personas con discapacidad, mujeres, pueblos indígenas, entre otros"*, o *"consultas con organizaciones de personas con discapacidad"* dentro de una lista de actores.
-
-**Notas de auditoría que puede ver en la Razonamiento**
-
-- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el veredicto propuesto no correspondía al conteo de elementos dedicados y el sistema lo corrigió automáticamente.
-- `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
-- `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
-
-**Para temas transversales configurados** (*género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, *sostenibilidad medioambiental*), se aplica una regla reducida:
-
-- **A. Objetivo, producto o actividad**: el tema aparece de forma operacional en alguno de estos niveles
-- **B. Presupuesto**: se especifica presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente
-
-La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No = ni A ni B**.
-
-**Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
-""")
+            st.markdown(TAB1_RESULTS_INTERPRETATION_MD)
 
 
         
@@ -8565,50 +8576,7 @@ La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No =
             st.markdown("### 📊 Resultados del análisis (guardados)")
             # Interpretation guide — documents the A-E framework and verdict mapping.
             with st.expander("📖 ¿Cómo interpretar los resultados?", expanded=False):
-                st.markdown("""
-**Marco de evaluación A–E (para preguntas con sujeto específico)**
-
-Cuando la pregunta nombra un sujeto o tema específico (ej. *personas con discapacidad*, *género*, *pueblos indígenas*, *mujeres rurales*), el sistema evalúa cinco elementos dedicados a ese sujeto:
-
-- **A. Sub-objetivo / output** cuyo título o propósito nombra explícitamente al sujeto
-- **B. Indicador** desagregado por o específico para el sujeto
-- **C. Actividad** cuyo propósito principal es abordar al sujeto (no mención incidental)
-- **D. Línea presupuestaria** o asignación de recursos específica para el sujeto
-- **E. Meta cuantificable** para el sujeto (ej. "N personas con discapacidad beneficiadas")
-
-Cada pregunta muestra una línea de enumeración al inicio de la Razonamiento:
-
-> `Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=... . TOTAL=<N>.`
-
-El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
-
-| TOTAL | Respuesta | Interpretación |
-|-------|-----------|----------------|
-| 0 | **No** (o Not Found) | El sujeto no recibe atención dedicada; las menciones son solo contextuales |
-| 1–2 | **Partial** | Inclusión parcial; existen algunos elementos dedicados pero faltan otros esenciales |
-| 3–4 | **Partial** (o Yes si la evidencia es sustantiva y al-par con Parte 1) | Inclusión mayormente integrada |
-| 5 | **Yes** | Inclusión completa y verificable |
-
-**Qué cuenta como DEDICATED vs FRAMING**
-
-- **DEDICATED** (cuenta para A–E): una frase que nombra al sujeto específicamente Y describe un elemento concreto (un output, indicador, actividad, línea de presupuesto, meta). Ejemplo: *"Output 2.3: 100 personas con discapacidad capacitadas en derechos laborales para 2027."*
-- **FRAMING** (NO cuenta): menciones al sujeto dentro de listas de grupos, declaraciones generales o lenguaje de inclusión genérico. Ejemplos: *"incluyendo personas con discapacidad, mujeres, pueblos indígenas, entre otros"*, o *"consultas con organizaciones de personas con discapacidad"* dentro de una lista de actores.
-
-**Notas de auditoría que puede ver en la Razonamiento**
-
-- `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el veredicto propuesto no correspondía al conteo de elementos dedicados y el sistema lo corrigió automáticamente.
-- `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
-- `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
-
-**Para temas transversales configurados** (*género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, *sostenibilidad medioambiental*), se aplica una regla reducida:
-
-- **A. Objetivo, producto o actividad**: el tema aparece de forma operacional en alguno de estos niveles
-- **B. Presupuesto**: se especifica presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente
-
-La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No = ni A ni B**.
-
-**Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
-""")
+                st.markdown(TAB1_RESULTS_INTERPRETATION_MD)
 
 
             
