@@ -18,6 +18,7 @@ import numpy as np
 import faiss
 import os
 import re
+import unicodedata
 from matplotlib import pyplot as plt
 import seaborn as sns
 from io import BytesIO
@@ -32,7 +33,7 @@ import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import zipfile
 
-
+# --- Utility function for Excel export ---
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
@@ -91,7 +92,7 @@ def truncate_to_token_limit(text, max_tokens=110000, encoding_obj=None):
     # Truncate to max_tokens
     truncated_tokens = tokens[:max_tokens]
     truncated_text = encoding_obj.decode(truncated_tokens)
-
+    
     return truncated_text
 
 # JSON Schemas for structured rubric responses (Tabs 1-4).
@@ -208,6 +209,189 @@ CRITIC_SCHEMA_SINGLE = {
     },
 }
 
+CRITIC_SCHEMA_TRANSVERSAL = {
+    "name": "critic_response_transversal",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "transversal_theme": {"type": "string"},
+            "named_subject_specific": {"type": "string"},
+            "general_clause_ignored": {"type": "string"},
+            "transversal_A_objective_product_activity": {"type": "string", "enum": ["presente", "ausente"]},
+            "transversal_A_evidence": {"type": "string"},
+            "transversal_B_budget": {"type": "string", "enum": ["presente", "ausente"]},
+            "transversal_B_evidence": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found", "Keep"]},
+            "justification": {"type": "string"},
+            "recommendations": {"type": "string"},
+        },
+        "required": [
+            "transversal_theme",
+            "named_subject_specific", "general_clause_ignored",
+            "transversal_A_objective_product_activity", "transversal_A_evidence",
+            "transversal_B_budget", "transversal_B_evidence",
+            "verdict", "justification", "recommendations",
+        ],
+    },
+}
+
+TRANSVERSAL_MATTERS = {
+    "genero": {
+        "label": "Género",
+        "aliases": [
+            "género", "genero", "igualdad de género", "igualdad de genero",
+            "enfoque de género", "enfoque de genero", "mujeres", "niñas",
+        ],
+    },
+    "no_discriminacion": {
+        "label": "No discriminación",
+        "aliases": [
+            "no discriminación", "no discriminacion", "antidiscriminación",
+            "antidiscriminacion", "discriminación", "discriminacion",
+            "igualdad de oportunidades", "trato igualitario",
+        ],
+    },
+    "discapacidad": {
+        "label": "Discapacidad",
+        "aliases": [
+            "discapacidad", "personas con discapacidad", "persona con discapacidad",
+            "pcd", "accesibilidad", "inclusión de personas con discapacidad",
+            "inclusion de personas con discapacidad",
+        ],
+    },
+    "dialogo_social_tripartismo": {
+        "label": "Diálogo social y tripartismo",
+        "aliases": [
+            "diálogo social", "dialogo social", "tripartismo", "tripartita",
+            "tripartito", "sindicatos", "organizaciones de trabajadores",
+            "organizaciones de empleadores", "social dialogue", "tripartite",
+        ],
+    },
+    "sostenibilidad_medioambiental": {
+        "label": "Sostenibilidad medioambiental",
+        "aliases": [
+            "sostenibilidad medioambiental", "sostenibilidad ambiental",
+            "medioambiental", "medio ambiente", "ambiental", "cambio climático",
+            "cambio climatico", "acción climática", "accion climatica",
+            "economía verde", "economia verde", "environmental sustainability",
+        ],
+    },
+}
+
+
+def _normalize_for_match(value) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = re.sub(r"[^a-zA-Z0-9]+", " ", normalized.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return f" {normalized} "
+
+
+def detect_transversal_matter(question_text):
+    """Return the configured transversal matter profile matched in a question."""
+    normalized_question = _normalize_for_match(question_text)
+    for key, profile in TRANSVERSAL_MATTERS.items():
+        for alias in profile["aliases"]:
+            alias_norm = _normalize_for_match(alias).strip()
+            if alias_norm and f" {alias_norm} " in normalized_question:
+                matched_profile = profile.copy()
+                matched_profile["key"] = key
+                matched_profile["matched_alias"] = alias
+                return matched_profile
+    return None
+
+
+def _transversal_scoring_instructions(profile):
+    return f"""
+
+**TRANSVERSAL MATTER SCORING OVERRIDE**
+Tema transversal detectado: {profile['label']}.
+
+Para este tema NO uses la regla general de cinco elementos A-E. Usa solo:
+- A: Objetivo, producto o actividad. Marca A=presente si el tema transversal aparece de forma operacional en al menos uno de estos niveles.
+- B: Presupuesto. Marca B=presente si se especifica presupuesto, recursos o una línea presupuestaria para alguna actividad correspondiente.
+
+Calificación obligatoria:
+- Yes: A y B están presentes.
+- Partial: A o B está presente.
+- No: no están presentes ni A ni B.
+"""
+
+
+def _evidence_is_missing(evidence: str) -> bool:
+    if not evidence or not str(evidence).strip():
+        return True
+    normalized = _normalize_for_match(evidence)
+    missing_markers = [
+        " no aparece ", " no se identifica ", " no se evidencia ",
+        " no hay ", " no se especifica ", " sin evidencia ",
+        " ausente ", " no aplica ",
+    ]
+    return any(marker in normalized for marker in missing_markers)
+
+
+def _apply_transversal_gate_and_render(result: dict, profile: dict, is_two_part: bool) -> str:
+    """Apply the two-criterion scoring rule for configured transversal matters."""
+    a_state = result.get("transversal_A_objective_product_activity", "ausente") or "ausente"
+    b_state = result.get("transversal_B_budget", "ausente") or "ausente"
+    a_evidence = result.get("transversal_A_evidence", "") or ""
+    b_evidence = result.get("transversal_B_evidence", "") or ""
+
+    notes = []
+    if a_state == "presente" and _evidence_is_missing(a_evidence):
+        a_state = "ausente"
+        notes.append("A reclasificado a ausente por falta de evidencia operacional.")
+    if b_state == "presente" and _evidence_is_missing(b_evidence):
+        b_state = "ausente"
+        notes.append("B reclasificado a ausente por falta de evidencia presupuestaria.")
+
+    if a_state == "presente" and b_state == "presente":
+        verdict = "Yes"
+    elif a_state == "presente" or b_state == "presente":
+        verdict = "Partial"
+    else:
+        verdict = "No"
+
+    model_verdict = (result.get("verdict") or "").strip()
+    if model_verdict and model_verdict not in ("Keep", verdict):
+        notes.append(f"Ajuste automático: el modelo propuso '{model_verdict}' pero la regla transversal obliga a '{verdict}'.")
+
+    subject = (
+        result.get("named_subject_specific")
+        or result.get("transversal_theme")
+        or profile["label"]
+    ).strip()
+    ignored = (result.get("general_clause_ignored") or "").strip()
+    if ignored:
+        notes.append(f"Cláusula general ignorada: '{ignored}'.")
+
+    scope = "Parte 2" if is_two_part else "pregunta"
+    conteo_line = (
+        f"Criterios transversales {scope} [{profile['label']} / {subject}]: "
+        f"A={a_state}, B={b_state}. Regla: Yes=A+B; Partial=A o B; No=sin A ni B."
+    )
+
+    body_parts = [conteo_line]
+    if notes:
+        body_parts.append(" ".join(f"[{note}]" for note in notes))
+    if a_evidence:
+        body_parts.append(f"Evidencia A (objetivo/producto/actividad): {a_evidence}")
+    if b_evidence:
+        body_parts.append(f"Evidencia B (presupuesto): {b_evidence}")
+
+    justification = (result.get("justification") or "").strip()
+    recommendations = (result.get("recommendations") or "").strip()
+    if justification:
+        body_parts.append(justification)
+    if recommendations and verdict in ("No", "Partial", "Not Found"):
+        if not recommendations.lower().startswith("para mejorar la calificación"):
+            recommendations = f"**Para mejorar la calificación** debiese incluirse {recommendations}"
+        body_parts.append(recommendations)
+
+    return f"VEREDICTO: {verdict}\n\n" + "\n\n".join(body_parts)
+
 
 def _is_framing_evidence(evidence: str) -> tuple:
     """Heuristic detector for FRAMING-style evidence.
@@ -318,6 +502,5915 @@ def _apply_critic_gate_and_render(result: dict, is_two_part: bool) -> str:
     return f"VEREDICTO: {model_verdict}\n\n" + "\n\n".join(body_parts)
 
 
+def get_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
+    if not openai_api_key:
+        st.error("No se encontró la clave de API de OpenAI. Por favor, configura la variable de entorno OPENAI_API_KEY.")
+        return None
+    for attempt in range(max_retries):
+        try:
+            response = client.embeddings.create(input=text, model=model)
+            return np.array(response.data[0].embedding)
+        except Exception as e:
+            st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
+            time.sleep(delay)
+    return None
+
+# Function to find similar recommendations using embeddings
+
+def find_similar_recommendations(query_embedding, index, doc_embeddings, structured_embeddings, score_threshold=0.5, top_n=20):
+    # Normalize query embedding for cosine similarity
+    query_embedding = np.array(query_embedding).reshape(1, -1)
+    # Search the index
+    try:
+        distances, indices = index.search(query_embedding, index.ntotal)
+
+        # Filter results based on the score threshold
+        filtered_recommendations = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx < len(structured_embeddings) and dist >= score_threshold:
+                metadata = structured_embeddings[idx]
+                recommendation = {
+                    "recommendation": metadata["text"],
+                    "similarity": float(dist),  # Convert to float for JSON serialization
+                    "country": metadata["country"],
+                    "year": metadata["year"],
+                    "eval_id": metadata["eval_id"]
+                }
+                filtered_recommendations.append(recommendation)
+            if len(filtered_recommendations) >= top_n:
+                break
+        return filtered_recommendations
+    except Exception as e:
+        st.error(f"Error en la búsqueda por similitud: {str(e)}")
+        return []
+
+# Function to find recommendations by term matching
+
+def find_recommendations_by_term_matching(query, doc_texts, structured_embeddings, top_n=10):
+    try:
+        matched_recommendations = []
+        query_lower = query.lower()
+        for idx, text in enumerate(doc_texts):
+            if isinstance(text, str) and query_lower in text.lower():
+                if idx < len(structured_embeddings):
+                    metadata = structured_embeddings[idx]
+                    matched_recommendations.append({
+                        "recommendation": text,
+                        "country": metadata["country"],
+                        "year": metadata["year"],
+                        "eval_id": metadata["eval_id"]
+                    })
+        matched_recommendations = sorted(matched_recommendations, key=lambda x: len(str(x["recommendation"])))
+        return matched_recommendations[:top_n]
+    except Exception as e:
+        st.error(f"Error en la coincidencia de términos: {str(e)}")
+        return []
+
+# Function to generate executive summary using LLM
+def generate_executive_summary(recommendations_text, max_output_tokens=3000):
+    """
+    Generates an executive summary from a list of recommendations using OpenAI.
+    """
+    if not recommendations_text:
+        return "No hay recomendaciones para resumir."
+
+    # Truncate to avoid context limit (approx 120k chars is safe for gpt-4o-mini's 128k tokens, keeping room for output)
+    # Using existing helper
+    truncated_input = truncate_to_token_limit(recommendations_text, max_tokens=100000, encoding_obj=encoding)
+
+    system_prompt = """Eres un asistente experto en análisis de evaluaciones de proyectos de desarrollo. 
+    Tu tarea es generar un Resumen Ejecutivo exhaustivo, informativo y detallado basado en las recomendaciones, respuestas de gestión y planes de acción proporcionados.
+    
+    El resumen debe:
+    1. Identificar los temas principales y patrones recurrentes.
+    2. Resaltar las acciones críticas sugeridas.
+    3. Incorporar la perspectiva de la respuesta de gestión si está disponible.
+    4. Estar estructurado con títulos claros y puntos clave (bullet points).
+    5. Ser profesional y directo.
+    6. Estar en Español.
+    """
+    
+    user_prompt = f"Aquí están los datos de las recomendaciones (incluyendo descripción, respuesta de gestión, comentarios, etc.):\n\n{truncated_input}\n\nPor favor, genera el Resumen Ejecutivo ahora."
+
+    if not openai_api_key:
+        return "Error: No se encontró la clave API de OpenAI."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", # Cost-effective model
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=max_output_tokens
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generando el resumen: {str(e)}"
+
+def verify_match_with_llm(rec_text, candidates, api_key):
+    """
+    Uses LLM to verify which of the candidates is the best match for the recommendation.
+    candidates: list of dicts {'dimension':..., 'subdim':..., 'definition':...}
+    Returns: index of the best match in candidates list, or -1 if none fit well.
+    """
+    if not api_key: 
+        return 0 # Fallback to top 1 if no key
+        
+    candidates_str = ""
+    for i, c in enumerate(candidates):
+        # We assume 'texto_merged' acts as the definition/description
+        candidates_str += f"Option {i+1}:\nCategory: {c['dimension']} - {c['subdim']}\nDefinition/Context: {c['texto_merged']}\n\n"
+        
+    system_prompt = """You are an expert in classifying development project recommendations.
+    You will be given a 'Recommendation' and a list of 'Options' (categories with definitions).
+    Your task is to select the Option that BEST fits the Recommendation based on the definition.
+    
+    CRITICAL INSTRUCTIONS:
+    1. Read the Recommendation and the Definitions carefully.
+    2. **STRICT SEMANTIC MATCH**: The recommendation must describe the *same action* and *same object* as the definition.
+    3. **IGNORE SUPERFICIAL KEYWORDS**: Do not select an option just because it shares a word (e.g., "Pensions") if the *context* is different (e.g., "Political backing" vs "Financial funding").
+    4. **REQUIREMENT CHECK**: If a definition requires a specific mechanism (e.g., "Financing", "Legislation", "Training"), the recommendation MUST explicitly mention it.
+    5. Return ONLY the number of the best option (1, 2, 3...).
+    6. If none of them fit reasonably well, return 0.
+    """
+    
+    user_prompt = f"Recommendation: \"{rec_text}\"\n\n{candidates_str}\n\nWhich option is the best fit? (Return just the number, e.g. 1)"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.0, # Deterministic
+            max_tokens=6
+        )
+        content = response.choices[0].message.content.strip()
+        # Parse number
+        import re
+        match = re.search(r'\d+', content)
+        if match:
+            val = int(match.group())
+            if 1 <= val <= len(candidates):
+                return val - 1 # 0-indexed
+            else:
+                return -1 # None or 0
+        return 0 # Fallback to Top 1 if parse fails
+    except:
+        return 0 # Fallback to Top 1 on error
+
+# --- Analysis Cache (for Deep Analysis) ---
+class AnalysisCache:
+    def __init__(self, cache_file="analysis_cache.pkl"):
+        self.cache_file = cache_file
+        self.cache = {}
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'rb') as f:
+                    self.cache = pickle.load(f)
+            except:
+                self.cache = {}
+
+    def save(self):
+        with open(self.cache_file, 'wb') as f:
+            pickle.dump(self.cache, f)
+
+    def get(self, key):
+        return self.cache.get(key)
+    
+    def set(self, key, value):
+        self.cache[key] = value
+
+    def generate_key(self, rec, plan):
+        # Create a hash based on rec + plan content
+        content = f"{str(rec).strip()}|{str(plan).strip()}"
+        return content 
+
+# --- Deep Analysis Logic ---
+INNOVATION_RUBRIC_PROMPT = """\
+RÚBRICA DE INNOVACIÓN (5 dimensiones, cada una 1–5). Evalúe internamente las 5 dimensiones, luego derive rec_innovation_score como el promedio redondeado mapeado a la escala categórica (1=Very low, 2=Low, 3=Medium, 4=High, 5=Very High).
+
+D1. NOVEDAD RELEVANTE — qué tan diferente es la recomendación respecto de prácticas habituales. NO premiar lenguaje tecnológico ni aspiracional; NO confundir tamaño con innovación.
+  1=Muy baja: reitera práctica normal (reuniones de seguimiento, actualizar base de beneficiarios, informes trimestrales).
+  2=Baja: ajuste incremental a práctica conocida (mejorar formato de reportes, ampliar capacitaciones existentes).
+  3=Media: adapta práctica conocida a nuevo contexto/población (incorporar teoría de cambio donde no existía, adaptar capacitación a comunidades rurales).
+  4=Alta: mecanismo poco común en ese contexto (red interinstitucional formal, fondo competitivo, laboratorio de innovación).
+  5=Muy alta: solución no rutinaria con lógica nueva (sistema nacional interoperable, arquitectura institucional nueva, ecosistema digital colaborativo).
+
+D2. VALOR PARA CONSTITUYENTES — mejora acceso, calidad, eficiencia, inclusión o resultados para usuarios/beneficiarios/mandantes. NO premiar mejoras internas sin impacto en usuarios.
+  1=Muy bajo: sin problema ni beneficiario claro (fortalecer gestión, optimizar procesos administrativos).
+  2=Bajo: mejora marginal/indirecta sin impacto en resultados.
+  3=Medio: responde a un problema con impacto limitado o parcial.
+  4=Alto: mejora claramente calidad/cobertura/pertinencia (servicios adaptados a poblaciones vulnerables, reducir barreras de acceso).
+  5=Muy alto: transforma acceso/beneficio (acceso universal antes inexistente, eliminar barreras estructurales).
+
+D3. APRENDIZAJE, PRUEBA Y ESCALAMIENTO — mecanismos para experimentar, medir, aprender y replicar.
+  1=Muy bajo: actividad única sin aprendizaje (un taller, un informe final).
+  2=Bajo: aprendizaje implícito sin estructura.
+  3=Medio: potencial de réplica pero sin cómo aprender/mejorar.
+  4=Alto: piloto/seguimiento/mejora progresiva estructurados.
+  5=Muy alto: ciclo completo piloto→medición→retroalimentación→escalamiento.
+
+D4. CAMBIO SISTÉMICO O INSTITUCIONAL — modifica estructuras, reglas, coordinación o gobernanza (no solo actividades). NO confundir cobertura con cambio sistémico.
+  1=Muy bajo: actividad aislada (capacitaciones, materiales, talleres).
+  2=Bajo: mejora operativa local sin afectar estructura.
+  3=Medio: cambio dentro de una unidad/programa.
+  4=Alto: cambio organizacional o de coordinación entre actores (red interinstitucional con roles, nuevo modelo de gobernanza en implementación).
+  5=Muy alto: transformación sistémica (sistema nacional integrado, rediseño de gobernanza de política pública, arquitectura multisectorial nueva).
+
+D5. FACTIBILIDAD ESTRATÉGICA — viable en el contexto institucional, político, técnico y operativo actual. Penalizar aspiracional/vago sin mecanismo.
+  1=Muy baja: irreal (sistema nacional sin actores ni recursos, transformación sin estrategia).
+  2=Baja: requiere condiciones altamente improbables o no descritas.
+  3=Media: implementable con ajustes, recursos o coordinación adicional.
+  4=Alta: coherente con capacidades, actores y contexto (escalar intervención ya probada).
+  5=Muy alta: condiciones de implementación claras (piloto exitoso con actores comprometidos, modelo validado en contextos similares).
+"""
+
+
+def analyze_recommendation_plan_pair(recommendation, action_plan, comments, client, model="gpt-4o-mini"):
+    """
+    Send recommendation, action plan, and comments to OpenAI API for analysis
+    """
+    if pd.isna(recommendation) or pd.isna(action_plan):
+        return None # Skip empty
+    
+    # Handle NaN comments
+    if pd.isna(comments):
+        comments = "No additional comments provided."
+    
+    # Define ILO development project relevant tags
+    ilo_tags_list = [
+        "capacity_building", "training", "employment_creation", "gender_equality", 
+        "decent_work", "labor_rights", "social_dialogue", "social_protection",
+        "occupational_safety", "child_labor", "forced_labor", "labor_migration",
+        "working_conditions", "skills_development", "social_inclusion", "monitoring_evaluation",
+        "institutional_strengthening", "policy_development", "knowledge_management",
+        "sustainability", "stakeholder_engagement", "data_collection", "technical_assistance",
+        "project_design", "implementation_methodology", "resource_allocation", 
+        "coordination", "partnership_building", "innovation", "digital_transformation"
+    ]
+    
+    rec_tags_list = ['governance', 'participation', 'gender_issues', 'just_transition', 'institutional_strenghtening', 
+                'public_policy_incidence', 'financial_sustainability']
+    
+    prompt = f"""
+    Analyze the following recommendation, its corresponding action plan, and additional comments:
+    
+    RECOMMENDATION:
+    {recommendation}
+    
+    ACTION PLAN:
+    {action_plan}
+    
+    ADDITIONAL COMMENTS:
+    {comments}
+    
+    Please extract and return ONLY a JSON object with the following fields:
+    1. extracted_actions_from_rec: List all specific actions requested in the recommendation
+    2. actions_proposed_in_plan: List all specific actions mentioned in the action plan
+    3. difficulties_mentioned: Any difficulties or challenges mentioned in implementing the recommendation (look carefully in the action plan AND comments for these)
+    4. reasons_for_rejection: If the recommendation wasn't fully accepted, reasons given (pay special attention to justifications in the comments)
+    5. rejection_difficulty_classification: Classify the reasons (Financial, Technical, Political, Low priority, Unjustified, Third party dependency, Time constraints, Cultural/behavioral, Local operational constraints, Mandate limitations, Other). At most 3.
+    6. coherence_score: Score from 0-10 how well the action plan addresses the recommendation
+    7. coherence_rationale: Detailed explanation (6-8 sentences).
+    8. plan_quality_score: Score from 0-10 (specificity, feasibility).
+    9. plan_quality_rationale: Detailed explanation (6-8 sentences).
+    10. attention_level_score: Score from 0-10 (priority given).
+    11. attention_level_rationale: Detailed explanation (6-8 sentences).
+    12. overall_score: Score from 0-10.
+    13. overall_score_rationale: Extensive analysis (6-8 sentences).
+    14. tags: Select 2-5 most relevant tags from: {", ".join(ilo_tags_list)}
+    
+    Now, analyze the recommendation on its own:
+
+    {INNOVATION_RUBRIC_PROMPT}
+
+    15. rec_innovation_score: Apply the 5-dimension innovation rubric above. Score each dimension 1–5 internally, then return the overall level as one of (Very low, Low, Medium, High, Very High), derived from the rounded average of the five dimension scores (1→Very low, 2→Low, 3→Medium, 4→High, 5→Very High).
+    16. rec_innovation_rationale: 3-4 sentences. Explicitly cite the per-dimension scores in the form "D1=x, D2=x, D3=x, D4=x, D5=x" and briefly justify the weakest/strongest dimensions. Do not reward tech/aspirational language or size alone.
+    17. rec_precision_and_clarity: (Very low, Low, Medium, High, Very High).
+    18. rec_precision_and_clarity_rationale: Explanation (3-4 sentences).
+    19. rec_additional_tags: Select 2-5 relevant tags from: {", ".join(rec_tags_list)}
+    20. rec_operational_feasibility: (Very low, Low, Medium, High, Very High).
+    21. rec_operational_feasibility_rationale: Explanation (3-4 sentences).
+    22. rec_timeline: (short, medium, long).
+    23. rec_timeline_rationale: Explanation (3-4 sentences).
+    24. rec_expected_impact: (Very low, Low, Medium, High, Very High).
+    25. rec_expected_impact_rationale: Explanation (3-4 sentences).
+    26. rec_intervention_approach: (processes, results, policy).
+    27. rec_intervention_approach_rationale: Explanation (3-4 sentences).
+    
+    Respond ONLY with the JSON object.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You analyze recommendations and action plans, returning structured JSON results."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        
+        return json.loads(response.choices[0].message.content)
+    
+    except Exception as e:
+        return {
+            "error": str(e),
+            "coherence_score": 0,
+            "overall_score": 0
+        }
+
+def run_row_analysis(args):
+    """
+    Worker for parallel analysis
+    """
+    idx, rec, plan, comments, api_key, cache_obj = args
+    
+    # Check cache first
+    key = cache_obj.generate_key(rec, plan)
+    cached = cache_obj.get(key)
+    if cached:
+        return idx, cached, True # True = from cache
+        
+    # If not in cache, call API
+    client = OpenAI(api_key=api_key)
+    result = analyze_recommendation_plan_pair(rec, plan, comments, client)
+    
+    return idx, result, False # False = new call
+
+# --- Begin: SimpleHierarchicalStore and RAG logic from megaparse_example.py ---
+import pickle
+from typing import List, Dict, Any
+import numpy as np
+import json
+import os
+import openai
+
+class SimpleHierarchicalStore:
+    def __init__(self, use_cache=True, cache_dir=None):
+        self.documents = {}
+        self.sections = {}
+        self.paragraphs = []
+        self.use_cache = use_cache
+        self.cache_dir = cache_dir or os.getcwd()
+        self.embedding_cache = {}
+        self.query_cache = {}
+        self.storage_dir = cache_dir or os.path.join(os.path.expanduser("~"), "document_store")
+        os.makedirs(self.storage_dir, exist_ok=True)
+        self.cache_file = os.path.join(self.storage_dir, "embedding_cache.pkl")
+        if use_cache:
+            self._load_cache()
+    def _load_cache(self):
+        if not self.use_cache:
+            return
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'rb') as f:
+                    self.embedding_cache = pickle.load(f)
+            except Exception:
+                self.embedding_cache = {}
+        else:
+            self.embedding_cache = {}
+    def _hash_text(self, text):
+        import hashlib
+        return hashlib.md5(text.encode('utf-8')).hexdigest()
+    def _save_cache(self):
+        if not self.use_cache:
+            return
+        try:
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(self.embedding_cache, f)
+        except Exception:
+            pass
+    def get_embedding(self, text: str):
+        if not text or text.isspace():
+            return [0.0] * 1536
+        if self.use_cache:
+            text_hash = hash(text)
+            if text_hash in self.embedding_cache:
+                return self.embedding_cache[text_hash]
+        try:
+            response = openai.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            embedding = response.data[0].embedding
+            if self.use_cache:
+                self.embedding_cache[hash(text)] = embedding
+                if len(self.embedding_cache) % 100 == 0:
+                    self._save_cache()
+            return embedding
+        except Exception:
+            return [0.0] * 1536
+    def add_documents(self, df, content_column='content', section_column='header_1', batch_size=20):
+        doc_id = df['document_id'].iloc[0] if 'document_id' in df.columns else 'doc1'
+        self.documents[doc_id] = {'embedding': self.get_embedding(' '.join(df[content_column].astype(str).tolist()))}
+        for _, row in df.iterrows():
+            section_id = row.get(section_column, '')
+            if pd.isna(section_id):
+                section_id = '_default_section'
+            section_text = str(row.get(content_column, ''))
+            if not section_text.strip():
+                continue
+            section_embedding = self.get_embedding(section_text)
+            self.sections[(doc_id, section_id)] = {
+                'text': section_text,
+                'embedding': section_embedding
+            }
+            self.paragraphs.append({
+                'text': section_text,
+                'embedding': section_embedding,
+                'document_id': doc_id,
+                'section_id': section_id,
+                'position': row.get('paragraph_number', 0)
+            })
+    def cosine_similarity(self, embedding1, embedding2):
+        if not embedding1 or not embedding2:
+            return 0
+        dot_product = sum(a * b for a, b in zip(embedding1, embedding2))
+        norm1 = sum(a * a for a in embedding1) ** 0.5
+        norm2 = sum(b * b for b in embedding2) ** 0.5
+        return dot_product / (norm1 * norm2) if norm1 > 0 and norm2 > 0 else 0
+    def score_rubric_directly(self, rubric_elements: Dict, top_n_paragraphs: int = 10) -> Dict:
+        print(f"[score_rubric_directly] Evaluating criterion: {rubric_elements}")
+        results = {}
+        for criterion, descriptions in rubric_elements.items():
+            print(f"[score_rubric_directly] Evaluating criterion: {criterion}")
+            criterion_embedding = self.get_embedding(criterion)
+            paragraph_scores = []
+            for p in self.paragraphs:
+                similarity = self.cosine_similarity(criterion_embedding, p['embedding'])
+                paragraph_scores.append((p, similarity))
+            paragraph_scores.sort(key=lambda x: x[1], reverse=True)
+            top_paragraphs = paragraph_scores[:top_n_paragraphs]
+            context_text = '\n\n---\n\n'.join([p[0]['text'] for p in top_paragraphs])
+            try:
+                analysis = self.analyze_criterion(criterion, context_text, descriptions)
+                print(f"[score_rubric_directly] Analysis result for '{criterion}': {analysis}")
+                results[criterion] = {
+                    'analysis': analysis,
+                    'context': context_text,
+                    'score': analysis.get('score', 0),
+                    'confidence': analysis.get('confidence', 0),
+                    'top_paragraphs': [{'text': p[0]['text'], 'similarity': p[1]} for p in top_paragraphs[:3]]
+                }
+            except Exception as e:
+                print(f"[score_rubric_directly] Exception for '{criterion}': {e}")
+                results[criterion] = {
+                    'analysis': {'error': str(e)},
+                    'context': context_text,
+                    'score': 0,
+                    'confidence': 0
+                }
+        print(f"[score_rubric_directly] Final results: {results}")
+        return results
+    def analyze_criterion(self, criterion: str, context: str, descriptions: list) -> dict:
+        print(f"[analyze_criterion] Called with criterion: {criterion}")
+        print(f"[analyze_criterion] Context: {context[:200]} ...")
+        print(f"[analyze_criterion] Descriptions: {descriptions}")
+        prompt = f"""
+        You are evaluating a document against a specific criterion. 
+        Criterion: {criterion}
+        Descriptions of scoring levels:
+        {json.dumps(descriptions, indent=2)}
+        Document content to evaluate:
+        {context}
+        Please analyze how well the document meets this criterion. Provide:
+        1. A detailed analysis (2-3 paragraphs)
+        2. A score from 1-5 (where 1 is lowest and 5 is highest)
+        3. Key evidence from the document that supports your score
+        4. Any recommendations for improvement
+        5. A confidence level (0-1) indicating how confident you are in this assessment
+        Format your response as a JSON object with the following keys:
+        {"analysis": "your detailed analysis here", "score": numeric_score_between_1_and_5, "evidence": "key evidence from the document", "recommendations": "your recommendations for improvement", "confidence": confidence_level_between_0_and_1}
+        Return only the JSON object, nothing else.
+        """
+        try:
+            response = openai.chat.completions.create(
+                model="gpt.5.1-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert document evaluator that provides detailed analysis and scoring based on specific criteria."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            print(f"[analyze_criterion] Raw response: {raw}")
+            parsed = json.loads(raw)
+            print(f"[analyze_criterion] Parsed response: {parsed}")
+            return parsed
+        except Exception as e:
+            print(f"[analyze_criterion] Exception: {e}")
+            return {'score': 0, 'analysis': f'Error: {str(e)}'}
+# --- End: SimpleHierarchicalStore and RAG logic ---
+
+# --- HIERARCHICAL RAG RUBRIC EVALUATION ---
+def add_rubric_evaluation_section(exploded_df, toc, toc_hierarchy):
+    """
+    Add a new section for rubric-based evaluation of the document using hierarchical RAG pipeline.
+    Allows users to select rubric type, choose criteria, evaluate selected sections, view results, and download as CSV/Excel.
+    """
+    import streamlit as st
+    import pandas as pd
+    from io import BytesIO
+    from collections import defaultdict
+
+    st.markdown("### Evaluación por Rúbrica (Hierarchical RAG)")
+
+    # Initialize session state keys with unique prefixes to avoid conflicts
+    session_keys = {
+        'selected_sections': 'rubric_eval_selected_sections',
+        'sections_confirmed': 'rubric_eval_sections_confirmed',
+        'selected_criteria': 'rubric_eval_selected_criteria'
+    }
+
+    # --- Section Selection ---
+    if session_keys['selected_sections'] not in st.session_state:
+        st.session_state[session_keys['selected_sections']] = []
+    if session_keys['sections_confirmed'] not in st.session_state:
+        st.session_state[session_keys['sections_confirmed']] = False
+
+    st.markdown("#### 1. Selección de Secciones para Evaluación")
+    main_sections = []
+    for level, headings in sorted(toc_hierarchy.items()):
+        if headings and not main_sections:
+            main_sections = headings
+    valid_selected_sections = [s for s in st.session_state[session_keys['selected_sections']] if s in main_sections]
+    if not valid_selected_sections and main_sections:
+        valid_selected_sections = [main_sections[0]]
+    selected_sections = st.multiselect(
+        "Seleccione las secciones del documento que desea evaluar:",
+        options=main_sections,
+        default=valid_selected_sections,
+        key="rubric_section_multiselect_eval"
+    )
+    if st.button("Confirmar Secciones para Evaluación"):
+        if not selected_sections:
+            st.warning("Por favor seleccione al menos una sección para evaluar.")
+        else:
+            st.session_state[session_keys['selected_sections']] = selected_sections
+            st.session_state[session_keys['sections_confirmed']] = True
+            st.success(f"Secciones confirmadas para evaluación: {', '.join(selected_sections)}")
+    if st.session_state[session_keys['selected_sections']]:
+        st.info(f"Secciones actualmente seleccionadas para evaluación: {', '.join(st.session_state[session_keys['selected_sections']])}")
+
+    # --- Rubric Selection & Evaluation ---
+    if st.session_state[session_keys['sections_confirmed']]:
+        st.markdown("#### 2. Selección de Rúbrica y Criterios")
+        rubric_type = st.selectbox(
+            "Seleccione tipo de rúbrica para evaluación:",
+            ["Participación (Engagement)", "Desempeño (Performance)"],
+            index=0,
+            key='rubric_type_tab2'
+        )
+        if rubric_type == "Participación (Engagement)":
+            rubric_df = load_engagement_rubric()
+            criteria_col = "Criterion"
+            short_col = "crit_short"
+            group_col = "Criterio"
+        else:
+            rubric_df = load_performance_rubric()
+            criteria_col = "subdim"
+            short_col = None
+            group_col = "dimension"
+        st.markdown("##### Estructura de la Rúbrica")
+        rubric_groups = rubric_df.groupby(group_col)
+        cols = st.columns([1, 3])
+        with cols[0]:
+            st.markdown("**Categorías**")
+            categories = list(rubric_groups.groups.keys())
+            selected_category = st.radio(
+                "Seleccione una categoría:",
+                categories,
+                label_visibility="collapsed"
+            )
+        with cols[1]:
+            st.markdown("**Criterios**")
+            if selected_category:
+                category_criteria = rubric_df[rubric_df[group_col] == selected_category]
+                if session_keys['selected_criteria'] not in st.session_state:
+                    st.session_state[session_keys['selected_criteria']] = {}
+                all_criteria_in_category = st.checkbox(f"Seleccionar todos los criterios en '{selected_category}'")
+                selected_criteria_ids = []
+                for _, criterion_row in category_criteria.iterrows():
+                    criterion_id = criterion_row[criteria_col]
+                    criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                    if criterion_id not in st.session_state[session_keys['selected_criteria']]:
+                        st.session_state[session_keys['selected_criteria']][criterion_id] = False
+                    if all_criteria_in_category:
+                        st.session_state[session_keys['selected_criteria']][criterion_id] = True
+                    is_selected = st.checkbox(
+                        criterion_name,
+                        value=st.session_state[session_keys['selected_criteria']][criterion_id],
+                        key=f"criterion_{criterion_id}"
+                    )
+                    st.session_state[session_keys['selected_criteria']][criterion_id] = is_selected
+                    if is_selected:
+                        selected_criteria_ids.append(criterion_id)
+        with st.expander("Opciones avanzadas de selección de criterios"):
+            select_all_criteria = st.checkbox("Seleccionar TODOS los criterios de todas las categorías")
+            if select_all_criteria:
+                for _, row in rubric_df.iterrows():
+                    criterion_id = row[criteria_col]
+                    st.session_state[session_keys['selected_criteria']][criterion_id] = True
+                st.success("Todos los criterios han sido seleccionados.")
+            if st.button("Limpiar todas las selecciones"):
+                for criterion_id in st.session_state[session_keys['selected_criteria']]:
+                    st.session_state[session_keys['selected_criteria']][criterion_id] = False
+                st.success("Todas las selecciones han sido limpiadas.")
+        if st.button("Ver Detalles de Criterios Seleccionados"):
+            selected_any = any(st.session_state[session_keys['selected_criteria']].values())
+            if not selected_any:
+                st.warning("Por favor seleccione al menos un criterio para ver sus detalles.")
+            else:
+                st.markdown("##### Detalles de Criterios Seleccionados")
+                selected_criteria_df = rubric_df[rubric_df[criteria_col].isin(
+                    [cid for cid, selected in st.session_state[session_keys['selected_criteria']].items() if selected]
+                )]
+                for _, criterion_row in selected_criteria_df.iterrows():
+                    criterion_id = criterion_row[criteria_col]
+                    criterion_name = criterion_row[short_col] if short_col and short_col in criterion_row else criterion_id
+                    with st.expander(f"{criterion_name}", expanded=True):
+                        levels_df = rubric_to_levels_df(criterion_row, criteria_col)
+                        st.table(levels_df)
+        if st.button("Iniciar Evaluación de Criterios Seleccionados (RAG)"):
+            selected_any = any(st.session_state[session_keys['selected_criteria']].values())
+            if not selected_any:
+                st.warning("Por favor seleccione al menos un criterio para evaluar.")
+            else:
+                st.markdown("#### 3. Evaluación de Criterios (RAG)")
+                selected_criteria_ids = [cid for cid, selected in st.session_state[session_keys['selected_criteria']].items() if selected]
+                filtered_df = exploded_df[exploded_df['header_1'].isin(st.session_state[session_keys['selected_sections']])].copy()
+                if filtered_df.empty:
+                    st.warning("No se encontraron párrafos en las secciones seleccionadas.")
+                    return
+                rubric_dict = {}
+                for cid in selected_criteria_ids:
+                    crit_row = rubric_df[rubric_df[criteria_col] == cid].iloc[0]
+                    levels = rubric_to_levels_df(crit_row, criteria_col)
+                    rubric_dict[cid] = levels['Description'].tolist()
+                st.info(f"Evaluando {len(selected_criteria_ids)} criterios sobre {len(filtered_df)} párrafos.")
+
+                # Progress bar for rubric evaluation (per section and per criterion)
+                section_list = list(filtered_df['header_1'].unique())
+                total_steps = len(section_list) * len(selected_criteria_ids)
+                progress_bar = st.progress(0, text="Progreso de evaluación por rúbrica")
+                progress_count = 0
+                results = {}
+                store = SimpleHierarchicalStore(use_cache=True)
+                filtered_df['document_id'] = 'doc1'  # Single doc context
+                store.add_documents(filtered_df)
+
+                # Evaluate per section and per criterion
+                for section in section_list:
+                    section_df = filtered_df[filtered_df['header_1'] == section]
+                    for cid in selected_criteria_ids:
+                        rubric_dict_single = {cid: rubric_dict[cid]}
+                        # Use top_n_paragraphs=10 or as appropriate
+                        result = store.score_rubric_directly(rubric_dict_single, top_n_paragraphs=10)
+                        # result is a dict keyed by cid
+                        if cid not in results:
+                            results[cid] = {'score': 0, 'context': '', 'analysis': {}}
+                        # Merge/accumulate results per criterion
+                        if cid in result:
+                            # If multiple sections, you may want to aggregate or just take the last/first
+                            # Here, we take the last section's result for simplicity
+                            results[cid] = result[cid]
+                        progress_count += 1
+                        progress_bar.progress(progress_count / total_steps, text=f"Evaluando sección '{section}' y criterio '{cid}'")
+                progress_bar.empty()
+
+                eval_rows = []
+                for cid, result in results.items():
+                    criterion_name = cid
+                    if short_col:
+                        crit_row = rubric_df[rubric_df[criteria_col] == cid].iloc[0]
+                        criterion_name = crit_row[short_col] if short_col in crit_row else cid
+                    score = result.get('score', 0)
+
+                    if create_filtered:
+                        filtered_sections = {}
+                        progress_bar = st.progress(0, text="Progreso de filtrado de secciones")
+                        total_sections = len(selected_sections)
+                        for idx, section in enumerate(selected_sections):
+                            if section in sections_content:
+                                filtered_sections[section] = sections_content[section]
+                            progress_bar.progress((idx + 1) / total_sections, text=f"Filtrando sección '{section}' ({idx + 1}/{total_sections})")
+                        progress_bar.empty()
+                        st.session_state.filtered_sections = filtered_sections
+                        # Convert to a dataframe for Excel export
+                        filtered_data = []
+                        for section, paragraphs in filtered_sections.items():
+                            # Get the section level from TOC
+                            section_level = 0
+                            for heading, level in toc:
+                                if heading == section:
+                                    section_level = level
+                                    break
+                            # Process paragraphs based on content type
+                            in_table = False
+                            table_content = []
+                            table_rows = []
+                            header_row = None
+                            for text in paragraphs:
+                                if text == '[TABLE_START]':
+                                    in_table = True
+                                    table_content = []
+                                    table_rows = []
+                                    header_row = None
+                                elif text == '[TABLE_END]':
+                                    in_table = False
+                                    # Process collected table content - store the processed table
+                                    if table_rows:
+                                        # Create a JSON representation of the table
+                                        table_data = {
+                                            'header': header_row if header_row else [],
+                                            'rows': table_rows
+                                        }
+                                        filtered_data.append({
+                                            'section': section,
+                                            'level': section_level,
+                                            'content_type': 'table',
+                                            'text': json.dumps(table_data)
+                                        })
+                                elif text.startswith('[TABLE_HEADER]'):
+                                    # Process header row
+                                    cells = text[14:].split('|')
+                                    header_row = cells
+                                    table_content.append(text)
+                                elif text.startswith('[TABLE_ROW]'):
+                                    # Process data row
+                                    cells = text[11:].split('|')
+                                    table_rows.append(cells)
+                                    table_content.append(text)
+                                else:
+                                    # Regular paragraph
+                                    filtered_data.append({
+                                        'section': section,
+                                        'level': section_level,
+                                        'content_type': 'paragraph',
+                                        'text': text
+                                    })
+                                filtered_df = pd.DataFrame(filtered_data)
+                                
+                                if not filtered_df.empty:
+                                    st.success(f"Salida filtrada creada con {len(filtered_df)} elementos de {len(filtered_sections)} secciones.")
+                                    
+                                    # Show a preview
+                                    with st.expander("Vista Previa del Contenido Filtrado"):
+                                        st.dataframe(filtered_df[['section', 'level', 'content_type', 'text']])
+                                    
+                                    # Download button for the filtered document
+                                    excel_data = BytesIO()
+                                    with pd.ExcelWriter(excel_data, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                                        filtered_df.to_excel(writer, index=False)
+                                    excel_data.seek(0)
+                                    
+                                    st.download_button(
+                                        label="Descargar Documento Filtrado",
+                                        data=excel_data,
+                                        file_name="filtered_document.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+                                else:
+                                    st.warning("La salida filtrada está vacía. Por favor seleccione al menos una sección con contenido.")
+                            else:
+                                st.warning("Por favor seleccione al menos una sección para crear una salida filtrada.")
+                        else:
+                            st.warning("No se encontraron secciones con encabezados en el documento.")
+                    else:
+                        st.warning("No se encontró contenido en el documento.")
+                
+                # Tab 3: Rubric Evaluation
+                with doc_tabs[2]:
+                    try:
+                        # Call the rubric evaluation function with the document sections
+                        if 'add_rubric_evaluation_section' in globals():
+                            add_rubric_evaluation_section(sections_content, toc, toc_hierarchy)
+                        else:
+                            st.info("La función de evaluación por rúbrica no está disponible. Por favor actualice el código con la implementación de esta función.")
+                    except Exception as e:
+                        st.error(f"Error processing document: {str(e)}")
+                        import traceback
+                        st.error(traceback.format_exc())
+
+# ============= VISUALIZATION FUNCTIONS =============
+
+# Function to prepare additional data for new visualizations
+def prepare_additional_data(df):
+    """
+    Prepare additional columns needed for the new visualizations.
+    This should be called after the original data loading.
+    """
+    # Make sure we have datetime and year
+    if 'Recommendation_date' in df.columns:
+        df['year'] = pd.to_datetime(df['Recommendation_date']).dt.year
+        df['year'] = df['year'].fillna(2023).astype(int)
+    
+    # Standardize categorical fields (if they exist in the dataframe)
+    categorical_mappings = {
+        'rec_innovation_score': {
+            'very high': 'Very High', 'high': 'High', 'High': 'High',
+            'medium': 'Medium', 'Medium': 'Medium',
+            'low': 'Low', 'very low': 'Very Low'
+        },
+        'rec_precision_and_clarity': {
+            'high': 'High', 'High': 'High',
+            'medium': 'Medium', 'Medium': 'Medium',
+            'low': 'Low', 'Low': 'Low'
+        },
+        'rec_expected_impact': {
+            'high': 'High', 'High': 'High',
+            'medium': 'Medium', 'Medium': 'Medium',
+            'low': 'Low', 'Low': 'Low'
+        },
+        'rec_intervention_approach': {
+            'policy': 'Policy', 'Policy': 'Policy',
+            'process': 'Process', 'Process': 'Process'
+        },
+        'rec_operational_feasibility': {
+            'high': 'High', 'High': 'High',
+            'medium': 'Medium', 'Medium': 'Medium',
+            'low': 'Low', 'Low': 'Low'
+        },
+        'rec_timeline': {
+            'short': 'Short', 'Short': 'Short',
+            'medium': 'Medium', 'Medium': 'Medium',
+            'long': 'Long', 'Long': 'Long'
+        }
+    }
+    
+    # Apply standardization to columns that exist in the dataframe
+    for col, mapping in categorical_mappings.items():
+        if col in df.columns:
+            df[col] = df[col].replace(mapping)
+    
+    # Process tags if they exist
+    if 'tags' in df.columns:
+        # Convert tags to list format if needed
+        df['tags'] = df['tags'].apply(
+            lambda x: [x] if isinstance(x, str) and not pd.isna(x) else 
+                     x if isinstance(x, list) else []
+        )
+    
+    # Process rejection difficulty classification if it exists
+    if 'rejection_difficulty_classification' in df.columns:
+        # Clean brackets and prepare for analysis
+        df['clean_classification'] = df['rejection_difficulty_classification'].apply(
+            lambda x: x.replace('[', '').replace(']', '').strip() if isinstance(x, str) else ""
+        )
+        
+        # Split tags
+        df['clean_tags'] = df['clean_classification'].apply(
+            lambda x: [tag.strip().strip("'").strip('"') for tag in x.split(',') if tag.strip()] 
+            if isinstance(x, str) and x else []
+        )
+    
+    return df
+
+# Function to plot score evolution over time - simpler fix
+def plot_score_evolution(filtered_df):
+    """
+    Creates a line plot showing the evolution of scores over time.
+    Fixed to handle potential string concatenation issues.
+    """
+    # Only include columns that end with '_score' and exclude any problematic columns
+    score_columns = [col for col in filtered_df.columns if col.endswith('_score') and col != 'clean_tags']
+    
+    if not score_columns or filtered_df.empty:
+        st.warning("No hay datos de puntuación disponibles para los filtros seleccionados.")
+        return
+    
+    # Create a copy of the filtered dataframe to avoid modifying the original
+    df_scores = filtered_df.copy()
+    
+    # Clean up each score column to handle possible string concatenation issues
+    for col in score_columns:
+        # Check if the column contains long concatenated strings (like 'MediumMediumMedium...')
+        mask = df_scores[col].astype(str).str.len() > 15
+        if mask.any():
+            # Set problematic values to NaN
+            df_scores.loc[mask, col] = np.nan
+        
+        # Try to convert to numeric, coercing errors to NaN
+        df_scores[col] = pd.to_numeric(df_scores[col], errors='coerce')
+    
+    # Calculate yearly averages for each score type
+    yearly_scores = df_scores.groupby('year')[score_columns].mean().reset_index()
+    
+    # Only proceed if we have data
+    if yearly_scores.empty or yearly_scores[score_columns].isna().all().all():
+        st.warning("No hay datos de puntuación utilizables para los años seleccionados.")
+        return
+    
+    # Create a Plotly line chart
+    fig = go.Figure()
+    
+    # Add a line for each score
+    for column in score_columns:
+        # Skip columns with all NaN values
+        if yearly_scores[column].isna().all():
+            continue
+            
+        # Create a more readable label
+        label = column.replace('_score', '').replace('_', ' ').title()
+        
+        fig.add_trace(go.Scatter(
+            x=yearly_scores['year'], 
+            y=yearly_scores[column],
+            mode='lines+markers+text',
+            name=label,
+            text=yearly_scores[column].round(2),
+            textposition="top center",
+            line=dict(width=3)
+        ))
+    
+    # Update layout
+    fig.update_layout(
+        title='Evolución de Puntuaciones Promedio por Año',
+        xaxis_title='Año',
+        yaxis_title='Puntuación Promedio (0-10)',
+        yaxis=dict(range=[0, 10]),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5
+        ),
+        hovermode="x unified",
+        height=500
+    )
+    
+    # Add grid
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+    
+    return fig
+
+# Function to create a composition plot (stacked bar chart)
+def create_composition_plot(filtered_df, var_name, title):
+    """
+    Creates a stacked bar chart showing the composition of a variable over time.
+    Harmonizes 'process' and 'processes' if var_name is 'dimension'.
+    """
+    if var_name not in filtered_df.columns or filtered_df.empty:
+        st.warning(f"No hay datos disponibles para {var_name} con los filtros seleccionados.")
+        return
+
+    # Group by year and variable, then count
+    var_by_year = filtered_df.groupby(['year', var_name]).size().unstack(fill_value=0)
+    # Calculate percentages
+    var_by_year_pct = var_by_year.div(var_by_year.sum(axis=1), axis=0) * 100
+    # Only proceed if we have data
+    if var_by_year_pct.empty:
+        st.warning(f"No hay datos disponibles para {var_name} con los años seleccionados.")
+        return
+    
+    # Create a Plotly stacked bar chart
+    fig = go.Figure()
+    
+    # Calculate cumulative percentages for text positioning
+    cumulative = pd.DataFrame(0, index=var_by_year_pct.index, columns=['cum'])
+    
+    # Add a bar for each category
+    for category in var_by_year_pct.columns:
+        fig.add_trace(go.Bar(
+            x=var_by_year_pct.index,
+            y=var_by_year_pct[category],
+            name=category,
+            text=var_by_year_pct[category].round(1).astype(str) + '%',
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=20),  # Increased label font size
+            hoverinfo='name+y'
+        ))
+        
+        # Update cumulative for next bar
+        cumulative['cum'] += var_by_year_pct[category]
+    
+    # Update layout
+    # Remove undefined or empty title
+    # Fix undefined or empty title: if title is None, '', or 'undefined' (any case/whitespace), do not show a title
+    if title is None or str(title).strip() == '' or str(title).strip().lower() == 'undefined':
+        layout_title = ''
+    else:
+        layout_title = title
+    fig.update_layout(
+        title=layout_title,
+        xaxis_title='Año',
+        yaxis_title='Porcentaje (%)',
+        barmode='stack',
+        uniformtext=dict(mode='hide', minsize=10),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5
+        ),
+        height=500
+    )
+    
+    # Add sample count annotations on top of each bar
+    total_counts = filtered_df.groupby('year').size()
+    for year in var_by_year_pct.index:
+        if year in total_counts.index:
+            fig.add_annotation(
+                x=year,
+                y=105,
+                text=f"n={total_counts[year]}",
+                showarrow=False,
+                font=dict(size=14, color="black")
+            )
+    
+    return fig
+
+# Function to create tag composition plot
+def create_tag_composition_plot(filtered_df, top_n=8):
+    """
+    Creates a stacked bar chart showing the composition of tags over time.
+    """
+    if 'tags' not in filtered_df.columns or filtered_df.empty:
+        st.warning("No hay datos de etiquetas disponibles para los filtros seleccionados.")
+        return
+    
+    # Explode the dataframe by tags
+    exploded_df = filtered_df.explode('tags')
+    
+    # Remove rows with empty tags
+    exploded_df = exploded_df.dropna(subset=['tags']).reset_index(drop=True)
+    
+    if exploded_df.empty:
+        st.warning("No hay datos de etiquetas disponibles después del filtrado.")
+        return
+    
+    # Count occurrences of each tag
+    tag_counts = exploded_df['tags'].value_counts()
+    
+    # Get the top N tags
+    top_tags = tag_counts.head(top_n).index.tolist()
+    
+    # Replace non-top tags with 'Other tags'
+    exploded_df['tag_category'] = exploded_df['tags'].apply(
+        lambda x: x if x in top_tags else 'Otras etiquetas'
+    )
+    
+    # Count yearly occurrences for each tag category
+    yearly_tag_counts = exploded_df.groupby(['year', 'tag_category']).size().unstack(fill_value=0)
+    
+    # Calculate the percentage of each tag category per year
+    yearly_tag_percentages = yearly_tag_counts.div(yearly_tag_counts.sum(axis=1), axis=0) * 100
+    
+    # Only proceed if we have data
+    if yearly_tag_percentages.empty:
+        st.warning("No hay datos de etiquetas disponibles para los años seleccionados.")
+        return
+    
+    # Create a Plotly stacked bar chart
+    fig = go.Figure()
+    
+    # Add a bar for each tag category
+    for category in yearly_tag_percentages.columns:
+        fig.add_trace(go.Bar(
+            x=yearly_tag_percentages.index,
+            y=yearly_tag_percentages[category],
+            name=category,
+            text=yearly_tag_percentages[category].round(1).astype(str) + '%',
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=14),
+            hoverinfo='name+y'
+        ))
+    
+    # Update layout
+    fig.update_layout(
+        title='Evolución de la Composición de Etiquetas por Año',
+        xaxis_title='Año',
+        yaxis_title='Porcentaje (%)',
+        barmode='stack',
+        uniformtext=dict(mode='hide', minsize=10),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.4,
+            xanchor="center",
+            x=0.5
+        ),
+        height=500
+    )
+    
+    # Add sample count annotations on top of each bar
+    total_counts = exploded_df.groupby('year').size()
+    for year in yearly_tag_percentages.index:
+        if year in total_counts.index:
+            fig.add_annotation(
+                x=year,
+                y=105,
+                text=f"n={total_counts[year]}",
+                showarrow=False,
+                font=dict(size=14, color="black")
+            )
+    
+    return fig
+
+# Function to create rejection difficulty classification plot
+def create_difficulty_classification_plot(filtered_df, top_n=8):
+    """
+    Creates a stacked bar chart showing the composition of rejection difficulty classifications over time.
+    """
+    if 'clean_tags' not in filtered_df.columns or filtered_df.empty:
+        st.warning("No hay datos de clasificación disponibles para los filtros seleccionados.")
+        return
+    
+    # Explode the dataframe by tags
+    exploded_df = filtered_df.explode('clean_tags')
+    
+    # Remove rows with empty tags
+    exploded_df = exploded_df[
+        exploded_df['clean_tags'].apply(lambda x: isinstance(x, str) and len(x) > 0)
+    ].reset_index(drop=True)
+    
+    if exploded_df.empty:
+        st.warning("No hay datos de clasificación disponibles después del filtrado.")
+        return
+    
+    # Count occurrences of each tag
+    tag_counts = exploded_df['clean_tags'].value_counts()
+    
+    # Get the top N tags
+    top_tags = tag_counts.head(top_n).index.tolist()
+    
+    # Replace non-top tags with 'Other tags'
+    exploded_df['tag_category'] = exploded_df['clean_tags'].apply(
+        lambda x: x if x in top_tags else 'Otras etiquetas'
+    )
+    
+    # Count yearly occurrences for each tag category
+    yearly_tag_counts = exploded_df.groupby(['year', 'tag_category']).size().unstack(fill_value=0)
+    
+    # Calculate the percentage of each tag category per year
+    yearly_tag_percentages = yearly_tag_counts.div(yearly_tag_counts.sum(axis=1), axis=0) * 100
+    
+    # Only proceed if we have data
+    if yearly_tag_percentages.empty:
+        st.warning("No hay datos de clasificación disponibles para los años seleccionados.")
+        return
+    
+    # Create a Plotly stacked bar chart
+    fig = go.Figure()
+    
+    # Add a bar for each classification category
+    for category in yearly_tag_percentages.columns:
+        fig.add_trace(go.Bar(
+            x=yearly_tag_percentages.index,
+            y=yearly_tag_percentages[category],
+            name=category,
+            text=yearly_tag_percentages[category].round(1).astype(str) + '%',
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=14),
+            hoverinfo='name+y'
+        ))
+    
+    # Update layout
+    fig.update_layout(
+        title='Evolución de la Composición de Clasificaciones de Dificultad de Rechazo por Año',
+        xaxis_title='Año',
+        yaxis_title='Porcentaje (%)',
+        barmode='stack',
+        uniformtext=dict(mode='hide', minsize=10),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.4,
+            xanchor="center",
+            x=0.5
+        ),
+        height=500
+    )
+    
+    # Add sample count annotations on top of each bar
+    total_counts = exploded_df.groupby('year').size()
+    for year in yearly_tag_percentages.index:
+        if year in total_counts.index:
+            fig.add_annotation(
+                x=year,
+                y=105,
+                text=f"n={total_counts[year]}",
+                showarrow=False,
+                font=dict(size=14, color="black")
+            )
+    
+    return fig
+
+# # Function to add advanced visualization section to the Streamlit app
+# def add_advanced_visualization_section(filtered_df):
+#     """
+#     Adds an advanced visualization section to the Streamlit app.
+#     """
+#     st.markdown("#### Visualizaciones Avanzadas")
+
+#     # --- Score Evolution ---
+#     st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
+#     score_fig = plot_score_evolution(filtered_df)
+#     if score_fig:
+#         # Remove inline title from plot
+#         st.plotly_chart(score_fig, use_container_width=True)
+
+#     # --- Variable Composition ---
+#     st.markdown("<h4 style='margin-top: 2em;'>Composición por Variable</h4>", unsafe_allow_html=True)
+#     available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
+#     if available_vars:
+#         var_mapping = {
+#             'rec_innovation_score': 'Nivel de Innovación',
+#             'rec_precision_and_clarity': 'Precisión y Claridad',
+#             'rec_expected_impact': 'Impacto Esperado',
+#             'rec_intervention_approach': 'Enfoque de Intervención',
+#             'rec_operational_feasibility': 'Factibilidad Operativa',
+#             'rec_timeline': 'Plazo de Implementación'
+#         }
+#         var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
+#         if var_options:
+#             selected_var_label = st.selectbox(
+#                 "Seleccione una variable para visualizar:", 
+#                 options=list(var_options.keys())
+#             )
+#             selected_var = var_options[selected_var_label]
+#             var_titles = {
+#                 'rec_innovation_score': 'Composición de Niveles de Innovación por Año',
+#                 'rec_precision_and_clarity': 'Composición de Niveles de Precisión y Claridad por Año',
+#                 'rec_expected_impact': 'Composición de Niveles de Impacto Esperado por Año',
+#                 'rec_intervention_approach': 'Composición de Enfoques de Intervención por Año',
+#                 'rec_operational_feasibility': 'Composición de Niveles de Factibilidad Operativa por Año',
+#                 'rec_timeline': 'Composición de Plazos de Implementación por Año'
+#             }
+#             composition_fig = create_composition_plot(
+#                 filtered_df, 
+#                 selected_var, 
+#                 var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
+#             )
+#             if composition_fig:
+#                 st.plotly_chart(composition_fig, use_container_width=True)
+#         else:
+#             st.warning("No se encontraron variables de composición en los datos filtrados.")
+#     else:
+#         st.warning("No se encontraron variables de composición en los datos filtrados.")
+
+#     # --- Difficulty Classification ---
+#     st.markdown("<h4 style='margin-top: 2em;'>Clasificación de Dificultad de Rechazo</h4>", unsafe_allow_html=True)
+#     if 'clean_tags' in filtered_df.columns:
+#         top_n = st.slider("Número de clasificaciones principales a mostrar:", min_value=3, max_value=15, value=8, key='diff_class_slider')
+#         diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
+#         if diff_fig:
+#             st.plotly_chart(diff_fig, use_container_width=True)
+#     else:
+#         st.warning("No se encontraron datos de clasificación de dificultad en los datos filtrados.")
+
+# Fixed version of the function with tab-specific keys
+def add_advanced_visualization_section(filtered_df, tab_id="tab1"):
+    """
+    Adds an advanced visualization section to the Streamlit app.
+    
+    Parameters:
+    -----------
+    filtered_df : pandas DataFrame
+        The filtered dataframe to visualize
+    tab_id : str
+        The tab identifier to make widget keys unique (default: "tab1")
+    """
+    st.markdown("#### Calidad de  Respuesta Institucional a Recomendaciones")
+
+    # --- Score Evolution ---
+    st.markdown("<h4 style='margin-top: 2em;'>Evolución de Puntuaciones Promedio por Año</h4>", unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        score_fig = plot_score_evolution(filtered_df)
+        if score_fig:
+            # Remove inline title from plot
+            st.plotly_chart(score_fig, use_container_width=True)
+    with col2:
+        # Make the legend box visually match the plot height
+        st.markdown("""
+            <style>
+            textarea[data-baseweb="textarea"] {
+                min-height: 500px !important;
+                height: 500px !important;
+                max-height: 700px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        legend_definitions = st.text_area(
+            "Leyenda:",
+            value="""
+            • Coherencia: Nivel de alineación entre la recomendación y el plan de acción.
+            • Calidad del plan: Nivel de especificidad y claridad del plan de acción.
+            • Nivel de atención: Nivel de consideración hacia las prioridades de la recomendación, en el plan de acción.
+            • Puntuación agregada: Promedio de las puntuaciones de coherencia, calidad del plan y nivel de atención.
+            """,
+            key=f"legend_definitions_{tab_id}",
+            height=500
+        )
+
+
+    # --- Variable Composition ---
+    st.markdown("<h4 style='margin-top: 2em;'>Composición de Recomendaciones por Atributo</h4>", unsafe_allow_html=True)
+    available_vars = [col for col in filtered_df.columns if col.startswith('rec_')]
+    if available_vars:
+        var_mapping = {
+            'rec_innovation_score': 'Nivel de Innovación',
+            'rec_precision_and_clarity': 'Precisión y Claridad',
+            'rec_expected_impact': 'Impacto Esperado',
+            'rec_intervention_approach': 'Enfoque de Intervención',
+            'rec_operational_feasibility': 'Factibilidad Operativa',
+            'rec_timeline': 'Plazo de Implementación'
+        }
+        var_options = {var_mapping.get(var, var): var for var in available_vars if var in var_mapping}
+        if var_options:
+            # Use tab_id parameter to create unique key for this selectbox
+            selected_var_label = st.selectbox(
+                "Seleccione una variable para visualizar:", 
+                options=list(var_options.keys()),
+                key=f"variable_{tab_id}"  # This ensures unique keys across tabs
+            )
+            selected_var = var_options[selected_var_label]
+            var_titles = {
+                'rec_innovation_score': 'Composición de Niveles de Innovación por Año',
+                'rec_precision_and_clarity': 'Composición de Niveles de Precisión y Claridad por Año',
+                'rec_expected_impact': 'Composición de Niveles de Impacto Esperado por Año',
+                'rec_intervention_approach': 'Composición de Enfoques de Intervención por Año',
+                'rec_operational_feasibility': 'Composición de Niveles de Factibilidad Operativa por Año',
+                'rec_timeline': 'Composición de Plazos de Implementación por Año'
+            }
+            composition_fig = create_composition_plot(
+                filtered_df, 
+                selected_var, 
+                var_titles.get(selected_var, f'Composición de {selected_var_label} por Año')
+            )
+            if composition_fig:
+                st.plotly_chart(composition_fig, use_container_width=True)
+        else:
+            st.warning("No se encontraron variables de composición en los datos filtrados.")
+    else:
+        st.warning("No se encontraron variables de composición en los datos filtrados.")
+
+    # --- Difficulty Classification ---
+    st.markdown("<h4 style='margin-top: 2em;'>Principales Barreras de Implementación</h4>", unsafe_allow_html=True)
+    if 'clean_tags' in filtered_df.columns:
+        # Use tab_id parameter to create unique key for this slider
+        top_n = st.slider(
+            "Número de clasificaciones principales a mostrar:", 
+            min_value=3, max_value=15, value=8, 
+            key=f"diff_class_slider_{tab_id}"  # This ensures unique keys across tabs
+        )
+        diff_fig = create_difficulty_classification_plot(filtered_df, top_n)
+        if diff_fig:
+            st.plotly_chart(diff_fig, use_container_width=True)
+    else:
+        st.warning("No se encontraron datos de barreras en los datos filtrados.")
+# ============= DATA LOADING FUNCTIONS =============
+
+# Load data - use relative paths for deployment
+# Define paths as relative to the current directory or using st.secrets for Streamlit Cloud
+@st.cache_data
+def load_data():
+    # Replace with a check for environment, use st.secrets for paths in production
+    if os.getenv("STREAMLIT_ENV") == "production":
+        # Use st.secrets for file paths in production
+        df_path = st.secrets["df_path"]
+        df_raw_path = st.secrets["df_raw_path"]
+        embeddings_path = st.secrets["embeddings_path"]
+    else:
+        # Use relative paths for local development
+        df_path = "./df_complete_all_full.xlsx"
+        df_raw_path = "./df_split_actions.xlsx"
+        embeddings_path = "./emb_Recomm_rec_cl_4.pt"
+    
+    df = pd.read_excel(df_path)
+    df['index_df'] = df['ID_Recomendacion']
+    # Replace spaces and dots with underscore in column names
+    df.columns = df.columns.str.replace(' ', '_').str.replace('.', '_')
+    df.rename(columns={'Dimension': 'dimension', 
+                       'Subdimension': 'subdim'}, inplace=True)
+
+    # Raw data
+    df_raw = pd.read_excel(df_raw_path)
+    df_raw['year'] = pd.to_datetime(df_raw['Recommendation date'], format='%Y-%m-%d').dt.year
+    df_raw.columns = df_raw.columns.str.replace(' ', '_').str.replace('.', '_')
+    missing_index_df = df_raw[~df_raw['index_df'].isin(df['index_df'])]
+    
+    # Reset index of both DataFrames before concatenation
+    df = df.reset_index(drop=True)
+    
+    # Concatenate with ignore_index=True to avoid index conflicts
+    df = pd.concat([df, missing_index_df], axis=0)
+    
+    # Processes
+    df['year'] = pd.to_datetime(df['Recommendation_date'], format='%Y-%m-%d').dt.year
+    df['year'] = df['year'].fillna(2023).astype(int)
+    df['year'] = df['year'].astype(int)
+    df['dimension'] = df['dimension'].fillna('Sin Clasificar')
+    df['subdim'] = df['subdim'].fillna('Sin Clasificar')
+    df['Management_response'] = df['Management_response'].fillna('Sin respuesta')
+    df['Management_response'] = df['Management_response'].replace('Partially completed', 'Partially Completed')
+    
+    return df, df_raw
+
+@st.cache_data
+def load_extended_data():
+    """
+    Load and prepare additional data for enhanced visualizations.
+    This extends the existing load_data function with new data processing.
+    """
+    # First load the original data
+    df, df_raw = load_data()
+    
+    # Load additional analysis data if available
+    try:
+        if os.getenv("STREAMLIT_ENV") == "production":
+            analyzed_path = st.secrets.get("analyzed_recommendations_path", None)
+        else:
+            # Use a relative or absolute path based on your setup
+            analyzed_path = "./analyzed_recommendations_plans_v5.csv"
+        
+        if analyzed_path and os.path.exists(analyzed_path):
+            # Load the analyzed recommendations with pipe separator
+            analyzed_df = pd.read_csv(analyzed_path, sep='|')
+            
+            # Convert dates and ensure year column
+            analyzed_df['Recommendation date'] = pd.to_datetime(analyzed_df['Recommendation date'])
+            analyzed_df['year'] = analyzed_df['Recommendation date'].dt.year
+            
+            # Change years prior to 2018 to 2018 to match the original analysis
+            analyzed_df.loc[analyzed_df['year'] < 2018, 'year'] = 2018
+            
+            # Prepare additional columns needed for the visualizations
+            analyzed_df = prepare_additional_data(analyzed_df)
+            
+            # Merge with the original dataframe if needed (based on a common key)
+            if 'index_df' in df.columns and 'index_df' in analyzed_df.columns:
+                # Select only new columns from analyzed_df to avoid duplicates
+                new_cols = [col for col in analyzed_df.columns if col not in df.columns]
+                if new_cols:  # Only proceed if there are new columns to add
+                    # Include the key column
+                    merge_cols = ['index_df'] + new_cols
+                    
+                    # Merge the new data
+                    df = pd.merge(df, analyzed_df[merge_cols], on='index_df', how='left')
+            
+            # Store the analyzed dataframe in session state for potential use elsewhere
+            st.session_state['analyzed_df'] = analyzed_df
+        else:
+            st.warning("No se encontró el archivo de datos de análisis adicional. Es posible que algunas visualizaciones no estén disponibles.")
+            st.session_state['analyzed_df'] = None
+    except Exception as e:
+        st.warning(f"Nota: No se pudieron cargar los datos de análisis adicionales. Algunas visualizaciones pueden no estar disponibles. Error: {str(e)}")
+        st.session_state['analyzed_df'] = None
+    # Process the main dataframe with the additional preparation
+    df = prepare_additional_data(df)
+    
+    return df, df_raw
+
+# Load embeddings
+@st.cache_data
+def load_embeddings():
+    if os.getenv("STREAMLIT_ENV") == "production":
+        embeddings_path = st.secrets["embeddings_path"]
+        structured_embeddings_path = st.secrets["structured_embeddings_path"]
+    else:
+        embeddings_path = "./emb_Recomm_rec_cl_4.pt"
+        structured_embeddings_path = "./Recommendation_RAG_Metadata.pt"
+    
+    doc_embeddings = torch.load(embeddings_path)
+    doc_embeddings = np.array(doc_embeddings)
+    
+    structured_embeddings = torch.load(structured_embeddings_path)
+    
+    # Create a FAISS index
+    dimension = doc_embeddings.shape[1]
+    index = faiss.IndexFlatIP(dimension)
+    index.add(doc_embeddings)
+    
+    return doc_embeddings, structured_embeddings, index
+
+import concurrent.futures
+
+def process_text_analysis(combined_text, map_template, combine_template_prefix, user_template_part):
+    """
+    Process text analysis in chunks and combine results (parallelized).
+    
+    Parameters:
+    -----------
+    combined_text : str
+        The combined text to analyze
+    map_template : str
+        Template for the initial summarization of chunks
+    combine_template_prefix : str
+        Prefix for the template used to combine summaries
+    user_template_part : str
+        User-defined part of the template for final analysis
+        
+    Returns:
+    --------
+    str
+        Analyzed and summarized text
+    """
+    if not combined_text:
+        return None
+    
+    text_chunks = split_text(combined_text)
+    chunk_summaries = []
+    MAX_WORKERS = min(8, len(text_chunks)) if text_chunks else 1
+
+    def summarize_chunk(chunk):
+        return summarize_text(chunk, map_template)
+
+    # Parallelize chunk summarization
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(summarize_chunk, chunk) for chunk in text_chunks]
+        for future in concurrent.futures.as_completed(futures):
+            summary = future.result()
+            if summary:
+                chunk_summaries.append(summary)
+
+    # Preserve original chunk order (since as_completed doesn't)
+    chunk_summaries_ordered = []
+    if chunk_summaries and len(chunk_summaries) == len(text_chunks):
+        # If all succeeded, sort by chunk order
+        chunk_map = {futures[i]: i for i in range(len(futures))}
+        # But as_completed gives no order, so instead:
+        # Re-run in order
+        for i in range(len(text_chunks)):
+            result = futures[i].result()
+            if result:
+                chunk_summaries_ordered.append(result)
+    else:
+        chunk_summaries_ordered = chunk_summaries
+
+    if chunk_summaries_ordered:
+        combined_summaries = " ".join(chunk_summaries_ordered)
+        final_template = combine_template_prefix + user_template_part
+        return summarize_text(combined_summaries, final_template)
+    
+    return None
+
+
+def split_text(text, max_length=1500):
+    """
+    Split text into chunks of specified maximum length.
+    
+    Parameters:
+    -----------
+    text : str
+        The text to split
+    max_length : int, optional
+        Maximum length of each chunk (default: 1500)
+        
+    Returns:
+    --------
+    list
+        List of text chunks
+    """
+    words = text.split()
+    chunks = []
+    current_chunk = []
+    current_length = 0
+
+    for word in words:
+        current_length += len(word) + 1
+        if current_length > max_length:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [word]
+            current_length = len(word) + 1
+        else:
+            current_chunk.append(word)
+    
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    return chunks
+
+def build_combined_text(df, selections):
+    """
+    Build combined text from selected text sources.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing the text columns
+    selections : dict
+        Dictionary indicating which text sources to include
+        
+    Returns:
+    --------
+    str
+        Combined text from all selected sources
+    """
+    texts = []
+    if selections['recommendations']:
+        texts.append(" ".join(df['Recommendation_description'].astype(str).dropna().unique()))
+    if selections['lessons']:
+        texts.append(" ".join(df['Lessons_learned_description'].astype(str).dropna().unique()))
+    if selections['practices']:
+        texts.append(" ".join(df['Good_practices_description'].astype(str).dropna().unique()))
+    if selections['plans']:
+        texts.append(" ".join(df['Action_plan'].astype(str).dropna().unique()))
+    return " ".join(texts)
+
+def summarize_text(text, prompt_template):
+    """
+    Summarize text using OpenAI API.
+    
+    Parameters:
+    -----------
+    text : str
+        The text to summarize
+    prompt_template : str
+        Template for the prompt
+        
+    Returns:
+    --------
+    str
+        Summarized text
+    """
+    if not openai_api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        return None
+        
+    prompt = prompt_template.format(text=text)
+    try:
+        # Use new Responses API with GPT-5
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes and analyzes texts."},
+                {"role": "user", "content": prompt}
+            ],
+            reasoning_effort="minimal"
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        st.error(f"Error al llamar a la API de OpenAI: {e}")
+        return None
+
+# ============= MAIN APP CODE =============
+
+# Set page config
+st.set_page_config(layout="wide")
+
+# ============= ILO GLOBAL STYLES =============
+# ILO Color Palette: Red (#C8102E), Blue (#002F6C), White (#FFFFFF)
+# Secondary: Light Blue (#0072CE), Light Gray (#F5F5F5)
+st.markdown("""
+<style>
+/* ===== ILO Color Variables ===== */
+:root {
+    --ilo-red: #C8102E;
+    --ilo-blue: #002F6C;
+    --ilo-light-blue: #0072CE;
+    --ilo-white: #FFFFFF;
+    --ilo-light-gray: #F5F5F5;
+    --ilo-dark-gray: #333333;
+}
+
+/* ===== Global Typography ===== */
+h1, h2, h3 {
+    color: var(--ilo-blue) !important;
+    font-weight: 600 !important;
+}
+
+h4, h5, h6 {
+    color: var(--ilo-dark-gray) !important;
+}
+
+/* ===== Primary Buttons ===== */
+.stButton > button {
+    background-color: var(--ilo-blue) !important;
+    color: var(--ilo-white) !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 1.25rem !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+
+.stButton > button:hover {
+    background-color: var(--ilo-light-blue) !important;
+    box-shadow: 0 4px 12px rgba(0, 47, 108, 0.25) !important;
+}
+
+/* ===== Download Buttons ===== */
+.stDownloadButton > button {
+    background-color: var(--ilo-red) !important;
+    color: var(--ilo-white) !important;
+    border: none !important;
+    border-radius: 6px !important;
+}
+
+.stDownloadButton > button:hover {
+    background-color: #A00D24 !important;
+    box-shadow: 0 4px 12px rgba(200, 16, 46, 0.3) !important;
+}
+
+/* ===== Tabs Styling ===== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    background-color: var(--ilo-light-gray);
+    padding: 0.5rem;
+    border-radius: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background-color: transparent !important;
+    color: var(--ilo-blue) !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 500 !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background-color: var(--ilo-blue) !important;
+    color: var(--ilo-white) !important;
+}
+
+/* ===== Expanders ===== */
+.streamlit-expanderHeader {
+    background-color: var(--ilo-light-gray) !important;
+    border-radius: 8px !important;
+    color: var(--ilo-blue) !important;
+    font-weight: 500 !important;
+}
+
+/* ===== Info/Warning/Success Boxes ===== */
+.stAlert > div[data-baseweb="notification"] {
+    border-radius: 8px !important;
+}
+
+div[data-testid="stNotificationContentInfo"] {
+    background-color: rgba(0, 114, 206, 0.1) !important;
+    border-left: 4px solid var(--ilo-light-blue) !important;
+}
+
+div[data-testid="stNotificationContentSuccess"] {
+    background-color: rgba(40, 167, 69, 0.1) !important;
+    border-left: 4px solid #28a745 !important;
+}
+
+div[data-testid="stNotificationContentWarning"] {
+    background-color: rgba(200, 16, 46, 0.08) !important;
+    border-left: 4px solid var(--ilo-red) !important;
+}
+
+/* ===== Checkboxes ===== */
+.stCheckbox > label > div[data-testid="stMarkdownContainer"] {
+    color: var(--ilo-dark-gray) !important;
+}
+
+/* ===== Sliders ===== */
+.stSlider > div > div > div > div {
+    background-color: var(--ilo-blue) !important;
+}
+
+/* ===== Select boxes ===== */
+.stSelectbox > div > div {
+    border-color: var(--ilo-blue) !important;
+}
+
+/* ===== DataFrames ===== */
+.stDataFrame {
+    border: 1px solid #e0e0e0 !important;
+    border-radius: 8px !important;
+}
+
+/* ===== Progress bars ===== */
+.stProgress > div > div > div > div {
+    background-color: var(--ilo-blue) !important;
+}
+
+/* ===== Metric cards ===== */
+[data-testid="stMetricValue"] {
+    color: var(--ilo-blue) !important;
+}
+
+/* ===== Reference boxes (custom) ===== */
+.reference-box {
+    border-left: 4px solid var(--ilo-blue) !important;
+    background: linear-gradient(135deg, #f0f4f8, #e8eef5) !important;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    color: var(--ilo-dark-gray);
+    margin-bottom: 0.75rem;
+    box-shadow: 0 4px 14px rgba(0, 47, 108, 0.08);
+}
+
+/* ===== Horizontal rule ===== */
+hr {
+    border-top: 2px solid var(--ilo-blue) !important;
+}
+
+/* ===== Sidebar ===== */
+[data-testid="stSidebar"] {
+    background-color: var(--ilo-light-gray) !important;
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: var(--ilo-blue) !important;
+}
+
+/* ===== File uploader ===== */
+.stFileUploader > div > div {
+    border: 2px dashed var(--ilo-blue) !important;
+    border-radius: 8px !important;
+}
+
+/* ===== Radio buttons ===== */
+.stRadio > div {
+    gap: 0.5rem;
+}
+
+/* ===== Multiselect ===== */
+.stMultiSelect > div > div {
+    border-color: var(--ilo-blue) !important;
+}
+
+/* ===== Spinner ===== */
+.stSpinner > div {
+    border-top-color: var(--ilo-blue) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+    <h2 style='text-align:center; color:#002F6C; margin-top:0;'>
+        Caja de Herramientas para el Mejor Desempeño de los Proyectos
+        <br>
+        <span style='font-size:0.8em; font-weight:500;'>Toolkit for Better Project Performance</span>
+    </h2>
+    <h3 style='text-align:center; color:#002F6C; margin-top:0;'>
+        Usando Evidencia de las Evaluaciones
+        <br>
+        <span style='font-size:0.85em; font-weight:500;'>Using Evidence from Evaluations</span>
+    </h3>
+    <hr style='border-top: 2px solid #002F6C;'>
+""", unsafe_allow_html=True)
+
+# Initialize data and embeddings - wrap in try/except for better error handling
+try:
+    # Use the extended data loading function that includes the new visualizations data
+    df, df_raw = load_extended_data()
+    doc_embeddings, structured_embeddings, index = load_embeddings()
+    doc_texts = df_raw['Recommendation_description'].tolist()
+except Exception as e:
+    st.error(f"Error cargando datos: {str(e)}")
+    st.stop()
+
+
+# Check for API key before running the app
+if not openai_api_key:
+    st.warning("No se encontró la clave de API de OpenAI. Configura la variable de entorno OPENAI_API_KEY en Streamlit Cloud.")
+    st.info("Para desarrollo local, puedes usar un archivo .env o configurar la variable de entorno.")
+    # Continue with limited functionality or show instructions on setup
+
+# Initialize data and embeddings - wrap in try/except for better error handling
+try:
+    # Use the extended data loading function that includes the new visualizations data
+    df, df_raw = load_extended_data()
+    doc_embeddings, structured_embeddings, index = load_embeddings()
+    doc_texts = df_raw['Recommendation_description'].tolist()
+except Exception as e:
+    st.error(f"Error cargando datos: {str(e)}")
+    st.stop()
+
+# Function to get embeddings for lessons learned
+def get_lessons_embedding_with_retry(text, model='text-embedding-3-large', max_retries=3, delay=1):
+    if not openai_api_key:
+        st.error("No se encontró la clave de API de OpenAI. Por favor, configura la variable de entorno OPENAI_API_KEY.")
+        return None
+    for attempt in range(max_retries):
+        try:
+            response = client.embeddings.create(input=text, model=model)
+            return np.array(response.data[0].embedding)
+        except Exception as e:
+            st.warning(f"Intento {attempt + 1} fallido: {str(e)}")
+            time.sleep(delay)
+    return None
+
+# Function to find similar lessons learned using embeddings
+def find_similar_lessons(query_embedding, lessons_index, lessons_embeddings, structured_lessons, score_threshold=0.5, top_n=20):
+    # Normalize query embedding for cosine similarity
+    query_embedding = np.array(query_embedding).reshape(1, -1)
+    # Search the index
+    try:
+        distances, indices = lessons_index.search(query_embedding, lessons_index.ntotal)
+
+        # Filter results based on the score threshold
+        filtered_lessons = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx < len(structured_lessons) and dist >= score_threshold:
+                metadata = structured_lessons[idx]
+                lesson = {
+                    "lesson": metadata["text"],
+                    "similarity": float(dist),  # Convert to float for JSON serialization
+                    "country": metadata["country"],
+                    "year": metadata["year"],
+                    "eval_id": metadata["eval_id"]
+                }
+                filtered_lessons.append(lesson)
+            if len(filtered_lessons) >= top_n:
+                break
+        return filtered_lessons
+    except Exception as e:
+        st.error(f"Error in similarity search: {str(e)}")
+        return []
+
+# Function to find lessons by term matching
+def find_lessons_by_term_matching(query, lessons_texts, structured_lessons, top_n=10):
+    try:
+        matched_lessons = []
+        query_lower = query.lower()
+        for idx, text in enumerate(lessons_texts):
+            if isinstance(text, str) and query_lower in text.lower():
+                if idx < len(structured_lessons):
+                    metadata = structured_lessons[idx]
+                    matched_lessons.append({
+                        "lesson": text,
+                        "country": metadata["country"],
+                        "year": metadata["year"],
+                        "eval_id": metadata["eval_id"]
+                    })
+        matched_lessons = sorted(matched_lessons, key=lambda x: len(str(x["lesson"])))
+        return matched_lessons[:top_n]
+    except Exception as e:
+        st.error(f"Error in term matching: {str(e)}")
+        return []
+
+# Function to load and prepare lessons embeddings
+@st.cache_data
+def load_lessons_embeddings():
+    try:
+        if os.getenv("STREAMLIT_ENV") == "production":
+            lessons_embeddings_path = st.secrets["lessons_embeddings_path"]
+            structured_lessons_path = st.secrets["structured_lessons_path"]
+        else:
+            lessons_embeddings_path = "./emb_LL_ll_cl_4.pt"
+            structured_lessons_path = "./lessons_metadata.pt"
+        
+        # Load embeddings and metadata
+        lessons_embeddings = torch.load(lessons_embeddings_path)
+        lessons_embeddings = np.array(lessons_embeddings)
+        
+        structured_lessons = torch.load(structured_lessons_path)
+        
+        # Create a FAISS index
+        dimension = lessons_embeddings.shape[1]
+        lessons_index = faiss.IndexFlatIP(dimension)
+        lessons_index.add(lessons_embeddings)
+        
+        return lessons_embeddings, structured_lessons, lessons_index
+    except Exception as e:
+        st.error(f"Error cargando embeddings de lecciones: {str(e)}")
+        # Return placeholder data to avoid errors
+        return np.array([]), [], None
+    
+    
+# Tabs
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Valoración Preliminar de Calidad de Proyectos",
+    "Diagnóstico de Atributos Específicos",
+    "Diagnóstico de Sostenibilidad del Proyecto",
+    "Pregúntale a tus Documentos",
+])
+
+#-----------------------#-----------------------#
+#-----------------------#-----------------------#
+# Tab 2: Revisión por criterios con trazabilidad
+# with tab2:
+#     st.header("Acercamiento a Valoración de Calidad de Proyectos")
+
+#     # Descriptive text box
+#     st.info("""
+#     **📋 Descripción de la herramienta:**
+
+#     Sube un Word (.docx) para evaluarlo con criterios y niveles de desempeño (rúbricas) alineados a la OIT. La herramienta extrae secciones clave, aplica la matriz de criterios y asigna puntajes 1–5 con análisis narrativo y evidencia trazable (citas + metadatos). Los criterios de Participación de Actores, Género y Transición Justa se aplican a un documento de proyecto. En cuanto a los criterios de "Desempeño del Proyecto" se deberán aplicar exclusivamente a informes de evaluación ya que se basan en la metodología de meta-análisis de la Oficina de Evaluación de la OIT. Finalmente, los criterios de Metodologías con Enfoque Participativo se aplican a informes de evaluación u otros tipos de documentos. 
+    
+#     Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+
+#     Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste. Este diagnóstico en formato EXCEL sirve para revisar propuestas antes de enviarlas a donantes, verificar aspectos puntuales de informes de evaluación o de ejecución, comprobar coherencia con P&B, DWCP y marcos UNSDCF, elaborar notas técnicas con sustento y respaldar la rendición de cuentas ante mandantes y donantes.
+#     """)
+
+#     # Read rubrics from Excel files as in megaparse_example.py
+#     import pandas as pd
+#     engagement_rubric = {}
+#     performance_rubric = {}
+#     parteval_rubric = {}
+#     gender_rubric = {}
+#     tj_traditional_rubric = {}
+#     tj_just_transition_rubric = {}
+
+#     try:
+#         df_rubric_engagement = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_engagement')
+#         df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_engagement.iterrows():
+#             indicador = row['Indicador']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#             engagement_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+#         df_rubric_performance = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_performance')
+#         df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_performance.iterrows():
+#             criterio = row['subdim']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['subdim', 'Dimensión'], errors='ignore').values.tolist()
+#             performance_rubric[criterio] = {'valores': valores, 'dimension': dimension}
+
+#         df_rubric_parteval = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_parteval')
+#         df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_parteval.iterrows():
+#             indicador = row['Indicador']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#             parteval_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+#         df_rubric_gender = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_gender_')
+#         df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#         for idx, row in df_rubric_gender.iterrows():
+#             indicador = row['Indicador']
+#             dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#             valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#             gender_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+#         # Load TJ Traditional rubric from Rubricas_6ago2025.xlsx
+#         try:
+#             df_rubric_tj_traditional = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_Traditional')
+#             df_rubric_tj_traditional.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#             for idx, row in df_rubric_tj_traditional.iterrows():
+#                 indicador = row['Indicador']
+#                 if pd.notna(indicador) and str(indicador).strip():
+#                     dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#                     valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#                     tj_traditional_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+#         except Exception as e:
+#             st.error(f"❌ Error cargando TJ Tradicional: {e}")
+#             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+
+#         # Load TJ Just Transition rubric from Rubricas_6ago2025.xlsx
+#         try:
+#             df_rubric_tj_just_transition = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_TJ')
+#             df_rubric_tj_just_transition.drop(columns=['Criterio'], inplace=True, errors='ignore')
+#             for idx, row in df_rubric_tj_just_transition.iterrows():
+#                 indicador = row['Indicador']
+#                 if pd.notna(indicador) and str(indicador).strip():
+#                     dimension = row.get('Dimensión', 'No especificada')  # Get dimension, default if not present
+#                     valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+#                     tj_just_transition_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+#         except Exception as e:
+#             st.error(f"❌ Error cargando TJ Transición Justa: {e}")
+#             st.write("Sheets disponibles:", list(pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names))
+#     except Exception as e:
+#         st.error(f"Error leyendo las rúbricas: {e}")
+
+#     # Debug: Show Excel sheet names and rubric status
+#     try:
+#         available_sheets = pd.ExcelFile('./Rubricas_6ago2025.xlsx').sheet_names
+#         st.warning(f"**Sheets disponibles en Rubricas_6ago2025.xlsx:** {', '.join(available_sheets)}")
+#     except Exception as e:
+#         st.error(f"Error leyendo Excel: {e}")
+
+#     st.error(f"""
+#     **ESTADO DE RÚBRICAS:**
+#     - Participación de Actores (durante el proyecto): {len(engagement_rubric)} criterios
+#     - Desempeño del Proyecto (según informes de evaluación): {len(performance_rubric)} criterios
+#     - Metodologías con Enfoque Participativo: {len(parteval_rubric)} criterios
+#     - Enfoque de Género: {len(gender_rubric)} criterios
+#     - Transición Justa: Enfoque Tradicional: {len(tj_traditional_rubric)} criterios
+#     - Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
+#     """)
+
+    # # Function to extract document structure
+    #     def extract_docx_structure(docx_path):
+    #         from docx import Document
+    #         doc = Document(docx_path)
+    #         filename = os.path.basename(docx_path)
+    #         rows = []
+    #         current_headers = {i: '' for i in range(1, 7)}
+    #         para_counter = 0
+    
+    #         def get_header_level(style_name):
+    #             for i in range(1, 7):
+    #                 if style_name.lower().startswith(f'heading {i}'.lower()):
+    #                     return i
+    #             return None
+    
+    #         def header_dict():
+    #             return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+    
+    #         for para in doc.paragraphs:
+    #             para_counter += 1
+    #             level = get_header_level(para.style.name)
+    #             if level and 1 <= level <= 6:
+    #                 current_headers[level] = para.text.strip()
+    #                 for l in range(level+1, 7):
+    #                     current_headers[l] = ''
+    #                 rows.append({
+    #                     'filename': filename,
+    #                     **header_dict(),
+    #                     'content': '',
+    #                     'source_type': 'heading',
+    #                     'paragraph_number': para_counter,
+    #                     'page_number': None
+    #                 })
+    #             elif para.text.strip():
+    #                 rows.append({
+    #                     'filename': filename,
+    #                     **header_dict(),
+    #                     'content': para.text.strip(),
+    #                     'source_type': 'paragraph',
+    #                     'paragraph_number': para_counter,
+    #                     'page_number': None
+    #                 })
+    #         return pd.DataFrame(rows)
+    
+    #     # Function to split text into chunks respecting the token limit
+    #     def split_text_into_chunks(text, max_completion_tokens=7000):
+    #         import re
+    #         # Split by paragraphs first
+    #         paragraphs = text.split('\n')
+    #         chunks = []
+    #         current_chunk = []
+    #         current_length = 0
+    
+    #         # Rough estimate: 1 token ≈ 4 characters in Spanish
+    #         tokens_per_char = 0.25
+    
+    #         for para in paragraphs:
+    #             # Estimate tokens in this paragraph
+    #             para_tokens = len(para) * tokens_per_char
+    
+    #             # If adding this paragraph would exceed the max, start a new chunk
+    #             if current_length + para_tokens > max_tokens and current_chunk:
+    #                 chunks.append('\n'.join(current_chunk))
+    #                 current_chunk = [para]
+    #                 current_length = para_tokens
+    #             else:
+    #                 current_chunk.append(para)
+    #                 current_length += para_tokens
+    
+    #         # Add the last chunk if there's content
+    #         if current_chunk:
+    #             chunks.append('\n'.join(current_chunk))
+    
+    #         return chunks
+
+#     # Function to directly evaluate content against a criterion using LLM
+#     # def evaluate_criterion_with_llm(document_text, criterion, descriptions):
+#     #     """Evaluate document against a criterion directly with LLM"""
+
+#     #     # Split document into manageable chunks if needed
+#     #     chunks = split_text_into_chunks(document_text)
+
+#     #     # If text fits in one chunk, evaluate directly
+#     #     if len(chunks) == 1:
+#     #         return evaluate_single_chunk(chunks[0], criterion, descriptions)
+
+#     #     # For multiple chunks, evaluate each and then synthesize
+#     #     chunk_results = []
+#     #     for i, chunk in enumerate(chunks):
+#     #         st.info(f"Evaluando criterio '{criterion}' - Fragmento {i+1}/{len(chunks)}")
+#     #         result = evaluate_single_chunk(chunk, criterion, descriptions)
+#     #         chunk_results.append(result)
+
+#     #     # Synthesize results from all chunks
+#     #     return synthesize_evaluations(chunk_results, criterion, descriptions)
+
+#     def evaluate_criterion_with_llm(document_text, criterion, descriptions):
+#         """Analyze complete document efficiently using a two-stage approach"""
+        
+#         # Stage 1: Extract relevant sections (cheap, fast model)
+#         chunks = split_text_into_chunks(document_text, max_completion_tokens=7000)
+        
+#         relevant_chunks = []
+#         for chunk in chunks:
+#             # Quick relevance check with cheap model
+#             check_prompt = f"Does this text mention or relate to '{criterion}'? Answer only YES or NO.\n\n{chunk[:1000]}"
+            
+#             response = openai.ChatCompletion.create(
+#                 model="gpt-5-mini",  # Cheap model for filtering
+#                 messages=[{"role": "user", "content": check_prompt}],
+#                 max_completion_tokens=5,
+#                 temperature=0
+#             )
+            
+#             if "YES" in response["choices"][0]["message"]["content"].upper():
+#                 relevant_chunks.append(chunk)
+        
+#         # Stage 2: Deep analysis only on relevant chunks
+#         if not relevant_chunks:
+#             # If nothing relevant found, use first and last chunks as context
+#             relevant_chunks = [chunks[0], chunks[-1]] if len(chunks) > 1 else chunks
+        
+#         # Combine relevant chunks (limit to ~10k chars)
+#         combined_text = "\n\n---\n\n".join(relevant_chunks)[:10000]
+        
+#         # Now do the expensive analysis on focused content
+#         prompt = f"""Evaluate this document against: {criterion}
+    
+#     Scoring levels: {json.dumps(descriptions)}
+    
+#     Relevant document sections:
+#     {combined_text}
+    
+#     Provide JSON with:
+#     {{"analysis": "detailed 2-3 paragraphs", "score": 1-5, "evidence": "5-8 key quotes from the text"}}"""
+    
+#         response = openai.ChatCompletion.create(
+#             model="gpt.5.1-mini",
+#             messages=[
+#                 {"role": "system", "content": "You are an expert document evaluator."},
+#                 {"role": "user", "content": prompt}
+#             ],
+#             max_completion_tokens=1500,
+#             temperature=0.1
+#         )
+        
+#         return json.loads(response["choices"][0]["message"]["content"])
+
+#     # Function to evaluate a single text chunk
+#     def evaluate_single_chunk(text_chunk, criterion, descriptions):
+#         """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
+#         import json
+
+#         # Build prompt
+#         prompt = f"""
+#         Estás evaluando un documento contra un criterio específico.
+        
+#         Criterio: {criterion}
+        
+#         Descripciones de los niveles de puntuación:
+#         {json.dumps(descriptions, indent=2)}
+        
+#         Contenido del documento a evaluar:
+#         {text_chunk}
+        
+#         Analiza qué tan bien el documento cumple con este criterio. Proporciona:
+        
+#         1. Un análisis DETALLADO (2-3 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Proporciona un razonamiento profundo que abarque los aspectos del criterio.
+        
+#         2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
+        
+#         3. EVIDENCIA del documento que respalde tu puntuación. Incluye entre 5-8 citas textuales del documento, indicando cómo cada fragmento contribuye a tu evaluación.
+        
+#         Formatea tu respuesta como un objeto JSON con las siguientes claves:
+#         {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "citas textuales del documento (5-8 párrafos)"}}
+        
+#         Devuelve solo el objeto JSON, nada más.
+#         """
+
+#         # Call LLM using OpenAI v0.28 syntax
+#         try:
+#             response = openai.ChatCompletion.create(
+#                 model="gpt.5.1-mini",
+#                 messages=[
+#                     {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
+#                     {"role": "user", "content": prompt}
+#                 ],
+#                 response_format={"type": "json_object"},
+#                 max_completion_tokens=7000
+#             )
+#             raw = response["choices"][0]["message"]["content"].strip()
+#             parsed = json.loads(raw)
+#             return parsed
+#         except Exception as e:
+#             return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
+
+#     # Function to synthesize evaluations
+#     def synthesize_evaluations(chunk_results, criterion, descriptions):
+#         """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
+#         import json
+
+#         # Extract and format the individual evaluations for the synthesis
+#         individual_evals = []
+#         all_evidence = []
+
+#         for i, result in enumerate(chunk_results):
+#             individual_evals.append(f"Evaluación del fragmento {i+1}:\n" +
+#                                     f"Puntuación: {result.get('score', 0)}\n" +
+#                                     f"Análisis: {result.get('analysis', '')}")
+
+#             # Collect all evidence
+#             evidence = result.get('evidence', '')
+#             if evidence:
+#                 all_evidence.append(f"Evidencia del fragmento {i+1}:\n{evidence}")
+
+#         # Define separator outside the f-string to avoid backslash issues
+#         separator = "\n\n"
+
+#         # Create a synthesis prompt
+#         synthesis_prompt = f"""
+#         Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
+        
+#         Aquí están las evaluaciones individuales de cada fragmento:
+        
+#         {separator.join(individual_evals)}
+        
+#         Basándote en estas evaluaciones individuales, proporciona:
+        
+#         1. Un análisis DETALLADO (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser comprensivo y abarcar los aspectos relevantes encontrados en el documento.
+        
+#         2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
+        
+#         3. Las evidencias más importantes del documento. Selecciona las 8-10 citas textuales más relevantes de los fragmentos individuales.
+        
+#         Formatea tu respuesta como un objeto JSON con las siguientes claves:
+#         {{"analysis": "tu análisis global detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "las citas textuales más relevantes del documento (8-10 párrafos)"}}
+        
+#         Devuelve solo el objeto JSON, nada más.
+#         """
+
+#         # Call LLM for synthesis using OpenAI v0.28 syntax
+#         try:
+#             response = openai.ChatCompletion.create(
+#                 model="gpt.5.1-mini",
+#                 messages=[
+#                     {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
+#                     {"role": "user", "content": synthesis_prompt}
+#                 ],
+#                 response_format={"type": "json_object"},
+#                 max_completion_tokens=7000
+#             )
+#             raw = response["choices"][0]["message"]["content"].strip()
+#             parsed = json.loads(raw)
+#             return parsed
+#         except Exception as e:
+#             # If synthesis fails, combine results manually in a more limited way
+#             avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
+#             # Take only the first paragraph of each analysis to avoid token limits
+#             analysis_parts = []
+#             for r in chunk_results:
+#                 analysis = r.get('analysis', '')
+#                 first_para = analysis.split('\n\n')[0] if '\n\n' in analysis else analysis
+#                 analysis_parts.append(first_para)
+
+#             # Take only the first few evidence items
+#             evidence_parts = []
+#             evidence_count = 0
+#             for evidence in all_evidence:
+#                 parts = evidence.split('\n\n')
+#                 # Add up to 2 evidence parts per chunk
+#                 for part in parts[:2]:
+#                     if evidence_count < 8:  # Limit to 8 total evidence parts
+#                         evidence_parts.append(part)
+#                         evidence_count += 1
+
+#             return {
+#                 'score': avg_score,
+#                 'analysis': separator.join(analysis_parts),
+#                 'evidence': separator.join(evidence_parts)
+#             }
+
+#     # Document upload interface
+#     uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"])
+
+#     # Move instructions/info to the top of the tab
+#     st.info("""
+#     **Instrucciones:**
+#     1. Cargue un informe de evaluación en formato .DOCX y presione el botón 'Procesar y Evaluar'.
+#     2. Revise los resultados de cada rúbrica en la tabla interactiva.
+#     3. Visualice las puntuaciones promedio por dimensión y subdimensión en los gráficos de barras.
+#     4. Descargue todos los resultados y evidencias en un archivo ZIP.
+#     """)
+#     # Unified process, evaluate, and download button
+#     st.markdown("#### Procesamiento y Evaluación de Documento")
+#     st.markdown('---')
+#     if st.button('Procesar y Evaluar'):
+#         # Only process if file is uploaded and not already processed for this file
+#         if uploaded_file is not None:
+#             file_hash = hash(uploaded_file.getvalue())
+#             if st.session_state.get('last_file_hash') != file_hash:
+#                 with st.spinner("Procesando documento..."):
+#                     try:
+#                         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+#                         tmp_file.write(uploaded_file.read())
+#                         tmp_file.close()
+#                         progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+#                         doc_result = docx2python(tmp_file.name)
+#                         df = extract_docx_structure(tmp_file.name)
+#                         progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+#                         header_1_values = df['header_1'].dropna().unique()
+#                         llm_summary_rows = []
+#                         llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+#                         total_sections = len(header_1_values)
+#                         for idx, header in enumerate(header_1_values):
+#                             section_df = df[df['header_1'] == header].copy()
+#                             full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+#                             if not full_text:
+#                                 llm_output = ""
+#                             else:
+#                                 llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+#                                 try:
+#                                     response = openai.ChatCompletion.create(
+#                                         model="gpt.5.1-mini",
+#                                         messages=[
+#                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+#                                             {"role": "user", "content": full_text}
+#                                         ],
+#                                         max_completion_tokens=4096,
+#                                         temperature=0.01,
+#                                     )
+#                                     llm_output = response["choices"][0]["message"]["content"].strip()
+#                                 except Exception as e:
+#                                     llm_output = f"[LLM ERROR: {e}]"
+#                             llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+#                         llm_progress.progress(1.0, text="LLM parsing completado.")
+#                         llm_summary_df = pd.DataFrame(llm_summary_rows)
+#                         llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+#                         exploded_df = llm_summary_df.assign(
+#                             llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+#                         ).explode('llm_paragraph')
+#                         exploded_df = exploded_df.reset_index(drop=True)
+#                         exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+#                         full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+#                         file_size = os.path.getsize(tmp_file.name)
+#                         n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+#                         n_paragraphs = len(exploded_df)
+#                         st.session_state['full_document_text'] = full_document_text
+#                         st.session_state['document_stats'] = {
+#                             'file_size': file_size,
+#                             'n_words': n_words,
+#                             'n_paragraphs': n_paragraphs
+#                         }
+#                         st.session_state['exploded_df'] = exploded_df
+#                         st.session_state['last_file_hash'] = file_hash
+#                         try:
+#                             os.unlink(tmp_file.name)
+#                         except:
+#                             pass
+#                         progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+#                         st.info(f"**Resumen del documento:**\n\n" + 
+#                                 f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+#                                 f"- Número de palabras: {n_words}\n" + 
+#                                 f"- Número de párrafos: {n_paragraphs}")
+#                         st.markdown("#### Estructura extraída del documento:")
+#                         st.dataframe(exploded_df, use_container_width=True)
+#                         progress_bar.progress(1.0, text="Procesamiento completo.")
+#                     except Exception as e:
+#                         st.error(f"Error procesando el documento: {e}")
+#                         import traceback
+#                         st.error(traceback.format_exc())
+#                         st.stop()
+#         # Now, always run rubric evaluation if document is processed
+#         document_text = st.session_state.get('full_document_text', '')
+#         if not document_text:
+#             st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+#             st.stop()
+#         rubrics = [
+#             ("Participación de Actores (durante el proyecto)", engagement_rubric),
+#             ("Desempeño del proyecto (según informe de evaluación)", performance_rubric),
+#             ("Participación durante la evaluación (metodología)", parteval_rubric),
+#             ("Enfoque de Género", gender_rubric),
+#             ("Transición Justa: Enfoque Tradicional", tj_traditional_rubric),
+#             ("Transición Justa: Enfoque Moderno", tj_just_transition_rubric)
+#         ]
+#         rubric_results = []
+#         from concurrent.futures import ThreadPoolExecutor, as_completed
+#         MAX_WORKERS = 8
+#         def eval_one_criterion(args):
+#             crit, descriptions, dimension, rubric_name = args
+#             try:
+#                 result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+#                 return {
+#                     'Criterio': crit,
+#                     'Dimensión': dimension,
+#                     'Score': result.get('score', 0),
+#                     'Análisis': result.get('analysis', ''),
+#                     'Evidencia': result.get('evidence', ''),
+#                     'Error': result.get('error', '') if 'error' in result else '',
+#                     'Rúbrica': rubric_name
+#                 }
+#             except Exception as e:
+#                 return {
+#                     'Criterio': crit,
+#                     'Dimensión': dimension,
+#                     'Score': 0,
+#                     'Análisis': '',
+#                     'Evidencia': '',
+#                     'Error': str(e),
+#                     'Rúbrica': rubric_name
+#                 }
+#         for rubric_name, rubric_dict in rubrics:
+#             # Skip empty rubrics
+#             if not rubric_dict:
+#                 st.warning(f"Saltando rúbrica {rubric_name}: sin criterios cargados")
+#                 continue
+
+#             rubric_analysis_data = []
+#             n_criteria = len(rubric_dict)
+#             progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+#             with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+#                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+#                     futures = {
+#                         executor.submit(eval_one_criterion, (
+#                             crit,
+#                             rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+#                             rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+#                             rubric_name
+#                         )): (crit, idx)
+#                         for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+#                     }
+#                     completed = 0
+#                     for future in as_completed(futures):
+#                         result = future.result()
+#                         rubric_analysis_data.append(result)
+#                         completed += 1
+#                         crit, idx = futures[future]
+#                         progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+#             rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+#         # Show and allow download of both results only after evaluation
+#         if rubric_results:
+#             for rubric_name, rubric_analysis_df in rubric_results:
+#                 st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+#                 if not rubric_analysis_df.empty:
+#                     # Ensure 'Evidencia' column is present
+#                     if 'Evidencia' not in rubric_analysis_df.columns:
+#                         rubric_analysis_df['Evidencia'] = ''
+
+#                     # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
+#                     cols = rubric_analysis_df.columns.tolist()
+#                     desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+#                     new_order = [col for col in desired_order if col in cols]
+#                     remaining_cols = [col for col in cols if col not in desired_order]
+#                     final_order = new_order + remaining_cols
+#                     rubric_analysis_df = rubric_analysis_df[final_order]
+#                     # Normalize 'Evidencia' column to always be a string
+#                     if 'Evidencia' in rubric_analysis_df.columns:
+#                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                         )
+#                     st.dataframe(rubric_analysis_df, use_container_width=True)
+#                 else:
+#                     st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+#             # Provide a zip download for both results
+#             import io, zipfile
+#             zip_buffer = io.BytesIO()
+#             with zipfile.ZipFile(zip_buffer, "w") as zipf:
+#                 for rubric_name, rubric_analysis_df in rubric_results:
+#                     # Normalize 'Evidencia' column to always be a string before exporting
+#                     if 'Evidencia' in rubric_analysis_df.columns:
+#                         rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                             lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                         )
+#                     csv = rubric_analysis_df.to_csv(index=False)
+#                     arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.csv"
+#                     zipf.writestr(arcname, csv)
+#             zip_buffer.seek(0)
+#             st.download_button(
+#                 label="Descargar ambos resultados como ZIP",
+#                 data=zip_buffer,
+#                 file_name="resultados_rubricas.zip",
+#                 mime="application/zip"
+#             )
+#         else:
+#             st.warning("No se generaron resultados para ninguna rúbrica.")
+#     else:
+#         st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+
+# Tab 2: Revisión por criterios con trazabilidad
+with tab2:
+    st.header("Diagnóstico de Atributos Específicos")
+
+    # Descriptive text box
+    st.info("""
+    **📋 Descripción de la herramienta:**
+
+    **¿Qué hace esta herramienta?:**
+    Profundiza la Valoración Preliminar aplicando rúbricas OIT con niveles de desempeño (1–5) y evidencia trazable (citas y metadatos) sobre un documento .docx que subas. Extrae secciones clave, evalúa contra una matriz de criterios y genera un análisis narrativo por criterio.
+    Criterios disponibles y alcance
+    -	Metodologías con enfoque participativo → aplicar a informes de evaluación u otros documentos metodológicos.
+
+    -	Integración del enfoque de género → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.).
+
+    -   Integración del enfoque de Transición Justa (enfoque moderno) → aplicar a documentos de diseño o ejecución de proyecto u otros estudios (p. ej., PRODOC, TPR, etc.). 
+   
+    Puedes exportar a Excel estos resultados (Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica). Una vez que los resultados son descargados, éstos se dejarán de mostrar en pantalla.
+    Si hay vacíos o inconsistencias, se señalan en "Error" para su ajuste.
+    
+    **¿Para qué usar este diagnóstico?**
+    Este diagnóstico en formato EXCEL sirve para **revisar propuestas**, **verificar aspectos puntuales** de informes de evaluación o de ejecución, **comprobar coherencia** con P&B, DWCP y marcos UNSDCF, **elaborar notas técnicas con sustento** y respaldar la rendición de cuentas ante mandantes y donantes.
+    """)
+    
+    # Important requirements reminder
+    st.warning("""
+    **⚠️ Recordatorio importante:**
+    - Los documentos deben estar formateados con **estilos de encabezado de Word** (Heading 1, Heading 2, etc.) para que las secciones se identifiquen correctamente
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Solo se aceptan archivos en formato **.docx**
+    """)
+
+    # Read rubrics from Excel files as in megaparse_example.py
+    import pandas as pd
+
+    # Function to extract document structure
+    def extract_docx_structure(docx_path):
+        from docx import Document
+        doc = Document(docx_path)
+        filename = os.path.basename(docx_path)
+        rows = []
+        current_headers = {i: '' for i in range(1, 7)}
+        para_counter = 0
+
+        def get_header_level(style_name):
+            for i in range(1, 7):
+                if style_name.lower().startswith(f'heading {i}'.lower()):
+                    return i
+            return None
+
+        def header_dict():
+            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+
+        for para in doc.paragraphs:
+            para_counter += 1
+            level = get_header_level(para.style.name)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+            elif para.text.strip():
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_number': None
+                })
+        return pd.DataFrame(rows)
+    
+    # Enhanced extraction function with multi-method header detection, tables, and validation
+    def extract_docx_structure_enhanced(docx_path):
+        """
+        Enhanced document extraction with:
+        - Multi-method header detection (style, formatting, pattern)
+        - Table extraction
+        - List extraction
+        - Page estimation
+        - Quality metrics
+        """
+        from docx import Document
+        from docx.shared import Pt
+        import re
+        
+        doc = Document(docx_path)
+        filename = os.path.basename(docx_path)
+        rows = []
+        tables_data = []
+        current_headers = {i: '' for i in range(1, 7)}
+        para_counter = 0
+        page_estimate = 1
+        words_per_page = 500  # Estimate for page calculation
+        
+        # Track statistics
+        stats = {
+            'total_paragraphs': 0,
+            'total_tables': 0,
+            'headers_detected': 0,
+            'headers_by_style': 0,
+            'headers_by_formatting': 0,
+            'headers_by_pattern': 0,
+            'orphaned_paragraphs': 0,
+            'empty_sections': 0
+        }
+        
+        def get_header_level_by_style(style_name):
+            """Method 1: Style-based detection (original method)"""
+            for i in range(1, 7):
+                if style_name.lower().startswith(f'heading {i}'.lower()):
+                    return i
+            return None
+        
+        def get_header_level_by_formatting(para):
+            """Method 2: Formatting-based detection"""
+            # Check if paragraph is bold and larger than normal text
+            if para.runs:
+                first_run = para.runs[0]
+                is_bold = first_run.bold
+                font_size = first_run.font.size
+                
+                # If bold and larger font, likely a header
+                if is_bold and font_size:
+                    if font_size >= Pt(14):  # Larger than normal (11-12pt)
+                        # Estimate level based on size
+                        if font_size >= Pt(18):
+                            return 1
+                        elif font_size >= Pt(16):
+                            return 2
+                        elif font_size >= Pt(14):
+                            return 3
+                elif is_bold and len(para.text.strip()) < 100:  # Short bold text
+                    return 2  # Likely a subheader
+            return None
+        
+        def get_header_level_by_pattern(para_text):
+            """Method 3: Pattern-based detection (numbered headings)"""
+            text = para_text.strip()
+            # Patterns like "1.", "1.1", "1.1.1", "I.", "A.", etc.
+            patterns = [
+                (r'^\d+\.\s+\w', 1),  # "1. Title"
+                (r'^\d+\.\d+\s+\w', 2),  # "1.1 Title"
+                (r'^\d+\.\d+\.\d+\s+\w', 3),  # "1.1.1 Title"
+                (r'^[IVX]+\.\s+\w', 1),  # "I. Title"
+                (r'^[A-Z]\.\s+\w', 2),  # "A. Title"
+            ]
+            for pattern, level in patterns:
+                if re.match(pattern, text):
+                    return level
+            return None
+        
+        def detect_header_level(para):
+            """Try all methods to detect header level"""
+            # Method 1: Style-based
+            level = get_header_level_by_style(para.style.name)
+            if level:
+                stats['headers_by_style'] += 1
+                return level
+            
+            # Method 2: Formatting-based
+            level = get_header_level_by_formatting(para)
+            if level:
+                stats['headers_by_formatting'] += 1
+                return level
+            
+            # Method 3: Pattern-based
+            level = get_header_level_by_pattern(para.text)
+            if level:
+                stats['headers_by_pattern'] += 1
+                return level
+            
+            return None
+        
+        def header_dict():
+            return {f'header_{i}': current_headers[i] for i in range(1, 7)}
+        
+        def get_full_header_path():
+            """Get full hierarchical path of headers"""
+            path_parts = []
+            for i in range(1, 7):
+                if current_headers[i]:
+                    path_parts.append(current_headers[i])
+            return ' > '.join(path_parts) if path_parts else 'Sin sección'
+        
+        # Extract paragraphs and headers
+        for para in doc.paragraphs:
+            para_counter += 1
+            stats['total_paragraphs'] += 1
+            
+            level = detect_header_level(para)
+            if level and 1 <= level <= 6:
+                current_headers[level] = para.text.strip()
+                # Clear lower level headers
+                for l in range(level+1, 7):
+                    current_headers[l] = ''
+                
+                stats['headers_detected'] += 1
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'header_path': get_full_header_path(),
+                    'content': '',
+                    'source_type': 'heading',
+                    'paragraph_number': para_counter,
+                    'page_estimate': page_estimate,
+                    'detection_method': 'style' if get_header_level_by_style(para.style.name) else ('formatting' if get_header_level_by_formatting(para) else 'pattern')
+                })
+            elif para.text.strip():
+                # Estimate page number based on word count
+                word_count = len(para.text.split())
+                if word_count > 0:
+                    page_estimate = max(1, int(stats['total_paragraphs'] * 0.02))  # Rough estimate
+                
+                rows.append({
+                    'filename': filename,
+                    **header_dict(),
+                    'header_path': get_full_header_path(),
+                    'content': para.text.strip(),
+                    'source_type': 'paragraph',
+                    'paragraph_number': para_counter,
+                    'page_estimate': page_estimate,
+                    'detection_method': None
+                })
+        
+        # Extract tables
+        for table_idx, table in enumerate(doc.tables):
+            stats['total_tables'] += 1
+            table_data = []
+            for row in table.rows:
+                row_data = [cell.text.strip() for cell in row.cells]
+                table_data.append(row_data)
+            
+            # Find which section this table belongs to
+            current_section = get_full_header_path()
+            
+            tables_data.append({
+                'filename': filename,
+                'table_number': table_idx + 1,
+                'section': current_section,
+                'header_path': current_section,
+                'data': table_data,
+                'row_count': len(table_data),
+                'col_count': len(table_data[0]) if table_data else 0
+            })
+            
+            # Add table as content row
+            table_text = '\n'.join([' | '.join(row) for row in table_data])
+            rows.append({
+                'filename': filename,
+                **header_dict(),
+                'header_path': current_section,
+                'content': f"[TABLA {table_idx + 1}]\n{table_text}",
+                'source_type': 'table',
+                'paragraph_number': para_counter + table_idx,
+                'page_estimate': page_estimate,
+                'detection_method': None
+            })
+        
+        # Calculate quality metrics
+        df = pd.DataFrame(rows)
+        
+        # Count orphaned paragraphs (no header_1)
+        stats['orphaned_paragraphs'] = len(df[(df['source_type'] == 'paragraph') & (df['header_1'].isna() | (df['header_1'] == ''))])
+        
+        # Count empty sections
+        if 'header_1' in df.columns:
+            sections = df[df['header_1'].notna() & (df['header_1'] != '')]['header_1'].unique()
+            for section in sections:
+                section_df = df[df['header_1'] == section]
+                if len(section_df[section_df['source_type'] == 'paragraph']) == 0:
+                    stats['empty_sections'] += 1
+        
+        return df, tables_data, stats
+    
+    # Validation function
+    def validate_extraction(df, tables_data, stats):
+        """
+        Validate extraction quality and return metrics, warnings, and recommendations
+        """
+        warnings = []
+        recommendations = []
+        quality_score = 100
+        
+        # Check header detection rate
+        if stats['total_paragraphs'] > 0:
+            header_rate = (stats['headers_detected'] / stats['total_paragraphs']) * 100
+            if header_rate < 2:  # Less than 2% headers might indicate poor detection
+                warnings.append(f"⚠️ Tasa de detección de encabezados baja: {header_rate:.1f}%")
+                quality_score -= 10
+                recommendations.append("Verificar si los encabezados usan estilos estándar de Word")
+        
+        # Check for orphaned paragraphs
+        if stats['orphaned_paragraphs'] > 0:
+            orphan_rate = (stats['orphaned_paragraphs'] / stats['total_paragraphs']) * 100
+            if orphan_rate > 10:  # More than 10% orphaned
+                warnings.append(f"⚠️ {stats['orphaned_paragraphs']} párrafos sin sección asignada ({orphan_rate:.1f}%)")
+                quality_score -= 15
+                recommendations.append("Revisar párrafos huérfanos y asignarlos manualmente a secciones")
+        
+        # Check for empty sections
+        if stats['empty_sections'] > 0:
+            warnings.append(f"⚠️ {stats['empty_sections']} secciones sin contenido")
+            quality_score -= 5 * min(stats['empty_sections'], 5)  # Max -25 points
+            recommendations.append("Revisar secciones vacías - pueden ser encabezados mal detectados")
+        
+        # Check table extraction
+        if stats['total_tables'] > 0:
+            if len(tables_data) < stats['total_tables']:
+                warnings.append(f"⚠️ No se extrajeron todas las tablas ({len(tables_data)}/{stats['total_tables']})")
+                quality_score -= 10
+        
+        # Check hierarchy integrity
+        if 'header_1' in df.columns and 'header_2' in df.columns:
+            # Check for level jumps (H1 -> H3, skipping H2)
+            h1_sections = df[df['header_1'].notna() & (df['header_1'] != '')]
+            for idx, row in h1_sections.iterrows():
+                # Find next header after this one
+                next_rows = df.iloc[idx+1:idx+10]  # Check next 10 rows
+                next_headers = next_rows[next_rows['source_type'] == 'heading']
+                if not next_headers.empty:
+                    next_header = next_rows.iloc[0]
+                    # Check if there's a level jump
+                    if next_header.get('header_3') and not next_header.get('header_2'):
+                        warnings.append(f"⚠️ Salto de nivel detectado: {row.get('header_1', '')} → {next_header.get('header_3', '')}")
+                        quality_score -= 5
+        
+        quality_score = max(0, quality_score)  # Don't go below 0
+        
+        return {
+            'quality_score': quality_score,
+            'warnings': warnings,
+            'recommendations': recommendations,
+            'stats': stats
+        }
+    
+    # Function to split text into chunks respecting the token limit
+    def split_text_into_chunks(text, max_completion_tokens=7000):
+        import re
+        # Split by paragraphs first
+        paragraphs = text.split('\n')
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        # Rough estimate: 1 token ≈ 4 characters in Spanish
+        tokens_per_char = 0.25
+
+        for para in paragraphs:
+            # Estimate tokens in this paragraph
+            para_tokens = len(para) * tokens_per_char
+
+            # If adding this paragraph would exceed the max, start a new chunk
+            if current_length + para_tokens > max_completion_tokens and current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = [para]
+                current_length = para_tokens
+            else:
+                current_chunk.append(para)
+                current_length += para_tokens
+
+        # Add the last chunk if there's content
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        return chunks
+    engagement_rubric = {}
+    performance_rubric = {}
+    parteval_rubric = {}
+    gender_rubric = {}
+    tj_traditional_rubric = {}
+    tj_just_transition_rubric = {}
+
+    try:
+        df_rubric_engagement = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_engagement')
+        df_rubric_engagement.drop(columns=['Unnamed: 0', 'Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_engagement.iterrows():
+            indicador = row['Indicador']
+            dimension = row.get('Dimensión', 'No especificada')
+            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+            engagement_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+        df_rubric_performance = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_performance')
+        df_rubric_performance.drop(columns=['dimension'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_performance.iterrows():
+            criterio = row['subdim']
+            dimension = row.get('Dimensión', 'No especificada')
+            valores = row.drop(['subdim', 'Dimensión'], errors='ignore').values.tolist()
+            performance_rubric[criterio] = {'valores': valores, 'dimension': dimension}
+
+        df_rubric_parteval = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_parteval')
+        df_rubric_parteval.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_parteval.iterrows():
+            indicador = row['Indicador']
+            dimension = row.get('Dimensión', 'No especificada')
+            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+            parteval_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+        df_rubric_gender = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_gender_')
+        df_rubric_gender.drop(columns=['Criterio'], inplace=True, errors='ignore')
+        for idx, row in df_rubric_gender.iterrows():
+            indicador = row['Indicador']
+            dimension = row.get('Dimensión', 'No especificada')
+            valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+            gender_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+
+        try:
+            df_rubric_tj_traditional = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_Traditional')
+            df_rubric_tj_traditional.drop(columns=['Criterio'], inplace=True, errors='ignore')
+            for idx, row in df_rubric_tj_traditional.iterrows():
+                indicador = row['Indicador']
+                if pd.notna(indicador) and str(indicador).strip():
+                    dimension = row.get('Dimensión', 'No especificada')
+                    valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+                    tj_traditional_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+        except Exception as e:
+            st.error(f"Error cargando TJ Tradicional: {e}")
+
+        try:
+            df_rubric_tj_just_transition = pd.read_excel('./Rubricas_6ago2025.xlsx', sheet_name='rubric_TJ_TJ')
+            df_rubric_tj_just_transition.drop(columns=['Criterio'], inplace=True, errors='ignore')
+            for idx, row in df_rubric_tj_just_transition.iterrows():
+                indicador = row['Indicador']
+                if pd.notna(indicador) and str(indicador).strip():
+                    dimension = row.get('Dimensión', 'No especificada')
+                    valores = row.drop(['Indicador', 'Dimensión'], errors='ignore').values.tolist()
+                    tj_just_transition_rubric[indicador] = {'valores': valores, 'dimension': dimension}
+        except Exception as e:
+            st.error(f"Error cargando TJ Transición Justa: {e}")
+    except Exception as e:
+        st.error(f"Error leyendo las rúbricas: {e}")
+
+    # Show rubric status
+    st.success(f"""
+    **ESTADO DE RÚBRICAS:**
+    
+    - Metodologías con enfoque participativo ({len(parteval_rubric)} criterios disponibles)", 
+    - Integración del Enfoque de Género: {len(gender_rubric)} criterios
+    - Integración del Enfoque de Transición Justa: Enfoque Moderno: {len(tj_just_transition_rubric)} criterios 
+    """)
+
+    # Download button for the rubric file (directly on page, no expander)
+    try:
+        with open('./Rubricas_6ago2025.xlsx', 'rb') as f:
+            st.download_button(
+                label="📥 Descargar archivo rúbrica de Atributos específicos",
+                data=f,
+                file_name="Rubricas_6ago2025.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_rubricas_tab2"
+            )
+    except FileNotFoundError:
+        st.warning("Archivo de rúbricas no disponible para descarga.")
+
+    # Document upload
+    st.markdown("### 📄 Carga de Documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    - Esto es especialmente importante para evaluaciones y PRODOCs que deben tener una estructura clara con secciones bien definidas
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que el documento esté guardado correctamente antes de subirlo
+    - Verifica que todas las secciones importantes tengan encabezados antes de procesar
+    """)
+    
+    uploaded_file = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="tab2_file_uploader")
+
+    # Initialize session state for selections and results persistence
+    if 'selected_rubrics_tab2' not in st.session_state:
+        st.session_state['selected_rubrics_tab2'] = []
+    if 'selected_criteria_tab2' not in st.session_state:
+        st.session_state['selected_criteria_tab2'] = {}
+    if 'tab2_results' not in st.session_state:
+        st.session_state['tab2_results'] = None
+    if 'document_extracted_tab2' not in st.session_state:
+        st.session_state['document_extracted_tab2'] = False
+
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file is not None:
+        file_hash = hash(uploaded_file.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab2') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab2'] = False
+            st.session_state['last_file_hash_tab2'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab2", type="primary"):
+            if uploaded_file is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Validando extracción...")
+                    
+                    # Validate extraction
+                    validation_results = validate_extraction(df, tables_data, extraction_stats)
+                    progress_bar.progress(0.3, text="Extracción validada. Procesando secciones...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        # Extract text directly - already clean from extract_docx_structure_enhanced
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        # Calculate section stats
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab2'] = full_document_text
+                    st.session_state['document_stats_tab2'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab2'] = exploded_df
+                    st.session_state['extraction_df_tab2'] = df
+                    st.session_state['tables_data_tab2'] = tables_data
+                    st.session_state['extraction_stats_tab2'] = extraction_stats
+                    st.session_state['validation_results_tab2'] = validation_results
+                    st.session_state['sections_df_tab2'] = llm_summary_df
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab2'] = file_hash
+                    st.session_state['document_extracted_tab2'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()  # Rerun to show extraction results
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab2', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab2_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab2"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display header_1 sections and their content
+            extraction_df = st.session_state.get('extraction_df_tab2', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
+                    
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
+                    
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
+                        
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
+                        
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
+                        
+                        st.markdown("---")
+            
+            sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector - simplified, no warnings or diagnostics
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab2' not in st.session_state:
+                    st.session_state['selected_sections_tab2'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab2', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab2"):
+                        st.session_state['selected_sections_tab2'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab2"):
+                        st.session_state['selected_sections_tab2'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab2"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                # Show first 500 characters as preview, full content in expandable
+                                preview_text = section_content[:500] + "..." if len(section_content) > 500 else section_content
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab2",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab2', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab2",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
+                
+                # Update session state
+                st.session_state['selected_sections_tab2'] = selected_sections
+                
+                # Show selection summary - simplified
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2  # Rough estimate
+                    
+                    # Warn if approaching limit
+                    if estimated_tokens > 100000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.warning(f"⚠️ **Advertencia de límite de contexto:** Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). El sistema procesa hasta 110,000 tokens (aproximadamente 150-200 páginas). Si el documento excede este límite, será truncado automáticamente.")
+                    elif estimated_tokens > 80000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.info(f"ℹ️ Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). Estás dentro del límite de 110,000 tokens (aproximadamente 150-200 páginas).")
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+    
+    # Rubric and Criteria Selection Section (moved after document extraction)
+    st.markdown("---")
+    st.markdown("### 📋 Selección de Rúbricas y Criterios")
+    
+    # Only show rubric selection if document is extracted
+    if st.session_state.get('document_extracted_tab2', False):
+        # All available rubrics
+        all_rubrics = {
+            # "Participación de Actores (durante el proyecto)": engagement_rubric,  # Commented out per user request
+            # "Desempeño del proyecto (según informe de evaluación)": performance_rubric,  # Commented out per user request
+            "Participación durante la evaluación (metodología)": parteval_rubric,
+            "Integración del Enfoque de Género": gender_rubric,
+            # "Transición Justa: Enfoque Tradicional": tj_traditional_rubric,  # Commented out per user request
+            "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        }
+
+        # Step 1: Select Rubrics
+        st.markdown("#### 1. Seleccione las rúbricas a aplicar:")
+        selected_rubric_names = st.multiselect(
+            "Rúbricas:",
+            options=list(all_rubrics.keys()),
+            default=st.session_state['selected_rubrics_tab2'],
+            key='rubric_selector_tab2'
+        )
+        st.session_state['selected_rubrics_tab2'] = selected_rubric_names
+
+        # Step 2: Select Criteria within each rubric
+        if selected_rubric_names:
+            st.markdown("#### 2. Seleccione los criterios específicos:")
+            
+            for rubric_name in selected_rubric_names:
+                rubric_dict = all_rubrics[rubric_name]
+                
+                with st.expander(f"📋 {rubric_name} ({len(rubric_dict)} criterios disponibles)", expanded=True):
+                    # Select all checkbox for this rubric
+                    select_all_key = f"select_all_{rubric_name}_tab2"
+                    select_all = st.checkbox(f"Seleccionar todos los criterios", key=select_all_key)
+                    
+                    # Initialize criteria selection for this rubric
+                    if rubric_name not in st.session_state['selected_criteria_tab2']:
+                        st.session_state['selected_criteria_tab2'][rubric_name] = []
+                    
+                    # Show criteria checkboxes
+                    selected_criteria = []
+                    for criterion in rubric_dict.keys():
+                        # Default checked if select_all or previously selected
+                        default_value = select_all or criterion in st.session_state['selected_criteria_tab2'][rubric_name]
+                        
+                        is_selected = st.checkbox(
+                            f"{criterion}",
+                            value=default_value,
+                            key=f"criterion_{rubric_name}_{criterion}_tab2"
+                        )
+                        
+                        if is_selected:
+                            selected_criteria.append(criterion)
+                    
+                    # Update session state
+                    st.session_state['selected_criteria_tab2'][rubric_name] = selected_criteria
+                    
+                    st.info(f"Criterios seleccionados: {len(selected_criteria)}/{len(rubric_dict)}")
+
+        # Show summary of selections
+        if selected_rubric_names:
+            total_criteria = sum(len(st.session_state['selected_criteria_tab2'].get(r, [])) for r in selected_rubric_names)
+            st.success(f"Total: {len(selected_rubric_names)} rúbricas, {total_criteria} criterios seleccionados")
+        else:
+            st.info("ℹ️ Selecciona al menos una rúbrica para continuar con la evaluación.")
+    else:
+        st.info("ℹ️ Por favor extrae el documento primero para poder seleccionar las rúbricas y criterios.")
+    
+    # Process and Evaluate button
+    st.markdown("---")
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
+    def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
+        """Analyze document against criterion with retry logic"""
+        import time
+
+        for attempt in range(max_retries):
+            try:
+                # Truncate to ~110K tokens to maximize context while leaving room for:
+                # - System prompt (~50 tokens)
+                # - User prompt template + criterion + scoring levels (~500-2000 tokens)
+                # - Response tokens (6500 tokens)
+                # - Safety buffer (~5000 tokens)
+                # Total: 128K - 50 - 2000 - 6500 - 5000 = ~110K tokens for document
+                combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
+
+                # Now do the expensive analysis on focused content
+                prompt = f"""Evaluate this document against: {criterion}
+
+    Scoring levels: {json.dumps(descriptions)}
+
+    Relevant document sections:
+    {combined_text}
+
+    IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
+    
+    Provide JSON with:
+    {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+
+                response = client.chat.completions.create(
+                    model="gpt-5-mini",
+                    messages=[
+                        {"role": "system", "content": "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=6500,
+                    reasoning_effort="minimal",
+                    timeout=120  # 2 minute timeout per request
+                )
+
+                content = response.choices[0].message.content.strip()
+                # Remove markdown code fences if present
+                if content.startswith('```'):
+                    # Remove opening fence (```json or ```)
+                    content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                    # Remove closing fence
+                    if content.endswith('```'):
+                        content = content.rsplit('```', 1)[0]
+                    content = content.strip()
+
+                result = json.loads(content)
+                # Normalize evidence field: convert array to string if needed
+                if isinstance(result.get('evidence'), list):
+                    result['evidence'] = '\n'.join(result['evidence'])
+                return result
+
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, return a default structure
+                return {
+                    "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
+                    "score": 3,
+                    "evidence": "Unable to parse structured response",
+                    "error": f"JSON parsing error: {str(e)}"
+                }
+            except Exception as e:
+                # Check if it's a rate limit error
+                error_msg = str(e)
+                if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
+                        time.sleep(wait_time)
+                        continue
+
+                # If last attempt or non-rate-limit error, return error
+                return {
+                    "analysis": f"Error during evaluation: {error_msg}",
+                    "score": 0,
+                    "evidence": "",
+                    "error": f"API error (attempt {attempt + 1}/{max_retries}): {error_msg}"
+                }
+
+        # If we exhausted all retries
+        return {
+            "analysis": "Failed after multiple retry attempts",
+            "score": 0,
+            "evidence": "",
+            "error": f"Failed after {max_retries} attempts"
+        }
+
+    # Function to evaluate a single text chunk
+    def evaluate_single_chunk(text_chunk, criterion, descriptions):
+        """Evaluate a single text chunk against a criterion with expanded analysis and evidence"""
+        import json
+
+        # Build prompt
+        prompt = f"""
+        Estás evaluando un documento contra un criterio específico.
+        
+        Criterio: {criterion}
+        
+        Descripciones de los niveles de puntuación:
+        {json.dumps(descriptions, indent=2)}
+        
+        Contenido del documento a evaluar:
+        {text_chunk}
+        
+        Analiza qué tan bien el documento cumple con este criterio. Proporciona:
+        
+        1. Un análisis DETALLADO (2-3 párrafos) que explique a fondo el razonamiento detrás de tu evaluación. Proporciona un razonamiento profundo que abarque los aspectos del criterio.
+        
+        2. Una puntuación de 1-5 (donde 1 es la más baja y 5 es la más alta).
+        
+        3. EVIDENCIA del documento que respalde tu puntuación. Incluye entre 5-8 citas textuales del documento, indicando cómo cada fragmento contribuye a tu evaluación.
+        
+        Formatea tu respuesta como un objeto JSON con las siguientes claves:
+        {{"analysis": "tu análisis detallado aquí", "score": puntuación_numérica_entre_1_y_5, "evidence": "citas textuales del documento (5-8 párrafos)"}}
+        
+        Devuelve solo el objeto JSON, nada más.
+        """
+
+        # Call LLM using new Responses API
+        try:
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que proporciona análisis detallados basados en criterios específicos. Tu evidencia cita fragmentos del texto original."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=6500,
+                reasoning_effort="minimal"
+            )
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                return {'score': 0, 'analysis': 'Empty response from API', 'evidence': ''}
+
+            # Remove markdown code fences if present
+            content = raw.strip()
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            parsed = json.loads(content)
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(parsed.get('evidence'), list):
+                parsed['evidence'] = '\n'.join(parsed['evidence'])
+            return parsed
+        except Exception as e:
+            return {'score': 0, 'analysis': f'Error: {str(e)}', 'evidence': ''}
+
+    # Function to synthesize evaluations
+    def synthesize_evaluations(chunk_results, criterion, descriptions):
+        """Synthesize evaluations from multiple document chunks with expanded analysis and evidence"""
+        import json
+
+        # Extract and format the individual evaluations for the synthesis
+        individual_evals = []
+        all_evidence = []
+
+        for i, result in enumerate(chunk_results):
+            individual_evals.append(f"Evaluación del fragmento {i+1}:\n" +
+                                    f"Puntuación: {result.get('score', 0)}\n" +
+                                    f"Análisis: {result.get('analysis', '')}")
+
+            # Collect all evidence
+            evidence = result.get('evidence', '')
+            if evidence:
+                all_evidence.append(f"Evidencia del fragmento {i+1}:\n{evidence}")
+
+        # Define separator outside the f-string to avoid backslash issues
+        separator = "\n\n"
+
+        # Create a synthesis prompt
+        synthesis_prompt = f"""
+        Has evaluado un documento dividido en múltiples fragmentos contra el criterio: {criterion}
+        
+        Aquí están las evaluaciones individuales de cada fragmento:
+        
+        {separator.join(individual_evals)}
+        
+        Basándote en estas evaluaciones individuales, proporciona:
+        
+        1. Un análisis DETALLADO (2-3 párrafos) que integre los hallazgos clave de todos los fragmentos. Este análisis debe ser comprensivo y abarcar los aspectos relevantes encontrados en el documento.
+        
+        2. Una puntuación general de 1-5 (puedes promediar las puntuaciones o ajustar según sea necesario)
+        
+        3. Las evidencias más importantes del documento. Selecciona las 8-10 citas textuales más relevantes de los fragmentos individuales.
+        
+        Formatea tu respuesta como un objeto JSON con las siguientes claves:
+        {{"analysis": "tu análisis global detallado aquí", "score": puntuación_general_entre_1_y_5, "evidence": "las citas textuales más relevantes del documento (8-10 párrafos)"}}
+        
+        Devuelve solo el objeto JSON, nada más.
+        """
+
+        # Call LLM for synthesis using new Responses API
+        try:
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un experto evaluador de documentos que sintetiza análisis de múltiples fragmentos de texto para producir evaluaciones detalladas con evidencia textual."},
+                    {"role": "user", "content": synthesis_prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=6500,
+                reasoning_effort="minimal"
+            )
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                raise ValueError("Empty response from API")
+
+            # Remove markdown code fences if present
+            content = raw.strip()
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                if content.endswith('```'):
+                    content = content.rsplit('```', 1)[0]
+                content = content.strip()
+
+            parsed = json.loads(content)
+            # Normalize evidence field: convert array to string if needed
+            if isinstance(parsed.get('evidence'), list):
+                parsed['evidence'] = '\n'.join(parsed['evidence'])
+            return parsed
+        except Exception as e:
+            # If synthesis fails, combine results manually in a more limited way
+            avg_score = sum(r.get('score', 0) for r in chunk_results) / len(chunk_results)
+            # Take only the first paragraph of each analysis to avoid token limits
+            analysis_parts = []
+            for r in chunk_results:
+                analysis = r.get('analysis', '')
+                first_para = analysis.split('\n\n')[0] if '\n\n' in analysis else analysis
+                analysis_parts.append(first_para)
+
+            # Take only the first few evidence items
+            evidence_parts = []
+            evidence_count = 0
+            for evidence in all_evidence:
+                parts = evidence.split('\n\n')
+                # Add up to 2 evidence parts per chunk
+                for part in parts[:2]:
+                    if evidence_count < 8:  # Limit to 8 total evidence parts
+                        evidence_parts.append(part)
+                        evidence_count += 1
+
+            return {
+                'score': avg_score,
+                'analysis': separator.join(analysis_parts),
+                'evidence': separator.join(evidence_parts)
+            }
+    
+    if st.button('🚀 Procesar y Evaluar', key='process_evaluate_tab2', type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab2', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
+            st.stop()
+        
+        # Get selected rubrics from session state
+        selected_rubric_names = st.session_state.get('selected_rubrics_tab2', [])
+        if not selected_rubric_names:
+            st.error("Por favor seleccione al menos una rúbrica.")
+            st.stop()
+        
+        # Calculate total criteria
+        total_criteria = sum(len(st.session_state.get('selected_criteria_tab2', {}).get(r, [])) for r in selected_rubric_names)
+        if total_criteria == 0:
+            st.error("Por favor seleccione al menos un criterio.")
+            st.stop()
+        
+        # Check if document needs re-extraction (shouldn't happen, but safety check)
+        if uploaded_file is not None:
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('last_file_hash_tab2') != file_hash:
+                st.warning("⚠️ El documento ha cambiado. Por favor extrae el documento nuevamente.")
+                st.stop()
+        
+        # Evaluate with selected rubrics and criteria
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab2', [])
+        sections_df = st.session_state.get('sections_df_tab2', pd.DataFrame())
+        
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab2', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
+            st.stop()
+
+        # Build filtered rubrics based on selection
+        # Get selected rubrics from session state
+        selected_rubric_names = st.session_state.get('selected_rubrics_tab2', [])
+        
+        # Define all_rubrics for evaluation
+        all_rubrics = {
+            "Participación durante la evaluación (metodología)": parteval_rubric,
+            "Integración del Enfoque de Género": gender_rubric,
+            "Integración del Enfoque de Transición Justa: Enfoque Moderno": tj_just_transition_rubric
+        }
+        
+        rubrics_to_evaluate = []
+        for rubric_name in selected_rubric_names:
+            selected_criteria_list = st.session_state['selected_criteria_tab2'].get(rubric_name, [])
+            if selected_criteria_list:
+                # Filter the rubric to only include selected criteria
+                full_rubric = all_rubrics[rubric_name]
+                filtered_rubric = {k: v for k, v in full_rubric.items() if k in selected_criteria_list}
+                rubrics_to_evaluate.append((rubric_name, filtered_rubric))
+
+        if not rubrics_to_evaluate:
+            st.error("No hay criterios seleccionados para evaluar.")
+            st.stop()
+
+        # Evaluate
+        st.info("Iniciando evaluación de criterios...")
+        rubric_results = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+        MAX_WORKERS = 3  # Reduced to avoid rate limiting
+        
+        def eval_one_criterion(args):
+            crit, descriptions, dimension, rubric_name = args
+            try:
+                result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+                # Ensure result is a dictionary
+                if not isinstance(result, dict):
+                    result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
+                return {
+                    'Criterio': crit,
+                    'Dimensión': dimension,
+                    'Score': result.get('score', 0),
+                    'Análisis': str(result.get('analysis', '')),
+                    'Evidencia': str(result.get('evidence', '')),
+                    'Error': str(result.get('error', '')) if 'error' in result else '',
+                    'Rúbrica': rubric_name
+                }
+            except Exception as e:
+                return {
+                    'Criterio': crit,
+                    'Dimensión': dimension,
+                    'Score': 0,
+                    'Análisis': '',
+                    'Evidencia': '',
+                    'Error': str(e),
+                    'Rúbrica': rubric_name
+                }
+        
+        for rubric_name, rubric_dict in rubrics_to_evaluate:
+            if not rubric_dict:
+                continue
+
+            rubric_analysis_data = []
+            n_criteria = len(rubric_dict)
+            progress = st.progress(0, text=f"Preparando evaluación de {n_criteria} criterios para: {rubric_name}...")
+
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                progress.progress(0.01, text=f"Enviando {n_criteria} criterios para evaluación paralela...")
+                futures = {}
+                for idx, (crit, rubric_data) in enumerate(rubric_dict.items()):
+                    future = executor.submit(eval_one_criterion, (
+                        crit,
+                        rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+                        rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                        rubric_name
+                    ))
+                    futures[future] = (crit, idx)
+                    # Small delay to avoid overwhelming API at startup
+                    if idx > 0 and idx % MAX_WORKERS == 0:
+                        time.sleep(0.5)
+
+                progress.progress(0.05, text=f"Esperando resultados de evaluación...")
+                completed = 0
+                for future in as_completed(futures):
+                    result = future.result()
+                    rubric_analysis_data.append(result)
+                    completed += 1
+                    crit, idx = futures[future]
+                    progress.progress(0.05 + (completed / n_criteria * 0.95), text=f"Completado {completed}/{n_criteria}: {crit}")
+            
+            rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+        
+        # Store results in session state for persistence
+        st.session_state['tab2_results'] = rubric_results
+        
+        # Display results
+        if rubric_results:
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    # Export as XLSX instead of CSV
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip"
+            )
+        else:
+            st.warning("No se generaron resultados para ninguna rúbrica.")
+    else:
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab2_results') is not None:
+            rubric_results = st.session_state['tab2_results']
+            
+            st.markdown("### 📊 Resultados guardados")
+            
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+                    
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_rubrica_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_rubricas.zip",
+                mime="application/zip",
+                key="tab2_download_persisted"
+            )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab2_results"):
+                st.session_state['tab2_results'] = None
+                st.rerun()
+        else:
+            st.info("Suba un documento, seleccione rúbricas y criterios, luego presione 'Procesar y Evaluar'.")
+
+#===================######################=====================
+# ================== TAB 5: DOCUMENT CHAT =====================
+with tab4:
+    st.header("Pregúntale a tus Documentos")
+
+    # Presentation box
+    st.info("""
+
+    Arrastra uno o más DOCX/TXT (max 200MB) y conversa directamente con su contenido. Este chat responde solo con la información de los archivos cargados—no recurre a fuentes externas—para ayudarte a revisar propuestas antes de enviarlas, aclarar pasajes de informes, preparar notas técnicas y comprobar coherencias entre objetivos, actividades y resultados.
+
+    Al formular tus preguntas, indica el nivel de detalle que necesitas y pide que las respuestas incluyan citas breves entre comillas y metadatos (título, sección/página, año) para mantener la trazabilidad. Si un dato no existe en los archivos, se marcará "ND" sin inventar información.
+
+    **Úsalo para:**
+    - Aprender de experiencias de evaluación
+    - Profundizar en el conocimiento de secciones de los informes
+    - Preparar notas técnicas a partir de esta evidencia
+    - Verificar la coherencia entre objetivos, actividades y resultados
+    - Generar tablas copiables a Excel
+    - Comparar varios documentos (hasta de 200MB) en una misma conversación
+
+    *Nota: El chat mantiene memoria de la conversación durante la sesión activa.*
+    """)
+
+    # Session state for chat and document
+    if 'doc_chat_history' not in st.session_state:
+        st.session_state['doc_chat_history'] = []
+    if 'doc_chat_docs' not in st.session_state:
+        st.session_state['doc_chat_docs'] = []
+
+    # Warning box about document requirements for chat
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos:**
+    
+    **📝 Formatos aceptados:**
+    - Archivos **.docx** (Word 2007 o posterior)
+    - Archivos **.txt** (texto plano)
+    - Puedes subir **múltiples archivos** (hasta 200MB en total)
+    
+    **📝 Para documentos Word (.docx):**
+    - El documento debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del documento deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente.
+    - Para documentos grandes, el sistema usa RAG (Retrieval Augmented Generation) automáticamente
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos muy grandes (>100K caracteres, aproximadamente >40 páginas) se procesan con RAG para mejor eficiencia
+    - Documentos pequeños se procesan con contexto completo (más eficiente)
+    - Documentos que excedan el límite máximo serán truncados automáticamente
+    
+    **✅ Mejores prácticas:**
+    - Para documentos Word: usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que los documentos estén guardados correctamente antes de subirlos
+    """)
+    
+    uploaded_files = st.file_uploader("Sube uno o más archivos DOCX o TXT para chatear:", type=["docx", "txt"], accept_multiple_files=True)
+    if 'doc_chat_docs' not in st.session_state:
+        st.session_state['doc_chat_docs'] = []
+    if uploaded_files:
+        # Only reset docs and chat history if files changed
+        uploaded_filenames = sorted([f.name for f in uploaded_files])
+        existing_filenames = sorted([doc['filename'] for doc in st.session_state['doc_chat_docs']]) if st.session_state['doc_chat_docs'] else []
+        if uploaded_filenames != existing_filenames:
+            st.session_state['doc_chat_docs'] = []
+
+            # Load documents
+            for uploaded_file in uploaded_files:
+                try:
+                    if uploaded_file.name.endswith(".docx"):
+                        from docx import Document
+                        doc = Document(uploaded_file)
+                        full_text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+                    else:
+                        full_text = uploaded_file.read().decode("utf-8", errors="ignore")
+                    st.session_state['doc_chat_docs'].append({
+                        "filename": uploaded_file.name,
+                        "text": full_text
+                    })
+                except Exception as e:
+                    st.error(f"Error al procesar el documento '{uploaded_file.name}': {str(e)}")
+
+            # Calculate total document size for smart RAG decision
+            total_text = "\n\n".join([doc['text'] for doc in st.session_state['doc_chat_docs']])
+            total_chars = len(total_text)
+            st.session_state['doc_chat_total_text'] = total_text
+            st.session_state['doc_chat_total_chars'] = total_chars
+
+            # Pre-compute embeddings only if documents are large (> 100K chars)
+            # For small docs, we'll use full context directly (more efficient)
+            if total_chars > 100000:
+                with st.spinner("Procesando embeddings de documentos (solo se hace una vez)..."):
+                    # Chunk documents
+                    def chunk_text(text, chunk_size=2000, overlap=300):
+                        chunks = []
+                        start = 0
+                        while start < len(text):
+                            end = min(start + chunk_size, len(text))
+                            chunks.append(text[start:end])
+                            start += chunk_size - overlap
+                        return chunks
+
+                    all_chunks = []
+                    for doc in st.session_state['doc_chat_docs']:
+                        all_chunks.extend(chunk_text(doc['text']))
+
+                    # Embed all chunks once and cache
+                    try:
+                        emb_model = "text-embedding-3-large"
+                        chunk_embs_resp = client.embeddings.create(input=all_chunks, model=emb_model)
+                        chunk_embs = [item.embedding for item in chunk_embs_resp.data]
+
+                        # Cache in session state
+                        st.session_state['doc_chat_chunks'] = all_chunks
+                        st.session_state['doc_chat_embeddings'] = chunk_embs
+                        st.session_state['doc_chat_use_rag'] = True
+                        st.info(f"📚 Documentos grandes ({total_chars:,} chars) - usando RAG con {len(all_chunks)} fragmentos en caché")
+                    except Exception as e:
+                        st.error(f"Error al generar embeddings: {str(e)}")
+                        st.session_state['doc_chat_use_rag'] = False
+            else:
+                st.session_state['doc_chat_use_rag'] = False
+                st.info(f"📄 Documentos pequeños ({total_chars:,} chars) - usando contexto completo (más eficiente)")
+
+            st.session_state['doc_chat_history'] = []  # Only reset chat when new files uploaded
+            st.success(f"{len(st.session_state['doc_chat_docs'])} documento(s) cargado(s) y listo(s) para chatear.")
+
+    # Show filenames and previews
+    if st.session_state['doc_chat_docs']:
+        st.info(f"Documentos activos: {', '.join([doc['filename'] for doc in st.session_state['doc_chat_docs']])}")
+        for doc in st.session_state['doc_chat_docs']:
+            with st.expander(f"Vista previa: {doc['filename']} (primeros 500 caracteres)"):
+                st.write(doc['text'][:500] + ("..." if len(doc['text']) > 500 else ""))
+
+    # Chat interface
+    if st.session_state['doc_chat_docs']:
+        with st.form("doc_chat_form", clear_on_submit=True):
+            user_input = st.text_area("Escribe tu preguntas (para las respuestas se considera el texto completo de los documentos cargados):", key="doc_chat_input")
+            submitted = st.form_submit_button("Enviar pregunta")
+            if submitted and user_input.strip():
+                # Add user message to history
+                if 'doc_chat_history' not in st.session_state:
+                    st.session_state['doc_chat_history'] = []
+                st.session_state['doc_chat_history'].append({"role": "user", "content": user_input.strip()})
+
+                question = user_input.strip()
+                use_rag = st.session_state.get('doc_chat_use_rag', False)
+
+                # Smart context selection: use full text for small docs, RAG for large docs
+                if not use_rag:
+                    # Small documents: use full context (up to 110K tokens)
+                    # This is more efficient - no chunking, no embeddings, just direct LLM call
+                    context = truncate_to_token_limit(
+                        st.session_state.get('doc_chat_total_text', ''), 
+                        max_tokens=110000, 
+                        encoding_obj=encoding
+                    )
+
+                    messages = [
+                        {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado."},
+                        {"role": "system", "content": f"Texto del documento:\n{context}"}
+                    ]
+                    for msg in st.session_state['doc_chat_history'][-5:]:
+                        messages.append(msg)
+
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-5-mini",
+                            messages=messages,
+                            max_completion_tokens=4096,
+                            reasoning_effort="minimal"
+                        )
+                        answer = response.choices[0].message.content.strip()
+                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                    except Exception as e:
+                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
+
+                else:
+                    # Large documents: use RAG with cached embeddings
+                    import numpy as np
+                    import faiss
+                    import re
+
+                    # Get cached chunks and embeddings
+                    all_chunks = st.session_state.get('doc_chat_chunks', [])
+                    chunk_embs = st.session_state.get('doc_chat_embeddings', [])
+
+                    if not all_chunks or not chunk_embs:
+                        st.session_state['doc_chat_history'].append({"role": "assistant", "content": "[Error: No se encontraron fragmentos en caché.]"})
+                    else:
+                        # Embed user question (only embedding we need per query!)
+                        try:
+                            emb_model = "text-embedding-3-large"
+                            question_emb = client.embeddings.create(input=question, model=emb_model).data[0].embedding
+                        except Exception as e:
+                            st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener embedding de la pregunta: {str(e)}]"})
+                            question_emb = None
+
+                        # Retrieve relevant chunks using FAISS
+                        if question_emb:
+                            dim = len(chunk_embs[0])
+                            xb = np.array(chunk_embs).astype('float32')
+                            index = faiss.IndexFlatIP(dim)
+
+                            # Normalize for cosine similarity
+                            faiss.normalize_L2(xb)
+                            index.add(xb)  # FIX: Actually add vectors to the index!
+
+                            xq = np.array([question_emb]).astype('float32')
+                            faiss.normalize_L2(xq)
+
+                            # Reduced from 50 to 15 for efficiency (15 chunks = ~30K chars)
+                            top_n = min(15, len(all_chunks))
+                            D, I = index.search(xq, top_n)
+                            selected_chunks = [all_chunks[i] for i in I[0] if i < len(all_chunks)]
+
+                            # Also retrieve chunks with exact keyword matches
+                            stopwords = set([
+                                'el','la','los','las','de','del','y','en','a','un','una','que','por','con','para','es','al','se','su','sus','o','u','como','más','menos','le','lo','su','the','and','of','in','to','for','is','on','at','by','an','or','as','be','are','was','were','from','it','this','that','with','but','not','can','may','do','does'
+                            ])
+                            qwords = [w for w in re.findall(r'\w+', question.lower()) if w not in stopwords and len(w) > 2]
+                            keyword_chunks = []
+                            for chunk in all_chunks:
+                                chunk_lc = chunk.lower()
+                                if any(qw in chunk_lc for qw in qwords):
+                                    keyword_chunks.append(chunk)
+                                    if len(keyword_chunks) >= 5:  # Limit keyword matches
+                                        break
+
+                            # Merge and deduplicate
+                            seen = set()
+                            merged_chunks = []
+                            for chunk in selected_chunks + keyword_chunks:
+                                if chunk not in seen:
+                                    merged_chunks.append(chunk)
+                                    seen.add(chunk)
+
+                            context = '\n---\n'.join(merged_chunks)
+
+                            # Send to LLM
+                            messages = [
+                                {"role": "system", "content": "Eres un asistente experto en análisis documental. Responde usando solo la información del documento proporcionado. Si la información no es explícita, infiere la respuesta usando pistas contextuales y tu capacidad de síntesis."},
+                                {"role": "system", "content": f"Fragmentos relevantes del documento:\n{context}"}
+                            ]
+                            for msg in st.session_state['doc_chat_history'][-5:]:
+                                messages.append(msg)
+
+                            try:
+                                response = client.chat.completions.create(
+                                    model="gpt-5-mini",
+                                    messages=messages,
+                                    max_completion_tokens=4096,
+                                    reasoning_effort="minimal"
+                                )
+                                answer = response.choices[0].message.content.strip()
+                                st.session_state['doc_chat_history'].append({"role": "assistant", "content": answer})
+                            except Exception as e:
+                                st.session_state['doc_chat_history'].append({"role": "assistant", "content": f"[Error al obtener respuesta: {str(e)}]"})
+
+        # Display chat history in a persistent, scrollable container
+        st.markdown(
+            '''
+            <div style="height:600px; overflow-y:auto; border:1px solid #333; border-radius:8px; padding:1em; background:#18191a; margin-bottom:1em;">
+            '''
+            +
+            "".join(
+                f"<div style='margin-bottom:1em; color:#2980b9;'><b>Tú:</b> {msg['content']}</div>" if msg['role']=='user'
+                else f"<div style='margin-bottom:1em; color:#27ae60;'><b>Asistente:</b> {msg['content']}</div>"
+                for msg in st.session_state['doc_chat_history']
+            )
+            +
+            '</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("Sube uno o más documentos válidos para comenzar el chat.")
+
+# # ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
+# with tab3:
+#     st.header("Diagnóstico de Sostenibilidad del Proyecto")
+    
+#     # Read rubric from Excel file
+#     import pandas as pd
+#     prodoc_rubric = {}
+    
+#     try:
+#         # Load rubric from PRODOC_rubric.xlsx
+#         df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        
+#         # Check if 'Indicador' column exists
+#         if 'Indicador' not in df_rubric_prodoc.columns:
+#             st.error("La columna 'Indicador' no existe en el archivo Excel.")
+#             # Try to use the first column as 'Indicador' if it exists
+#             if len(df_rubric_prodoc.columns) > 0:
+#                 indicador_col = df_rubric_prodoc.columns[0]
+#                 st.warning(f"Usando la columna '{indicador_col}' como columna de indicadores.")
+#                 df_rubric_prodoc.rename(columns={indicador_col: 'Indicador'}, inplace=True)
+#             else:
+#                 prodoc_rubric = {}
+#                 st.error("No se pudo encontrar una columna para los criterios.")
+        
+#         # Process each row to extract criteria and values
+#         for idx, row in df_rubric_prodoc.iterrows():
+#             # Get the indicator value
+#             indicador = row['Indicador']
+            
+#             # Skip empty indicators
+#             if pd.isna(indicador) or str(indicador).strip() == '':
+#                 continue
+            
+#             # Convert to string if it's not already
+#             indicador = str(indicador).strip()
+            
+#             # Get level columns (Nivel 0, Nivel 1, etc.)
+#             level_cols = [col for col in df_rubric_prodoc.columns if col.startswith('Nivel')]
+            
+#             # Extract values from level columns
+#             valores = []
+#             for col in level_cols:
+#                 val = row[col]
+#                 if not pd.isna(val) and str(val).strip() != '':
+#                     valores.append(str(val).strip())
+            
+#             # Store in our rubric dictionary
+#             prodoc_rubric[indicador] = valores
+        
+#         # Success message with count of loaded criteria
+#         st.success(f"Rúbrica cargada correctamente desde PRODOC_rubric.xlsx: {len(prodoc_rubric)} criterios cargados.")
+#     except FileNotFoundError:
+#         st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
+#     except Exception as e:
+#         st.error(f"Error al cargar la rúbrica desde PRODOC_rubric.xlsx: {str(e)}")
+    
+#     # Display the loaded rubric
+#     with st.expander("Ver rúbrica cargada"):
+#         st.subheader("Criterios de Evaluación PRODOC")
+#         for criterion, values in prodoc_rubric.items():
+#             st.markdown(f"**{criterion}**: {values}")
+    
+#     # Instrucciones generales
+#     st.info("""
+#     **Instrucciones:**
+#     1. Suba los archivos DOCX en las secciones correspondientes.
+#     2. Presione el botón de evaluación en cada sección para analizar el documento.
+#     3. Revise los resultados de cada rúbrica en las tablas interactivas.
+#     4. Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
+#     5. Descargue todos los resultados y evidencias en archivos ZIP.
+#     """)
+
+#     # Sección 1: Documento PRODOC
+#     st.markdown("### 📄 Sección 1: Documento PRODOC")
+#     st.info("Suba el documento PRODOC para evaluación de sostenibilidad del proyecto.")
+#     uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX del PRODOC:", type=["docx"], key="prodoc_file_uploader")
+
+#     if st.button('🔍 Procesar y Evaluar PRODOC', key="prodoc_process_button"):
+#         # Only process if file is uploaded
+#         if uploaded_file_prodoc is not None:
+#             uploaded_file = uploaded_file_prodoc
+#             document_type = "PRODOC"
+#             st.markdown(f"#### Procesando documento {document_type}...")
+
+#             file_hash = hash(uploaded_file.getvalue())
+#             if st.session_state.get('prodoc_last_file_hash') != file_hash:
+#                 with st.spinner("Procesando documento..."):
+#                     try:
+#                         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+#                         tmp_file.write(uploaded_file.read())
+#                         tmp_file.close()
+#                         progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+#                         doc_result = docx2python(tmp_file.name)
+#                         df = extract_docx_structure(tmp_file.name)
+#                         progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+#                         header_1_values = df['header_1'].dropna().unique()
+#                         llm_summary_rows = []
+#                         llm_progress = st.progress(0, text="Procesando secciones con LLM...")
+#                         total_sections = len(header_1_values)
+#                         for idx, header in enumerate(header_1_values):
+#                             section_df = df[df['header_1'] == header].copy()
+#                             full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+#                             if not full_text:
+#                                 llm_output = ""
+#                             else:
+#                                 llm_progress.progress((idx+1)/total_sections, text=f"Procesando sección: {header}")
+#                                 try:
+#                                     response = openai.ChatCompletion.create(
+#                                         model="gpt.5.1-mini",
+#                                         messages=[
+#                                             {"role": "system", "content": "You are a helpful assistant that rewrites extracted document content into well-structured, formal paragraphs. Do not rewrite the original content, just reconstruct it in proper, coherent paragraphs, without rephrasing or paraphrasing or rewording."},
+#                                             {"role": "user", "content": full_text}
+#                                         ],
+#                                         max_completion_tokens=4096,
+#                                         temperature=0.01,
+#                                     )
+#                                     llm_output = response["choices"][0]["message"]["content"].strip()
+#                                 except Exception as e:
+#                                     llm_output = f"[LLM ERROR: {e}]"
+#                             llm_summary_rows.append({'header_1': header, 'llm_paragraph': llm_output})
+#                         llm_progress.progress(1.0, text="LLM parsing completado.")
+#                         llm_summary_df = pd.DataFrame(llm_summary_rows)
+#                         llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+#                         exploded_df = llm_summary_df.assign(
+#                             llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+#                         ).explode('llm_paragraph')
+#                         exploded_df = exploded_df.reset_index(drop=True)
+#                         exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+#                         full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+#                         file_size = os.path.getsize(tmp_file.name)
+#                         n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+#                         n_paragraphs = len(exploded_df)
+#                         st.session_state['prodoc_full_document_text'] = full_document_text
+#                         st.session_state['prodoc_document_stats'] = {
+#                             'file_size': file_size,
+#                             'n_words': n_words,
+#                             'n_paragraphs': n_paragraphs
+#                         }
+#                         st.session_state['prodoc_exploded_df'] = exploded_df
+#                         st.session_state['prodoc_last_file_hash'] = file_hash
+#                         try:
+#                             os.unlink(tmp_file.name)
+#                         except:
+#                             pass
+#                         progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+#                         st.info(f"**Resumen del documento:**\n\n" + 
+#                                 f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+#                                 f"- Número de palabras: {n_words}\n" + 
+#                                 f"- Número de párrafos: {n_paragraphs}")
+#                         st.markdown("#### Estructura extraída del documento:")
+#                         st.dataframe(exploded_df, use_container_width=True)
+#                         progress_bar.progress(1.0, text="Procesamiento completo.")
+#                     except Exception as e:
+#                         st.error(f"Error procesando el documento: {e}")
+#                         import traceback
+#                         st.error(traceback.format_exc())
+#                         st.stop()
+            
+#             # Now, always run rubric evaluation if document is processed
+#             document_text = st.session_state.get('prodoc_full_document_text', '')
+#             if not document_text:
+#                 st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+#                 st.stop()
+                
+#             # Define the rubric to evaluate, using the same structure as tab4
+#             rubrics = [
+#                 ("Evaluación PRODOC", prodoc_rubric)
+#             ]
+            
+#             rubric_results = []
+#             from concurrent.futures import ThreadPoolExecutor, as_completed
+#             MAX_WORKERS = 48
+            
+#             def eval_one_criterion(args):
+#                 crit, descriptions, dimension, rubric_name = args
+#                 try:
+#                     result = evaluate_criterion_with_llm(document_text, crit, descriptions)
+#                     return {
+#                         'Criterio': crit,
+#                         'Dimensión': dimension,
+#                         'Score': result.get('score', 0),
+#                         'Análisis': result.get('analysis', ''),
+#                         'Evidencia': result.get('evidence', ''),
+#                         'Error': result.get('error', '') if 'error' in result else '',
+#                         'Rúbrica': rubric_name
+#                     }
+#                 except Exception as e:
+#                     return {
+#                         'Criterio': crit,
+#                         'Dimensión': dimension,
+#                         'Score': 0,
+#                         'Análisis': '',
+#                         'Evidencia': '',
+#                         'Error': str(e),
+#                         'Rúbrica': rubric_name
+#                     }
+            
+#             for rubric_name, rubric_dict in rubrics:
+#                 rubric_analysis_data = []
+#                 n_criteria = len(rubric_dict)
+#                 progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+#                 with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+#                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+#                         futures = {
+#                             executor.submit(eval_one_criterion, (
+#                                 crit,
+#                                 rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+#                                 rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+#                                 rubric_name
+#                             )): (crit, idx)
+#                             for idx, (crit, rubric_data) in enumerate(rubric_dict.items())
+#                         }
+#                         completed = 0
+#                         for future in as_completed(futures):
+#                             result = future.result()
+#                             rubric_analysis_data.append(result)
+#                             completed += 1
+#                             crit, idx = futures[future]
+#                             progress.progress(completed / n_criteria, text=f"Evaluando criterio: {crit}")
+#                 rubric_results.append((rubric_name, pd.DataFrame(rubric_analysis_data)))
+            
+#             # Show and allow download of results only after evaluation
+#             if rubric_results:
+#                 for rubric_name, rubric_analysis_df in rubric_results:
+#                     st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+#                     if not rubric_analysis_df.empty:
+#                         # Ensure 'Evidencia' column is present
+#                         if 'Evidencia' not in rubric_analysis_df.columns:
+#                             rubric_analysis_df['Evidencia'] = ''
+
+#                         # Reorder columns to show in logical order: Criterio, Dimensión, Score, Análisis, Evidencia, Error, Rúbrica
+#                         cols = rubric_analysis_df.columns.tolist()
+#                         desired_order = ['Criterio', 'Dimensión', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+#                         new_order = [col for col in desired_order if col in cols]
+#                         remaining_cols = [col for col in cols if col not in desired_order]
+#                         final_order = new_order + remaining_cols
+#                         rubric_analysis_df = rubric_analysis_df[final_order]
+#                         # Normalize 'Evidencia' column to always be a string
+#                         if 'Evidencia' in rubric_analysis_df.columns:
+#                             rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                                 lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                             )
+#                         st.dataframe(rubric_analysis_df, use_container_width=True)
+#                     else:
+#                         st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+                
+#                 # Create visualizations for the results
+#                 st.markdown("### Visualización de Resultados")
+                
+#                 # Prepare data for visualization
+#                 all_scores = []
+#                 for rubric_name, df in rubric_results:
+#                     for _, row in df.iterrows():
+#                         all_scores.append({
+#                             'Criterio': row['Criterio'],
+#                             'Puntuación': row['Score']
+#                         })
+                
+#                 scores_df = pd.DataFrame(all_scores)
+                
+#                 # Calculate the overall average score
+#                 overall_avg = scores_df['Puntuación'].mean()
+                
+#                 # Sort the dataframe by score in descending order
+#                 scores_df = scores_df.sort_values(by='Puntuación', ascending=False)
+                
+#                 # Create a horizontal bar chart instead of vertical for better label readability
+#                 fig = go.Figure()
+                
+#                 # Create short identifiers for criteria (e.g., "Criterio 1", "Criterio 2", etc.)
+#                 scores_df['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df))]
+                
+#                 # Create custom hover text with full criteria description
+#                 scores_df['Hover_Text'] = scores_df.apply(
+#                     lambda row: f"<b>{row['Criterio_ID']}</b><br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
+#                     axis=1
+#                 )
+                
+#                 # Add the bars - horizontal orientation with hover text
+#                 fig.add_trace(go.Bar(
+#                     y=scores_df['Criterio_ID'],  # Using short identifiers
+#                     x=scores_df['Puntuación'],
+#                     text=scores_df['Puntuación'].round(2),
+#                     textposition='auto',
+#                     marker_color='#3498db',
+#                     orientation='h',  # Horizontal bars
+#                     name='Puntuación',
+#                     hovertext=scores_df['Hover_Text'],
+#                     hoverinfo='text'
+#                 ))
+                
+#                 # Add the average line - vertical for horizontal chart
+#                 fig.add_trace(go.Scatter(
+#                     y=scores_df['Criterio_ID'],
+#                     x=[overall_avg] * len(scores_df),
+#                     mode='lines',
+#                     line=dict(color='red', width=2, dash='dash'),
+#                     name=f'Promedio General: {overall_avg:.2f}'
+#                 ))
+                
+#                 # Update layout for better readability
+#                 fig.update_layout(
+#                     title='Puntuación por Criterio (Ordenado de Mayor a Menor)',
+#                     xaxis_title='Puntuación',
+#                     yaxis_title='',  # No need for y-axis title
+#                     xaxis=dict(range=[0, 5.5]),  # Now x-axis has the scores
+#                     height=max(400, len(scores_df) * 35),  # Reduced height since we're using shorter labels
+#                     width=800,
+#                     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+#                     margin=dict(l=20, r=20, t=80, b=50),
+#                     hoverlabel=dict(
+#                         bgcolor="white",
+#                         font_size=12,
+#                         font_family="Arial"
+#                     )
+#                 )
+                
+#                 # Configure y-axis for cleaner look
+#                 fig.update_yaxes(
+#                     automargin=True  # Automatically adjust margins to fit labels
+#                 )
+                
+#                 # Add grid lines for better score reference
+#                 fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+                
+#                 # Display the chart
+#                 st.plotly_chart(fig, use_container_width=True)
+                
+#                 # Provide a zip download for all results
+#                 import io, zipfile
+#                 zip_buffer = io.BytesIO()
+#                 with zipfile.ZipFile(zip_buffer, "w") as zipf:
+#                     for rubric_name, rubric_analysis_df in rubric_results:
+#                         # Normalize 'Evidencia' column to always be a string before exporting
+#                         if 'Evidencia' in rubric_analysis_df.columns:
+#                             rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+#                                 lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+#                             )
+#                         csv = rubric_analysis_df.to_csv(index=False)
+#                         arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.csv"
+#                         zipf.writestr(arcname, csv)
+#                 zip_buffer.seek(0)
+#                 st.download_button(
+#                     label="Descargar resultados como ZIP",
+#                     data=zip_buffer,
+#                     file_name="resultados_evaluacion_prodoc.zip",
+#                     mime="application/zip",
+#                     key="prodoc_download_button"
+#                 )
+#             else:
+#                 st.warning("No se generaron resultados para ninguna rúbrica.")
+#         else:
+#             st.info("Por favor suba un archivo DOCX para comenzar y pulse el botón para procesar y evaluar.")
+#     else:
+#         st.info("Por favor suba un archivo DOCX del PRODOC para comenzar.")
+
+#     # Sección 2: Documento de Evaluación
+#     st.markdown("### 📋 Sección 2: Documento de Evaluación")
+#     st.info("Suba el documento de evaluación para análisis comparativo con la misma rúbrica de sostenibilidad.")
+#     uploaded_file_evaluation = st.file_uploader("Suba un archivo DOCX de evaluación:", type=["docx"], key="evaluation_file_uploader")
+
+#     if st.button('🔍 Procesar y Evaluar Documento de Evaluación', key="evaluation_process_button"):
+#         # Only process if file is uploaded
+#         if uploaded_file_evaluation is not None:
+#             uploaded_file = uploaded_file_evaluation
+#             document_type = "Evaluación"
+#             st.markdown(f"#### Procesando documento {document_type}...")
+
+#             file_hash = hash(uploaded_file.getvalue())
+#             if st.session_state.get('evaluation_last_file_hash') != file_hash:
+#                 with st.spinner("Procesando documento de evaluación..."):
+#                     try:
+#                         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+#                         tmp_file.write(uploaded_file.read())
+#                         tmp_file.close()
+#                         progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+#                         doc_result = docx2python(tmp_file.name)
+#                         df = extract_docx_structure(tmp_file.name)
+
+#                         # Use the same rubric processing logic as PRODOC
+#                         all_sections = extract_all_sections(doc_result)
+
+#                         # Process with the same rubric (prodoc_rubric)
+#                         results_evaluation = process_with_rubrics(all_sections, prodoc_rubric, document_type, progress_bar)
+
+#                         # Store in session state with different key
+#                         st.session_state['evaluation_results'] = results_evaluation
+#                         st.session_state['evaluation_sections'] = all_sections
+#                         st.session_state['evaluation_last_file_hash'] = file_hash
+#                         st.session_state['evaluation_document_processed'] = True
+
+#                         os.unlink(tmp_file.name)
+#                         progress_bar.progress(1.0, text="¡Análisis completado!")
+
+#                         st.success("✅ Documento de evaluación procesado exitosamente")
+
+#                     except Exception as e:
+#                         st.error(f"Error al procesar el documento de evaluación: {str(e)}")
+#                         st.session_state['evaluation_document_processed'] = False
+#                         import traceback
+#                         st.error(f"Detalles del error: {traceback.format_exc()}")
+#             else:
+#                 st.info("✅ Este archivo ya ha sido procesado. Mostrando resultados existentes.")
+#                 st.session_state['evaluation_document_processed'] = True
+#         else:
+#             st.info("Por favor suba un archivo DOCX de evaluación para comenzar.")
+#     else:
+#         st.info("Por favor suba un archivo DOCX de evaluación para comenzar.")
+
+#     # Display evaluation results if processed
+#     if st.session_state.get('evaluation_document_processed', False) and 'evaluation_results' in st.session_state:
+#         st.markdown("#### 📊 Resultados de Evaluación - Documento de Evaluación")
+#         results_evaluation = st.session_state['evaluation_results']
+
+#         # Same display logic as PRODOC
+#         if results_evaluation:
+#             display_results(results_evaluation, document_type="Evaluación", tab_key="evaluation")
+#         else:
+#             st.warning("No se generaron resultados para ninguna rúbrica del documento de evaluación.")
+
+# ================== TAB 6: EVALUACIÓN DE PRODOCS =====================
+with tab3:
+    st.header("Diagnóstico de Sostenibilidad del Proyecto")
+    
+    # Read rubric from Excel file
+    import pandas as pd
+    prodoc_rubric = {}
+    
+    try:
+        # Load rubric from PRODOC_rubric.xlsx
+        # df_rubric_prodoc = pd.read_excel('./PRODOC_rubric.xlsx', sheet_name='rubric')
+        df_rubric_prodoc = pd.read_excel('./Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx', sheet_name='rubric')
+
+        # Verify required columns exist
+        required_cols = ['Dimensión', 'Criterio', 'Indicador']
+        missing_cols = [col for col in required_cols if col not in df_rubric_prodoc.columns]
+        if missing_cols:
+            st.error(f"Columnas faltantes en el archivo Excel: {missing_cols}")
+            st.info(f"Columnas disponibles: {list(df_rubric_prodoc.columns)}")
+        
+        # Helper function to extract numeric prefix for sorting (e.g., "1.1" -> (1, 1), "2.3" -> (2, 3))
+        def extract_sort_key(text):
+            import re
+            if pd.isna(text):
+                return (999, 999, 999)
+            text = str(text).strip()
+            # Match patterns like "1.", "1.1", "1.1.", "(3.1)", etc.
+            match = re.match(r'[\(]?(\d+)(?:\.(\d+))?(?:\.(\d+))?', text)
+            if match:
+                parts = [int(p) if p else 0 for p in match.groups()]
+                return tuple(parts)
+            return (999, 999, 999)
+        
+        # Process each row to extract criteria and values
+        for idx, row in df_rubric_prodoc.iterrows():
+            indicador = row.get('Indicador', '')
+            criterio = row.get('Criterio', '')
+            dimension = row.get('Dimensión', 'No especificada')
+            
+            if pd.isna(indicador) or str(indicador).strip() == '':
+                continue
+            
+            indicador = str(indicador).strip()
+            criterio = str(criterio).strip() if not pd.isna(criterio) else ''
+            dimension = str(dimension).strip() if not pd.isna(dimension) else 'No especificada'
+            
+            # Get level columns (Nivel 1, Nivel 2, etc.)
+            level_cols = sorted([col for col in df_rubric_prodoc.columns if col.startswith('Nivel')])
+            
+            valores = []
+            for col in level_cols:
+                val = row[col]
+                if not pd.isna(val) and str(val).strip() != '':
+                    valores.append(str(val).strip())
+            
+            # Store with unique key (dimension + criterio + indicador) to avoid overwrites
+            # since same criterio and indicador text can appear in different dimensions
+            unique_key = f"{dimension}|{criterio}|{indicador}"
+            prodoc_rubric[unique_key] = {
+                'valores': valores, 
+                'dimension': dimension,
+                'criterio': criterio,
+                'indicador': indicador,  # Keep original indicador text for display
+                'sort_key': extract_sort_key(indicador)
+            }
+        
+        # Show dimension breakdown
+        dim_counts = {}
+        for ind, data in prodoc_rubric.items():
+            dim = data.get('dimension', 'N/A')
+            dim_counts[dim] = dim_counts.get(dim, 0) + 1
+        st.success(f"Rúbrica cargada: {len(prodoc_rubric)} indicadores en {len(dim_counts)} dimensiones.")
+        
+        # Download button for the rubric file (directly on page, no expander)
+        try:
+            with open('./Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx', 'rb') as f:
+                st.download_button(
+                    label="📥 Descargar archivo rúbrica de Sostenibilidad del proyecto",
+                    data=f,
+                    file_name="Evaluacion_sostenibilidad_rubric.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_sostenibilidad_rubric"
+                )
+        except FileNotFoundError:
+            st.warning("Archivo de rúbrica no disponible para descarga.")
+    except FileNotFoundError:
+        st.error("No se encontró el archivo PRODOC_rubric.xlsx. Por favor, asegúrese de que existe en el directorio de la aplicación.")
+    except Exception as e:
+        st.error(f"Error al cargar la rúbrica desde PRODOC_rubric.xlsx: {str(e)}")
+    
+    # Instrucciones generales
+    st.info("""
+    **Instrucciones:**
+    1.	Seleccione la rúbrica y los criterios específicos que desea analizar.
+    2.	Seleccione las secciones adecuadas de diagnóstico según el documento cargado (algunos criterios son relevantes a Documentos de Proyecto y otras a informes de progreso).
+    3.	Suba el archivo en formato DOCX correspondiente.
+    4.	Presione el botón de Procesar y Analizar para analizar el documento.
+    5.	Revise los resultados de cada rúbrica en las tablas interactivas.
+    6.	Visualice las puntuaciones promedio por dimensión en los gráficos de barras.
+    7.	Descargue todos los resultados y evidencias en archivos ZIP.
+
+    """)
+
+    # Initialize session state for selections and results persistence
+    if 'selected_criteria_tab3' not in st.session_state:
+        st.session_state['selected_criteria_tab3'] = []
+    if 'selected_dimensions_tab3' not in st.session_state:
+        st.session_state['selected_dimensions_tab3'] = []
+    if 'tab3_results' not in st.session_state:
+        st.session_state['tab3_results'] = None
+    if 'document_extracted_tab3' not in st.session_state:
+        st.session_state['document_extracted_tab3'] = False
+
+    # Document upload
+    st.markdown("### 📄 Carga de Documento")
+    
+    # Warning box about document requirements
+    st.warning("""
+    **⚠️ Requisitos importantes para la carga de documentos PRODOC:**
+    
+    **📝 Formato del documento:**
+    - Solo se aceptan archivos en formato **.docx** (Word 2007 o posterior)
+    - El documento PRODOC debe estar **correctamente formateado** usando los estilos de encabezado de Word (Heading 1, Heading 2, etc.)
+    - **CRÍTICO:** Las secciones del PRODOC deben estar identificadas con **encabezados usando estilos estándar de Word**. Sin encabezados apropiados, el texto no se extraerá correctamente y las secciones no se identificarán.
+    - Los PRODOCs deben tener una estructura clara con secciones bien definidas (Marco Lógico, Presupuesto, Cronograma, etc.)
+    
+    **📊 Límites de contexto:**
+    - El sistema procesa hasta **110,000 tokens** (~440,000 caracteres, aproximadamente **150-200 páginas**) por documento
+    - Documentos que excedan este límite serán truncados automáticamente
+    - Se recomienda dividir documentos muy extensos (más de ~180 páginas) en secciones más pequeñas si es necesario
+    
+    **✅ Mejores prácticas:**
+    - Usa estilos de Word (Título 1, Título 2, etc.) para identificar secciones principales del PRODOC
+    - Evita usar texto en negrita o mayúsculas como sustituto de encabezados
+    - Asegúrate de que todas las secciones importantes (Marco Lógico, Presupuesto, etc.) tengan encabezados claros
+    - Verifica que el documento esté guardado correctamente antes de subirlo
+    """)
+    
+    uploaded_file_prodoc = st.file_uploader("Suba un archivo DOCX para evaluación:", type=["docx"], key="prodoc_file_uploader_tab3")
+    
+    # Document Extraction Section
+    st.markdown("---")
+    st.markdown("### 📥 Extracción de Documento")
+    
+    if uploaded_file_prodoc is not None:
+        file_hash = hash(uploaded_file_prodoc.getvalue())
+        file_changed = st.session_state.get('last_file_hash_tab3') != file_hash
+        
+        if file_changed:
+            st.session_state['document_extracted_tab3'] = False
+            st.session_state['last_file_hash_tab3'] = None
+        
+        if st.button("🔍 Extraer Documento", key="extract_document_tab3", type="primary"):
+            if uploaded_file_prodoc is None:
+                st.error("Por favor suba un archivo DOCX primero.")
+                st.stop()
+            
+            with st.spinner("Extrayendo documento..."):
+                try:
+                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    tmp_file.write(uploaded_file_prodoc.read())
+                    tmp_file.close()
+                    
+                    progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                    doc_result = docx2python(tmp_file.name)
+                    
+                    # Use enhanced extraction
+                    df, tables_data, extraction_stats = extract_docx_structure_enhanced(tmp_file.name)
+                    progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+                    
+                    # Extract sections
+                    header_1_values = df['header_1'].dropna().unique()
+                    llm_summary_rows = []
+                    
+                    for idx, header in enumerate(header_1_values):
+                        section_df = df[df['header_1'] == header].copy()
+                        full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                        section_words = len(full_text.split())
+                        section_paras = len(section_df[section_df['source_type'] == 'paragraph'])
+                        section_tables = len(section_df[section_df['source_type'] == 'table'])
+                        
+                        llm_summary_rows.append({
+                            'header_1': header,
+                            'llm_paragraph': full_text if full_text else "",
+                            'n_words': section_words,
+                            'n_paragraphs': section_paras,
+                            'n_tables': section_tables
+                        })
+
+                    progress_bar.progress(0.5, text="Secciones extraídas.")
+                    
+                    # Create exploded dataframe
+                    llm_summary_df = pd.DataFrame(llm_summary_rows)
+                    exploded_df = llm_summary_df.assign(
+                        llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                    ).explode('llm_paragraph')
+                    exploded_df = exploded_df.reset_index(drop=True)
+                    exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                    
+                    # Get full text
+                    full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                    
+                    # Store in session state
+                    file_size = os.path.getsize(tmp_file.name)
+                    n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                    n_paragraphs = len(exploded_df)
+                    
+                    st.session_state['full_document_text_tab3'] = full_document_text
+                    st.session_state['prodoc_document_stats_tab3'] = {
+                        'file_size': file_size,
+                        'n_words': n_words,
+                        'n_paragraphs': n_paragraphs
+                    }
+                    st.session_state['exploded_df_tab3'] = exploded_df
+                    st.session_state['extraction_df_tab3'] = df
+                    st.session_state['tables_data_tab3'] = tables_data
+                    st.session_state['extraction_stats_tab3'] = extraction_stats
+                    st.session_state['sections_df_tab3'] = llm_summary_df
+                    st.session_state['selected_sections_tab3'] = list(header_1_values)  # Select all by default
+                    st.session_state['last_file_hash_tab3'] = file_hash
+                    st.session_state['document_extracted_tab3'] = True
+                    
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                    
+                    progress_bar.progress(1.0, text="Extracción completa.")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error procesando el documento: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+        
+        # Show extraction results if document is extracted
+        if st.session_state.get('document_extracted_tab3', False) and not file_changed:
+            st.success("✅ Documento extraído con éxito")
+            
+            # Download button for extracted document structure
+            extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
+            if not extraction_df.empty:
+                excel_data = to_excel(extraction_df)
+                # Get filename from extraction_df or use default
+                filename_base = extraction_df['filename'].iloc[0] if 'filename' in extraction_df.columns and not extraction_df['filename'].empty else "documento"
+                filename_base = filename_base.replace('.docx', '').replace('.doc', '')
+                st.download_button(
+                    label="📥 Descargar estructura extraída del documento (Excel)",
+                    data=excel_data,
+                    file_name=f"estructura_documento_tab3_{filename_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_extraction_tab3"
+                )
+                st.caption("El archivo incluye todas las columnas de encabezados (header_1 a header_6), contenido, tipo de fuente, y metadatos de extracción.")
+            
+            # Display header_1 sections and their content
+            extraction_df = st.session_state.get('extraction_df_tab3', pd.DataFrame())
+            if not extraction_df.empty:
+                with st.expander("📋 Ver estructura extraída del documento (encabezados nivel 1 y contenido)", expanded=False):
+                    st.markdown("**Estructura del documento extraído (solo encabezados nivel 1):**")
+                    
+                    # Get unique header_1 values
+                    header_1_sections = extraction_df[extraction_df['header_1'].notna() & (extraction_df['header_1'] != '')]['header_1'].unique()
+                    
+                    for h1 in header_1_sections:
+                        st.markdown(f"### {h1}")
+                        
+                        # Get all content for this header_1 section
+                        section_df = extraction_df[extraction_df['header_1'] == h1]
+                        section_content = section_df[section_df['source_type'] == 'paragraph']['content'].tolist()
+                        
+                        # Display content
+                        if section_content:
+                            full_text = '\n\n'.join([str(c) for c in section_content if pd.notna(c) and str(c).strip()])
+                            if full_text.strip():
+                                st.text(full_text)
+                                st.caption(f"Total: {len(full_text):,} caracteres")
+                        else:
+                            st.info("Esta sección no tiene contenido de párrafos extraído.")
+                        
+                        st.markdown("---")
+            
+            sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
+            
+            if not sections_df.empty:
+                header_1_values = sections_df['header_1'].tolist()
+                
+                # Section selector
+                st.markdown("### 🔍 Selección de Secciones para Evaluación")
+                st.info("Selecciona las secciones que deseas incluir en la evaluación. Por defecto, todas las secciones están seleccionadas.")
+                
+                # Guidance about section extraction
+                if len(header_1_values) == 0:
+                    st.error("⚠️ **No se detectaron secciones en el documento.** Esto puede deberse a que el documento no usa estilos de encabezado de Word (Heading 1, Heading 2, etc.). Por favor, verifica que tu documento PRODOC tenga encabezados formateados correctamente.")
+                elif len(header_1_values) < 3:
+                    st.warning("⚠️ **Se detectaron pocas secciones** en el documento PRODOC. Si esperabas más secciones, verifica que el documento use estilos de encabezado de Word (Heading 1, Heading 2, etc.) para identificar las secciones principales como Marco Lógico, Presupuesto, Cronograma, etc.")
+                
+                # Initialize selected sections if not exists
+                if 'selected_sections_tab3' not in st.session_state:
+                    st.session_state['selected_sections_tab3'] = list(header_1_values)
+                
+                # Section selection interface
+                selected_sections = st.session_state.get('selected_sections_tab3', list(header_1_values)).copy()
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    if st.button("✅ Seleccionar Todas", key="select_all_sections_tab3"):
+                        st.session_state['selected_sections_tab3'] = list(header_1_values)
+                        st.rerun()
+                    
+                    if st.button("❌ Deseleccionar Todas", key="deselect_all_sections_tab3"):
+                        st.session_state['selected_sections_tab3'] = []
+                        st.rerun()
+                
+                with col1:
+                    st.markdown("**Secciones disponibles:**")
+                    for section in header_1_values:
+                        section_info = sections_df[sections_df['header_1'] == section].iloc[0]
+                        is_selected = section in selected_sections
+                        
+                        checkbox_label = f"**{section}** ({section_info['n_words']:,} palabras, {section_info['n_paragraphs']} párrafos)"
+                        
+                        checkbox_key = f"section_checkbox_{section}_tab3"
+                        new_selection = st.checkbox(checkbox_label, value=is_selected, key=checkbox_key)
+                        
+                        if new_selection and section not in selected_sections:
+                            selected_sections.append(section)
+                        elif not new_selection and section in selected_sections:
+                            selected_sections.remove(section)
+                        
+                        # Add expandable preview of extracted content
+                        with st.expander(f"👁️ Ver contenido: {section}", expanded=False):
+                            section_content = section_info['llm_paragraph']
+                            if section_content and section_content.strip():
+                                st.text_area(
+                                    "Contenido extraído:",
+                                    value=section_content,
+                                    height=200,
+                                    key=f"content_preview_{section}_tab3",
+                                    label_visibility="collapsed"
+                                )
+                                st.caption(f"Total: {len(section_content):,} caracteres")
+                            else:
+                                st.info("Esta sección no tiene contenido extraído.")
+                            
+                            # Show table-extracted text
+                            tables_data = st.session_state.get('tables_data_tab3', [])
+                            section_tables = [t for t in tables_data if t.get('section') == section]
+                            
+                            if section_tables:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                for table_info in section_tables:
+                                    table_num = table_info.get('table_number', 'N/A')
+                                    table_data = table_info.get('data', [])
+                                    if table_data:
+                                        # Format table as text
+                                        table_text = '\n'.join([' | '.join(str(cell) for cell in row) for row in table_data])
+                                        st.text_area(
+                                            f"Tabla {table_num}:",
+                                            value=table_text,
+                                            height=150,
+                                            key=f"table_preview_{section}_table{table_num}_tab3",
+                                            label_visibility="collapsed"
+                                        )
+                                        st.caption(f"Tabla {table_num}: {len(table_data)} filas, {len(table_data[0]) if table_data else 0} columnas")
+                            else:
+                                st.markdown("---")
+                                st.markdown("#### 📊 Texto extraído desde tablas")
+                                st.info("No se encontraron tablas en esta sección.")
+                
+                # Update session state
+                st.session_state['selected_sections_tab3'] = selected_sections
+                
+                # Show selection summary
+                if selected_sections:
+                    selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+                    total_selected_words = selected_df['n_words'].sum()
+                    total_selected_paras = selected_df['n_paragraphs'].sum()
+                    
+                    # Estimate tokens
+                    if encoding:
+                        selected_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+                        estimated_tokens = len(encoding.encode(selected_text))
+                    else:
+                        estimated_tokens = total_selected_words * 1.2
+                    
+                    # Warn if approaching limit
+                    if estimated_tokens > 100000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.warning(f"⚠️ **Advertencia de límite de contexto:** Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). El sistema procesa hasta 110,000 tokens (aproximadamente 150-200 páginas). Si el documento excede este límite, será truncado automáticamente.")
+                    elif estimated_tokens > 80000:
+                        estimated_pages = (estimated_tokens / 110000) * 180  # Approximate pages based on 180 pages = 110K tokens
+                        st.info(f"ℹ️ Las secciones seleccionadas contienen aproximadamente {estimated_tokens:,.0f} tokens estimados (~{estimated_pages:.0f} páginas aproximadas). Estás dentro del límite de 110,000 tokens (aproximadamente 150-200 páginas).")
+                    
+                    st.success(f"✅ {len(selected_sections)} secciones seleccionadas | "
+                              f"{total_selected_words:,} palabras | "
+                              f"~{estimated_tokens:,} tokens estimados")
+
+    # Rubric and Criteria Selection Section (moved after document extraction)
+    st.markdown("---")
+    st.markdown("### 📋 Selección de Criterios")
+    
+    # Group indicadores by dimension and criterio, maintaining order
+    # Structure: {dimension: {criterio: [(unique_key, indicador_text, sort_key)]}}
+    criteria_by_dimension = {}
+    for unique_key, data in prodoc_rubric.items():
+        dimension = data.get('dimension', 'No especificada')
+        criterio = data.get('criterio', 'Sin criterio')
+        indicador_text = data.get('indicador', unique_key)  # Use indicador text for display
+        sort_key = data.get('sort_key', (999, 999, 999))
+        
+        if dimension not in criteria_by_dimension:
+            criteria_by_dimension[dimension] = {}
+        if criterio not in criteria_by_dimension[dimension]:
+            criteria_by_dimension[dimension][criterio] = []
+        criteria_by_dimension[dimension][criterio].append((unique_key, indicador_text, sort_key))
+    
+    # Sort indicadores within each criterio by their numeric prefix (sort_key is index 2)
+    for dimension in criteria_by_dimension:
+        for criterio in criteria_by_dimension[dimension]:
+            criteria_by_dimension[dimension][criterio].sort(key=lambda x: x[2])
+    
+    # Define dimension order
+    dimension_order = ['Diseño', 'Implementación', 'Pre-Cierre']
+    
+    # Helper to extract criterio number for sorting (e.g., "1. Participación..." -> 1)
+    def get_criterio_order(criterio_name):
+        import re
+        match = re.match(r'(\d+)\.', criterio_name)
+        return int(match.group(1)) if match else 999
+    
+    # Only show rubric selection if document is extracted
+    if st.session_state.get('document_extracted_tab3', False):
+        # Display the loaded rubric with selection grouped by dimension
+        with st.expander("Ver y seleccionar criterios de evaluación", expanded=True):
+            st.subheader("Criterios de Evaluación PRODOC")
+        st.markdown(
+            """
+            <div class='reference-box'>
+            Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para ajustar estrategias y definir tempranamente el plan de sostenibilidad.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Select all checkbox
+        select_all_tab3 = st.checkbox("Seleccionar todos los criterios", key='select_all_tab3')
+        
+        selected_criteria = []
+        
+        # Display criteria grouped by dimension
+        dimension_descriptions = {
+            "Diseño": (
+                "Analiza si el Documento de Proyecto (PRODOC) incorpora, desde el inicio, los factores que "
+                "favorecen la continuidad de resultados: participación de mandantes/socios y gestión de riesgos, "
+                "bases de sostenibilidad institucional y política, consideraciones de género y, cuando aplique, "
+                "transición justa. Usa como evidencia el Documento de Proyecto y anexos; los puntajes sirven para "
+                "ajustar estrategias y definir tempranamente el plan de sostenibilidad."
+            ),
+            "Implementación": (
+                "Contrasta avances reportados con los criterios de la Matriz de Criterios (capacidades desarrolladas, "
+                "alianzas, recursos movilizados, integración en políticas/planes, gestión del conocimiento, etc.) "
+                "para identificar riesgos, cuellos de botella y acciones de mitigación. Usa informes de progreso, actas, "
+                "convenios y otros documentos de ejecución; los resultados orientan ajustes y fortalecen la trazabilidad "
+                "de decisiones."
+            ),
+            "Pre-Cierre": (
+                "Aplica una revisión ex post (idealmente en el último trimestre de un proyecto) para verificar qué "
+                "elementos efectivamente aseguran la continuidad de resultados y documentar lecciones. Si se aplica "
+                "antes del cierre, algunos puntajes serán referenciales (“lo esperado”); en todos los casos, el diagnóstico "
+                "alimenta el plan/estrategia de sostenibilidad y su seguimiento. Usa un informe de evaluación para "
+                "realizar este análisis."
+            )
+        }
+
+        # Note: .reference-box styles are defined in the global ILO styles section
+
+        # Sort dimensions according to defined order
+        sorted_dimensions = sorted(
+            criteria_by_dimension.keys(), 
+            key=lambda d: dimension_order.index(d) if d in dimension_order else 999
+        )
+        
+        for dimension in sorted_dimensions:
+            st.markdown(f"#### 📊 {dimension}")
+            if dimension in dimension_descriptions:
+                st.markdown(
+                    f"<div class='reference-box'>{dimension_descriptions[dimension]}</div>",
+                    unsafe_allow_html=True
+                )
+            
+            # Checkbox to select entire dimension
+            dimension_key = f"dimension_tab3_{dimension}"
+            select_dimension = st.checkbox(
+                f"✅ Seleccionar toda la dimensión '{dimension}'",
+                value=select_all_tab3 or dimension in st.session_state.get('selected_dimensions_tab3', []),
+                key=dimension_key
+            )
+            
+            # Get criterios for this dimension, sorted by their number
+            criterios_in_dimension = criteria_by_dimension[dimension]
+            sorted_criterios = sorted(criterios_in_dimension.keys(), key=get_criterio_order)
+            
+            # Show criterios and their indicadores within this dimension
+            with st.container():
+                for criterio in sorted_criterios:
+                    # Display criterio header
+                    st.markdown(f"**{criterio}**")
+                    
+                    # Get sorted indicadores for this criterio
+                    # Each item is (unique_key, indicador_text, sort_key)
+                    indicadores_data = criterios_in_dimension[criterio]
+                    
+                    for unique_key, indicador_text, sort_key in indicadores_data:
+                        # If dimension is selected, auto-select all its indicadores
+                        default_value = select_all_tab3 or select_dimension or unique_key in st.session_state['selected_criteria_tab3']
+                        
+                        is_selected = st.checkbox(
+                            f"  ↳ {indicador_text}",
+                            value=default_value,
+                            key=f"criterion_tab3_{unique_key}",
+                            disabled=select_dimension  # Disable individual selection if dimension is selected
+                        )
+                        
+                        if is_selected or select_dimension:
+                            selected_criteria.append(unique_key)
+            
+            st.markdown("---")  # Separator between dimensions
+        
+        # Update session state
+        st.session_state['selected_criteria_tab3'] = selected_criteria
+        selected_dimensions = [dim for dim in criteria_by_dimension.keys() 
+                              if st.session_state.get(f"dimension_tab3_{dim}", False)]
+        st.session_state['selected_dimensions_tab3'] = selected_dimensions
+        
+        # Count total indicadores
+        total_indicadores = sum(
+            len(indicadores) 
+            for criterios in criteria_by_dimension.values() 
+            for indicadores in criterios.values()
+        )
+        
+        st.info(f"📌 Indicadores seleccionados: {len(selected_criteria)}/{total_indicadores} | Dimensiones seleccionadas: {len(selected_dimensions)}/{len(criteria_by_dimension)}")
+    else:
+        st.info("ℹ️ Por favor extrae el documento primero para poder seleccionar los criterios.")
+
+    # Process and Evaluate button
+    st.markdown("---")
+    st.markdown("### ⚙️ Procesamiento y Evaluación")
+    
+    # Warning about AI results verification
+    st.warning("""
+    **⚠️ Importante - Verificación de Resultados:**
+    
+    Los resultados generados por esta herramienta utilizan inteligencia artificial y deben ser **verificados y corroborados** antes de su uso.
+    
+    - La IA puede cometer errores, interpretaciones incorrectas o pasar por alto información relevante
+    - Los análisis y puntuaciones son **sugerencias** basadas en el contenido del documento, no son definitivos
+    - Se recomienda revisar manualmente las evidencias citadas y validar las conclusiones
+    - Los resultados deben ser contrastados con conocimiento experto y documentación adicional cuando sea necesario
+    
+    Esta herramienta es un **asistente de análisis** que facilita la revisión, pero la responsabilidad final de la evaluación recae en el usuario.
+    """)
+    
+    if st.button('🚀 Procesar y Evaluar', key="prodoc_process_button_tab3", type="primary"):
+        # Check prerequisites
+        if not st.session_state.get('document_extracted_tab3', False):
+            st.error("❌ Por favor extrae el documento primero usando el botón 'Extraer Documento'.")
+            st.stop()
+        
+        if uploaded_file_prodoc is None:
+            st.error("Por favor suba un archivo DOCX primero.")
+            st.stop()
+        
+        # Get selected criteria from session state
+        selected_criteria = st.session_state.get('selected_criteria_tab3', [])
+        if not selected_criteria:
+            st.error("Por favor seleccione al menos un criterio.")
+            st.stop()
+        
+        # Get selected sections or use full document
+        selected_sections = st.session_state.get('selected_sections_tab3', [])
+        sections_df = st.session_state.get('sections_df_tab3', pd.DataFrame())
+        
+        if selected_sections and not sections_df.empty:
+            # Filter to selected sections only
+            selected_df = sections_df[sections_df['header_1'].isin(selected_sections)]
+            document_text = "\n\n".join(selected_df['llm_paragraph'].tolist())
+            st.info(f"📌 Evaluando {len(selected_sections)} secciones seleccionadas")
+        else:
+            # Fallback to full document
+            document_text = st.session_state.get('full_document_text_tab3', '')
+            if not selected_sections:
+                st.warning("⚠️ No hay secciones seleccionadas. Usando documento completo.")
+        
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento.")
+            st.stop()
+        
+        # Skip the old extraction logic - document is already extracted
+        # Evaluate with selected criteria
+        if False:  # Disable old extraction logic
+            uploaded_file = uploaded_file_prodoc
+            st.markdown("#### Procesando documento...")
+
+            file_hash = hash(uploaded_file.getvalue())
+            if st.session_state.get('prodoc_last_file_hash_tab3') != file_hash:
+                with st.spinner("Procesando documento..."):
+                    try:
+                        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_file.write(uploaded_file.read())
+                        tmp_file.close()
+                        
+                        progress_bar = st.progress(0, text="Leyendo y extrayendo contenido del DOCX...")
+                        doc_result = docx2python(tmp_file.name)
+                        df = extract_docx_structure(tmp_file.name)
+                        
+                        progress_bar.progress(0.2, text="Documento cargado. Procesando estructura...")
+
+                        # Extract sections directly (no LLM needed - text is already well-formatted)
+                        header_1_values = df['header_1'].dropna().unique()
+                        llm_summary_rows = []
+                        progress_bar.progress(0.3, text="Extrayendo secciones del documento...")
+
+                        for idx, header in enumerate(header_1_values):
+                            section_df = df[df['header_1'] == header].copy()
+                            # Extract text directly - already clean from extract_docx_structure
+                            full_text = '\n'.join(section_df['content'].astype(str).tolist()).strip()
+                            llm_summary_rows.append({'header_1': header, 'llm_paragraph': full_text if full_text else ""})
+
+                        progress_bar.progress(0.5, text="Secciones extraídas.")
+                        llm_summary_df = pd.DataFrame(llm_summary_rows)
+                        llm_summary_df['n_words'] = llm_summary_df['llm_paragraph'].str.split().str.len()
+                        exploded_df = llm_summary_df.assign(
+                            llm_paragraph=llm_summary_df['llm_paragraph'].str.split('\n')
+                        ).explode('llm_paragraph')
+                        exploded_df = exploded_df.reset_index(drop=True)
+                        exploded_df = exploded_df[exploded_df['llm_paragraph'].str.strip() != '']
+                        
+                        full_document_text = "\n\n".join(exploded_df['llm_paragraph'].tolist())
+                        file_size = os.path.getsize(tmp_file.name)
+                        n_words = exploded_df['llm_paragraph'].str.split().str.len().sum()
+                        n_paragraphs = len(exploded_df)
+                        
+                        st.session_state['prodoc_full_document_text_tab3'] = full_document_text
+                        st.session_state['prodoc_document_stats_tab3'] = {
+                            'file_size': file_size,
+                            'n_words': n_words,
+                            'n_paragraphs': n_paragraphs
+                        }
+                        st.session_state['prodoc_exploded_df_tab3'] = exploded_df
+                        st.session_state['prodoc_last_file_hash_tab3'] = file_hash
+                        
+                        try:
+                            os.unlink(tmp_file.name)
+                        except:
+                            pass
+                        
+                        progress_bar.progress(0.8, text="Documento procesado. Listo para evaluación.")
+                        st.info(f"**Resumen del documento:**\n\n" + 
+                                f"- Tamaño del archivo: {file_size/1024:.2f} KB\n" + 
+                                f"- Número de palabras: {n_words}\n" + 
+                                f"- Número de párrafos: {n_paragraphs}")
+                        st.markdown("#### Estructura extraída del documento:")
+                        st.dataframe(exploded_df, use_container_width=True)
+                        progress_bar.progress(1.0, text="Procesamiento completo.")
+                        
+                    except Exception as e:
+                        st.error(f"Error procesando el documento: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+                        st.stop()
+        
+        # Define the evaluation function for tab3 with COUNTING support
+        def evaluate_criterion_with_llm(document_text, criterion, descriptions, max_retries=3):
+            """
+            Analyze document against criterion with retry logic.
+            TAB3-SPECIFIC: Enhanced to handle COUNT-BASED rubrics (stakeholders, participation forms, etc.)
+            """
+            import time
+
+            # Detect if this is a stakeholder participation counting rubric
+            is_stakeholder_counting = any(keyword in criterion.lower() for keyword in
+                ['mandante', 'participan', 'stakeholder', 'actores', 'gobierno', 'empleador', 'trabajador'])
+
+            for attempt in range(max_retries):
+                try:
+                    # Truncate to ~110K tokens to maximize context while leaving room for prompts and response
+                    combined_text = truncate_to_token_limit(document_text, max_tokens=110000, encoding_obj=encoding)
+
+                    # Enhanced prompt for count-based rubrics
+                    if is_stakeholder_counting:
+                        system_content = """Eres un evaluador experto de documentos especialmente capacitado para CONTAR y aplicar LÓGICA DE UMBRALES.
+
+**INSTRUCCIONES CRÍTICAS PARA EVALUACIÓN BASADA EN CONTEOS CON UMBRALES:**
+
+Los niveles de la rúbrica especifican requisitos como "AL MENOS X mandantes participando en AL MENOS Y formas".
+Debes aplicar lógica de umbrales estricta:
+
+1. **IDENTIFICA y CUENTA** cada tipo de mandante/actor mencionado:
+   - **Gobierno** (autoridades, funcionarios públicos, ministerios, etc.)
+   - **Empleadores** (empresas, organizaciones patronales, cámaras de comercio, etc.)
+   - **Trabajadores** (sindicatos, organizaciones de trabajadores, trabajadores individuales, etc.)
+
+2. **CUENTA las formas de participación** para CADA mandante individualmente:
+   - Diseño, reuniones, discusiones, comentarios, provisión de información, co-implementación, compromisos, etc.
+   - Cada forma debe ser DISTINTA y VERIFICABLE en el documento
+
+3. **FILTRO DE EVIDENCIA Y TIEMPO VERBAL (CRÍTICO - DEBE APLICARSE ESTRICTAMENTE):**
+   
+   **REGLA ABSOLUTA: SOLO PARTICIPACIÓN FACTUAL, PASADA O PRESENTE**
+   
+   - **SOLO cuenta participación que YA OCURRIÓ o ESTÁ OCURRIENDO** (hechos verificables, acciones concretas realizadas).
+   - **NUNCA CUENTES** participaciones futuras, prometidas, planificadas, hipotéticas o esperadas.
+   
+   **VERBOS Y EXPRESIONES QUE DEBES RECHAZAR (NO CUENTAN):**
+   - Futuro simple: "participará", "asistirá", "consultará", "se invitará", "se convocará", "se reunirá"
+   - Futuro compuesto: "habrá participado", "habrá asistido"
+   - Condicional: "participaría", "asistiría", "se consultaría"
+   - Expresiones de planificación: "se espera que", "se prevé que", "está previsto", "se planifica", "se programará"
+   - Expresiones de intención: "se pretende", "se busca", "se tiene como objetivo", "se propone"
+   - Expresiones de compromiso futuro: "se compromete a", "acordó participar" (si no hay evidencia de participación real)
+   - Marcadores temporales futuros: "en el futuro", "durante la implementación", "en las próximas fases", "posteriormente"
+   - Participaciones hipotéticas: "podría participar", "sería consultado", "tendría la oportunidad"
+   
+   **VERBOS Y EXPRESIONES QUE SÍ CUENTAN (participación factual):**
+   - Pasado simple: "participó", "asistió", "validó", "revisó", "comentó", "aprobó", "contribuyó", "colaboró"
+   - Pasado compuesto: "ha participado", "ha asistido", "ha validado"
+   - Presente: "participa", "asiste", "es miembro de", "forma parte de", "colabora en"
+   - Gerundio de acciones completadas: "habiendo participado", "habiendo asistido"
+   - Expresiones de hecho realizado: "fue consultado", "fue invitado y asistió", "se reunió con"
+   
+   **EJEMPLOS ESPECÍFICOS:**
+   - ❌ "Se consultará a los mandantes durante la implementación" -> NO CUENTA (futuro)
+   - ❌ "Se espera que los empleadores participen en el diseño" -> NO CUENTA (expectativa futura)
+   - ❌ "Los trabajadores serán invitados a las reuniones" -> NO CUENTA (futuro)
+   - ❌ "Está previsto que el gobierno valide la propuesta" -> NO CUENTA (planificación futura)
+   - ❌ "Se tiene como objetivo involucrar a los actores" -> NO CUENTA (intención futura)
+   - ✅ "El gobierno participó en la reunión de diseño del 15 de marzo" -> SÍ CUENTA (pasado factual)
+   - ✅ "Los empleadores asistieron a las consultas y proporcionaron comentarios" -> SÍ CUENTA (pasado factual)
+   - ✅ "Los trabajadores son miembros del comité de diseño" -> SÍ CUENTA (presente factual)
+   - ✅ "Los mandantes fueron consultados y validaron el marco lógico" -> SÍ CUENTA (pasado factual)
+   
+   **VERIFICACIÓN OBLIGATORIA:**
+   Antes de contar cualquier participación, pregunta: "¿Esta acción YA OCURRIÓ o está ocurriendo AHORA?" 
+   Si la respuesta es NO o es incierta → NO CUENTES.
+   Si la respuesta es SÍ y hay evidencia clara → SÍ CUENTA.
+
+4. **APLICA LÓGICA DE UMBRALES** según los niveles de la rúbrica:
+   - Si el nivel requiere "AL MENOS 2 mandantes en AL MENOS 2 formas":
+     * CUENTA cuántos mandantes tienen 2 o más formas de participación
+     * Si al menos 2 mandantes alcanzan ese umbral → cumple el nivel
+     * Si solo 1 mandante alcanza ese umbral → NO cumple el nivel
+
+   - Ejemplo:
+     * Gobierno: 3 formas ✓ (cumple umbral de 2+)
+     * Empleadores: 2 formas ✓ (cumple umbral de 2+)
+     * Trabajadores: 1 forma ✗ (NO cumple umbral de 2+)
+     * Resultado: 2 mandantes cumplen el umbral → SÍ califica para "al menos 2 mandantes en al menos 2 formas"
+
+4. **ESTRUCTURA TU ANÁLISIS** así:
+   ```
+   CONTEO POR MANDANTE:
+   - Gobierno: [N] formas identificadas → [LISTAR formas]
+   - Empleadores: [N] formas identificadas → [LISTAR formas]
+   - Trabajadores: [N] formas identificadas → [LISTAR formas]
+
+   EVALUACIÓN DE UMBRALES (según nivel de la rúbrica):
+   - Nivel X requiere: "AL MENOS [A] mandantes en AL MENOS [B] formas"
+   - Mandantes que cumplen umbral de [B]+ formas: [LISTA DE MANDANTES]
+   - Total de mandantes que cumplen umbral: [NÚMERO]
+   - ¿Cumple requisito de [A]+ mandantes?: [SÍ/NO]
+
+   JUSTIFICACIÓN DEL PUNTAJE:
+   [Explicar EXPLÍCITAMENTE cómo los conteos y umbrales determinan el nivel]
+   ```
+
+5. **ASIGNA EL PUNTAJE** basándote ESTRICTAMENTE en:
+   - Cuántos mandantes cumplen el umbral mínimo de formas
+   - Si ese número cumple el requisito de "al menos X mandantes"
+
+Siempre responde en español, incluso si el documento está en inglés."""
+
+                        user_content = f"""Evalúa este documento contra el siguiente indicador (REQUIERE CONTEO CON LÓGICA DE UMBRALES):
+
+**Indicador:** {criterion}
+
+**Niveles de puntuación:** {json.dumps(descriptions, ensure_ascii=False, indent=2)}
+
+**Documento a evaluar:**
+{combined_text}
+
+**INSTRUCCIONES CRÍTICAS:**
+1. **PRIMERO: APLICA EL FILTRO DE TIEMPO VERBAL** - Revisa CADA mención de participación y verifica que sea factual (pasado o presente). RECHAZA cualquier participación futura, prometida o planificada.
+2. CUENTA SOLO las formas de participación FACTUALES (pasadas o presentes) para CADA mandante
+3. IDENTIFICA el umbral mínimo de formas requerido en cada nivel (ej: "al menos 2 formas")
+4. CUENTA cuántos mandantes CUMPLEN ese umbral con participación REAL (no prometida)
+5. VERIFICA si el número de mandantes que cumplen el umbral alcanza el requisito del nivel
+6. Justifica el puntaje EXPLÍCITAMENTE basándote en la lógica de umbrales y menciona explícitamente que solo se contó participación factual
+
+**EJEMPLO DE RAZONAMIENTO CORRECTO:**
+"APLICACIÓN DEL FILTRO DE TIEMPO VERBAL: Se revisaron todas las menciones de participación. Se excluyeron las siguientes por ser futuras/planificadas: 'se consultará a los trabajadores durante la implementación', 'se espera que los empleadores participen'. Solo se contaron participaciones factuales (pasadas o presentes).
+
+CONTEO POR MANDANTE (solo participación real):
+- Gobierno: 3 formas identificadas → participó en reunión de diseño (15/03), validó marco lógico, proporcionó comentarios escritos (✓ todas factuales, cumple umbral de 2+)
+- Empleadores: 2 formas identificadas → asistieron a consulta (20/03), revisaron propuesta técnica (✓ ambas factuales, cumple umbral de 2+)
+- Trabajadores: 1 forma identificada → mencionados en documento pero sin evidencia de participación real (✗ NO cumple umbral de 2+)
+
+EVALUACIÓN DE UMBRALES:
+- Nivel 4 requiere: AL MENOS 2 mandantes en AL MENOS 2 formas cada uno
+- Mandantes que cumplen umbral de 2+ formas: Gobierno (3 formas), Empleadores (2 formas)
+- Total de mandantes que cumplen umbral: 2
+- ¿Cumple requisito de 2+ mandantes?: SÍ
+
+JUSTIFICACIÓN DEL PUNTAJE: Dado que 2 mandantes (Gobierno y Empleadores) cumplen el umbral de 2+ formas cada uno con participación REAL verificable, SÍ se alcanza el Nivel 4. Se excluyeron participaciones futuras/planificadas del conteo."
+
+**RECORDATORIO FINAL CRÍTICO:**
+- Si encuentras participaciones futuras o planificadas en el documento, MENCIONA explícitamente en tu análisis que fueron EXCLUIDAS del conteo
+- Solo incluye en "evidence" citas que demuestren participación REAL (pasada o presente)
+- Si el documento solo menciona participación futura/planificada y no hay evidencia de participación real, el puntaje debe reflejar esto (probablemente nivel 1 o 0)
+
+Proporciona tu respuesta como JSON:
+{{"analysis": "COMIENZA indicando si aplicaste el filtro de tiempo verbal y qué participaciones fueron excluidas (si las hubo). Luego presenta el conteo por mandante SOLO con participación factual. EVALÚA EXPLÍCITAMENTE los umbrales según cada nivel. Finalmente JUSTIFICA el puntaje con la lógica de umbrales, asegurándote de mencionar que solo se contó participación real. 2-3 párrafos en ESPAÑOL", "score": 1-5, "evidence": ["cita 1 que evidencia mandante y forma de participación específica REAL (pasada o presente)", "cita 2", "etc - 5-8 citas clave como array, SOLO participaciones factuales"]}}"""
+
+                    else:
+                        # Original prompt for non-counting rubrics
+                        system_content = "Eres un evaluador experto de documentos. Siempre debes responder en español, incluso si el documento está en inglés."
+
+                        user_content = f"""Evaluate this document against: {criterion}
+
+    Scoring levels: {json.dumps(descriptions)}
+
+    Relevant document sections:
+    {combined_text}
+
+    IMPORTANTE: Proporciona tu respuesta SIEMPRE en español, incluso si el documento está en inglés.
+
+    Provide JSON with:
+    {{"analysis": "detailed 2-3 paragraphs IN SPANISH", "score": 1-5, "evidence": ["quote 1", "quote 2", "quote 3", "etc - 5-8 key quotes from the text as an array"]}}"""
+
+                    response = client.chat.completions.create(
+                        model="gpt-5-mini",
+                        messages=[
+                            {"role": "system", "content": system_content},
+                            {"role": "user", "content": user_content}
+                        ],
+                        max_completion_tokens=6500,
+                        reasoning_effort="minimal",
+                        timeout=120  # 2 minute timeout per request
+                    )
+
+                    content = response.choices[0].message.content.strip()
+                    # Remove markdown code fences if present
+                    if content.startswith('```'):
+                        # Remove opening fence (```json or ```)
+                        content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+                        # Remove closing fence
+                        if content.endswith('```'):
+                            content = content.rsplit('```', 1)[0]
+                        content = content.strip()
+
+                    result = json.loads(content)
+                    # Normalize evidence field: convert array to string if needed
+                    if isinstance(result.get('evidence'), list):
+                        result['evidence'] = '\n'.join(result['evidence'])
+                    return result
+
+                except json.JSONDecodeError as e:
+                    # If JSON parsing fails, return a default structure
+                    return {
+                        "analysis": f"Failed to parse JSON: {str(e)}. Raw response: {response.choices[0].message.content[:200]}",
+                        "score": 3,
+                        "evidence": "Unable to parse structured response",
+                        "error": f"JSON parsing error: {str(e)}"
+                    }
+                except Exception as e:
+                    # Check if it's a rate limit error
+                    error_msg = str(e)
+                    if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
+                            time.sleep(wait_time)
+                            continue
+
+                    # If last attempt or non-rate-limit error, return error
+                    return {
+                        "analysis": f"Error during evaluation: {error_msg}",
+                        "score": 0,
+                        "evidence": "",
+                        "error": f"API error (attempt {attempt + 1}/{max_retries}): {error_msg}"
+                    }
+
+            # If we exhausted all retries
+            return {
+                "analysis": "Failed after multiple retry attempts",
+                "score": 0,
+                "evidence": "",
+                "error": f"Failed after {max_retries} attempts"
+            }
+        
+        # Evaluate with selected criteria
+        document_text = st.session_state.get('full_document_text_tab3', '')
+        if not document_text:
+            st.error("No se pudo recuperar el texto del documento. Por favor, vuelva a cargar el archivo.")
+            st.stop()
+        
+        # Build filtered rubric based on selection
+        filtered_rubric = {k: v for k, v in prodoc_rubric.items() if k in selected_criteria}
+        
+        if not filtered_rubric:
+            st.error("No hay criterios seleccionados para evaluar.")
+            st.stop()
+        
+        rubrics = [("Evaluación PRODOC", filtered_rubric)]
+        
+        rubric_results = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        MAX_WORKERS = 8
+        
+        # Define dimension order for sorting
+        dimension_order_map = {'Diseño': 0, 'Implementación': 1, 'Evaluación': 2}
+        
+        def eval_one_criterion_tab3(args):
+            unique_key, descriptions, dimension, criterio_text, indicador_text, sort_key, rubric_name = args
+            try:
+                result = evaluate_criterion_with_llm(document_text, indicador_text, descriptions)
+                # Ensure result is a dictionary
+                if not isinstance(result, dict):
+                    result = {'score': 0, 'analysis': str(result), 'evidence': '', 'error': 'Invalid result format'}
+                return {
+                    'Dimensión': dimension,
+                    'Criterio': criterio_text,
+                    'Indicador': indicador_text,
+                    'Score': result.get('score', 0),
+                    'Análisis': str(result.get('analysis', '')),
+                    'Evidencia': str(result.get('evidence', '')),
+                    'Error': str(result.get('error', '')) if 'error' in result else '',
+                    'Rúbrica': rubric_name,
+                    '_dim_order': dimension_order_map.get(dimension, 99),
+                    '_sort_key': sort_key
+                }
+            except Exception as e:
+                return {
+                    'Dimensión': dimension,
+                    'Criterio': criterio_text,
+                    'Indicador': indicador_text,
+                    'Score': 0,
+                    'Análisis': '',
+                    'Evidencia': '',
+                    'Error': str(e),
+                    'Rúbrica': rubric_name,
+                    '_dim_order': dimension_order_map.get(dimension, 99),
+                    '_sort_key': sort_key
+                }
+        
+        for rubric_name, rubric_dict in rubrics:
+            rubric_analysis_data = []
+            n_criteria = len(rubric_dict)
+            progress = st.progress(0, text=f"Iniciando evaluación por rúbrica: {rubric_name}...")
+            
+            with st.spinner(f'Evaluando documento por rúbrica: {rubric_name}...'):
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = {
+                        executor.submit(eval_one_criterion_tab3, (
+                            unique_key,
+                            rubric_data['valores'] if isinstance(rubric_data, dict) else rubric_data,
+                            rubric_data.get('dimension', 'No especificada') if isinstance(rubric_data, dict) else 'No especificada',
+                            rubric_data.get('criterio', '') if isinstance(rubric_data, dict) else '',
+                            rubric_data.get('indicador', unique_key) if isinstance(rubric_data, dict) else unique_key,
+                            rubric_data.get('sort_key', (999, 999, 999)) if isinstance(rubric_data, dict) else (999, 999, 999),
+                            rubric_name
+                        )): (unique_key, idx)
+                        for idx, (unique_key, rubric_data) in enumerate(rubric_dict.items())
+                    }
+                    
+                    completed = 0
+                    for future in as_completed(futures):
+                        result = future.result()
+                        rubric_analysis_data.append(result)
+                        completed += 1
+                        unique_key, idx = futures[future]
+                        progress.progress(completed / n_criteria, text=f"Evaluando indicador...")
+            
+            # Create DataFrame and sort by dimension order and sort_key
+            df_result = pd.DataFrame(rubric_analysis_data)
+            if not df_result.empty:
+                df_result = df_result.sort_values(by=['_dim_order', '_sort_key'])
+                df_result = df_result.drop(columns=['_dim_order', '_sort_key'], errors='ignore')
+            rubric_results.append((rubric_name, df_result))
+        
+        # Store results in session state for persistence
+        st.session_state['tab3_results'] = rubric_results
+        
+        # Show and allow download of results
+        if rubric_results:
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Dimensión', 'Criterio', 'Indicador', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Create visualizations for the results
+            st.markdown("### Visualización de Resultados")
+            
+            all_scores = []
+            for rubric_name, df in rubric_results:
+                for _, row in df.iterrows():
+                    all_scores.append({
+                        'Indicador': row.get('Indicador', row.get('Criterio', '')),
+                        'Criterio': row.get('Criterio', ''),
+                        'Dimensión': row['Dimensión'],
+                        'Puntuación': row['Score']
+                    })
+            
+            scores_df = pd.DataFrame(all_scores)
+            overall_avg = scores_df['Puntuación'].mean()
+            
+            # Visualization 1: Average Score by Dimension
+            st.markdown("#### 📊 Puntuación Promedio por Dimensión")
+            dimension_avg = scores_df.groupby('Dimensión')['Puntuación'].mean().reset_index()
+            dimension_avg = dimension_avg.sort_values(by='Puntuación', ascending=False)
+            
+            fig_dim = go.Figure()
+            fig_dim.add_trace(go.Bar(
+                x=dimension_avg['Dimensión'],
+                y=dimension_avg['Puntuación'],
+                text=dimension_avg['Puntuación'].round(2),
+                textposition='auto',
+                marker_color='#002F6C',
+                name='Promedio por Dimensión'
+            ))
+            
+            fig_dim.add_trace(go.Scatter(
+                x=dimension_avg['Dimensión'],
+                y=[overall_avg] * len(dimension_avg),
+                mode='lines',
+                line=dict(color='#C8102E', width=2, dash='dash'),
+                name=f'Promedio General: {overall_avg:.2f}'
+            ))
+            
+            fig_dim.update_layout(
+                title='Puntuación Promedio por Dimensión',
+                xaxis_title='Dimensión',
+                yaxis_title='Puntuación Promedio',
+                yaxis=dict(range=[0, 5.5]),
+                height=500,
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                margin=dict(l=20, r=20, t=80, b=50),
+                hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+            )
+            
+            fig_dim.update_xaxes(tickangle=-45)
+            fig_dim.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+            
+            st.plotly_chart(fig_dim, use_container_width=True)
+            
+            # Visualization 2: Individual Criteria Scores
+            st.markdown("#### 📈 Puntuación por Criterio Individual")
+            scores_df_sorted = scores_df.sort_values(by='Puntuación', ascending=False)
+            
+            fig = go.Figure()
+            scores_df_sorted['Criterio_ID'] = [f"Criterio {i+1}" for i in range(len(scores_df_sorted))]
+            scores_df_sorted['Hover_Text'] = scores_df_sorted.apply(
+                lambda row: f"<b>{row['Criterio_ID']}</b><br>Dimensión: {row['Dimensión']}<br>{row['Criterio']}<br>Puntuación: {row['Puntuación']:.2f}", 
+                axis=1
+            )
+            
+            fig.add_trace(go.Bar(
+                y=scores_df_sorted['Criterio_ID'],
+                x=scores_df_sorted['Puntuación'],
+                text=scores_df_sorted['Puntuación'].round(2),
+                textposition='auto',
+                marker_color='#0072CE',
+                orientation='h',
+                name='Puntuación',
+                hovertext=scores_df_sorted['Hover_Text'],
+                hoverinfo='text'
+            ))
+            
+            fig.add_trace(go.Scatter(
+                y=scores_df_sorted['Criterio_ID'],
+                x=[overall_avg] * len(scores_df_sorted),
+                mode='lines',
+                line=dict(color='#C8102E', width=2, dash='dash'),
+                name=f'Promedio General: {overall_avg:.2f}'
+            ))
+            
+            fig.update_layout(
+                title='Puntuación por Criterio (Ordenado de Mayor a Menor)',
+                xaxis_title='Puntuación',
+                yaxis_title='',
+                xaxis=dict(range=[0, 5.5]),
+                height=max(400, len(scores_df_sorted) * 35),
+                width=800,
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                margin=dict(l=20, r=20, t=80, b=50),
+                hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+            )
+            
+            fig.update_yaxes(automargin=True)
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Download ZIP with XLSX files
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    # Export as XLSX instead of CSV
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_evaluacion_prodoc.zip",
+                mime="application/zip",
+                key="prodoc_download_button_tab3"
+            )
+        else:
+            st.warning("No se generaron resultados para ninguna rúbrica.")
+    else:
+        # Check if there are persisted results in session state
+        if st.session_state.get('tab3_results') is not None:
+            rubric_results = st.session_state['tab3_results']
+            
+            st.markdown("### 📊 Resultados guardados")
+            
+            for rubric_name, rubric_analysis_df in rubric_results:
+                st.markdown(f'#### Resultados de la evaluación por rúbrica: {rubric_name}')
+                if not rubric_analysis_df.empty:
+                    if 'Evidencia' not in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = ''
+
+                    cols = rubric_analysis_df.columns.tolist()
+                    desired_order = ['Dimensión', 'Criterio', 'Indicador', 'Score', 'Análisis', 'Evidencia', 'Error', 'Rúbrica']
+                    new_order = [col for col in desired_order if col in cols]
+                    remaining_cols = [col for col in cols if col not in desired_order]
+                    final_order = new_order + remaining_cols
+                    rubric_analysis_df = rubric_analysis_df[final_order]
+                    
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    
+                    st.dataframe(rubric_analysis_df, use_container_width=True)
+                else:
+                    st.warning(f"No se generaron resultados para la rúbrica: {rubric_name}")
+            
+            # Create visualizations for the results
+            st.markdown("### Visualización de Resultados")
+            
+            all_scores = []
+            for rubric_name, df in rubric_results:
+                for _, row in df.iterrows():
+                    all_scores.append({
+                        'Indicador': row.get('Indicador', row.get('Criterio', '')),
+                        'Criterio': row.get('Criterio', ''),
+                        'Dimensión': row['Dimensión'],
+                        'Puntuación': row['Score']
+                    })
+            
+            if all_scores:
+                scores_df = pd.DataFrame(all_scores)
+                overall_avg = scores_df['Puntuación'].mean()
+                
+                # Visualization: Average Score by Dimension
+                st.markdown("#### 📊 Puntuación Promedio por Dimensión")
+                dimension_avg = scores_df.groupby('Dimensión')['Puntuación'].mean().reset_index()
+                dimension_avg = dimension_avg.sort_values(by='Puntuación', ascending=False)
+                
+                fig_dim = go.Figure()
+                fig_dim.add_trace(go.Bar(
+                    x=dimension_avg['Dimensión'],
+                    y=dimension_avg['Puntuación'],
+                    text=dimension_avg['Puntuación'].round(2),
+                    textposition='auto',
+                    marker_color='#002F6C',
+                    name='Promedio por Dimensión'
+                ))
+                
+                fig_dim.add_trace(go.Scatter(
+                    x=dimension_avg['Dimensión'],
+                    y=[overall_avg] * len(dimension_avg),
+                    mode='lines',
+                    line=dict(color='#C8102E', width=2, dash='dash'),
+                    name=f'Promedio General: {overall_avg:.2f}'
+                ))
+                
+                fig_dim.update_layout(
+                    title='Puntuación Promedio por Dimensión',
+                    xaxis_title='Dimensión',
+                    yaxis_title='Puntuación Promedio',
+                    yaxis=dict(range=[0, 5.5]),
+                    height=500,
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=20, r=20, t=80, b=50),
+                    hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial")
+                )
+                
+                fig_dim.update_xaxes(tickangle=-45)
+                fig_dim.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGrey')
+                
+                st.plotly_chart(fig_dim, use_container_width=True)
+            
+            # Download ZIP
+            import io, zipfile
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for rubric_name, rubric_analysis_df in rubric_results:
+                    if 'Evidencia' in rubric_analysis_df.columns:
+                        rubric_analysis_df['Evidencia'] = rubric_analysis_df['Evidencia'].apply(
+                            lambda x: "\n".join(x) if isinstance(x, list) else (str(x) if x is not None else "")
+                        )
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+                        rubric_analysis_df.to_excel(writer, index=False, sheet_name='Resultados')
+                    excel_buffer.seek(0)
+                    arcname = f"evaluacion_prodoc_{rubric_name.replace(' ', '_').lower()}.xlsx"
+                    zipf.writestr(arcname, excel_buffer.getvalue())
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                label="Descargar resultados como ZIP",
+                data=zip_buffer,
+                file_name="resultados_evaluacion_prodoc.zip",
+                mime="application/zip",
+                key="prodoc_download_button_tab3_persisted"
+            )
+            
+            # Clear results button
+            if st.button("🗑️ Limpiar resultados", key="clear_tab3_results"):
+                st.session_state['tab3_results'] = None
+                st.rerun()
+        else:
+            st.info("Seleccione criterios, suba un documento y presione 'Procesar y Evaluar'.")
+
+# ================== TAB 7: APPRAISAL CHECKLIST (IMPROVED) =====================
+# Configuration
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
+MAX_WORKERS = 48  # Reduced from 48 to avoid rate limits
+OPENAI_MODEL = "gpt-5-mini"  # GPT-5 mini model with reasoning
+
+@st.cache_data
 def load_appraisal_questions():
     """Load and cache appraisal questions from Excel file"""
     try:
@@ -378,6 +6471,49 @@ def extract_document_content(uploaded_file):
             'error': str(e)
         }
 
+# def analyze_question_with_llm(question, document_text):
+#     """Analyze a single question against the document using LLM"""
+#     try:
+#         response = openai.ChatCompletion.create(
+#             model=OPENAI_MODEL,
+#             messages=[
+#                 {
+#                     "role": "system", 
+#                     "content": """You are an expert document analyst. Analyze the document against the given question and provide a structured JSON response with exactly this format:
+#                     {
+#                         "Respuesta": "Yes/No/Partial/Not Found",
+#                         "Razonamiento": "Brief explanation of your analysis (max 200 words)",
+#                         "Evidencia": "Specific text excerpts that support your answer (max 300 words)"
+#                     }"""
+#                 },
+#                 {
+#                     "role": "user", 
+#                     "content": f"Question: {question}\n\nDocument Text: {document_text[:4000]}..."  # Limit context
+#                 }
+#             ],
+#             max_completion_tokens=800,
+#             temperature=0.1,
+#         )
+        
+#         content = response["choices"][0]["message"]["content"].strip()
+#         result = json.loads(content)
+        
+#         return {
+#             'Pregunta': question,
+#             'Respuesta': result.get('Respuesta', 'Error'),
+#             'Razonamiento': result.get('Razonamiento', ''),
+#             'Evidencia': result.get('Evidencia', ''),
+#             'Status': 'Success'
+#         }
+    
+#     except Exception as e:
+#         return {
+#             'Pregunta': question,
+#             'Respuesta': 'Error',
+#             'Razonamiento': f'Analysis failed: {str(e)}',
+#             'Evidencia': '',
+#             'Status': 'Error'
+#         }
 
 def parse_critic_verdict(critic_text):
     """Extract the VEREDICTO tag from the first line of a critic response.
@@ -442,12 +6578,15 @@ def parse_two_part_question(question):
     if question.count('?') < 2:
         lower = question.lower()
         if any(mk in lower for mk in specific_markers):
+            # Find the last " y (se|la|el|los|las) " split point. "Last" so we keep the
+            # specific clause intact on the right side.
             split_m = None
             for m2 in re.finditer(r'\s+y\s+(se|la|el|los|las|con|de|una?)\s+', question, re.IGNORECASE | re.UNICODE):
                 split_m = m2
             if split_m:
                 p1 = question[:split_m.start()].strip()
                 p2 = question[split_m.end():].strip()
+                # Ensure each side is substantive and the specific marker ended up on the right.
                 if len(p1) > 8 and len(p2) > 8 and any(mk in p2.lower() for mk in specific_markers):
                     if not p1.endswith('?'):
                         p1 = p1.rstrip('.,;:') + '?'
@@ -518,6 +6657,9 @@ def analyze_question_with_llm_tab1(question, document_text):
 
         # Parse question to detect two-part structure
         parsed = parse_two_part_question(question)
+        transversal_profile = detect_transversal_matter(parsed['part2'] if parsed['is_two_part'] else question)
+        if not transversal_profile and parsed['is_two_part']:
+            transversal_profile = detect_transversal_matter(question)
 
         # Customize system prompt based on question structure
         if parsed['is_two_part']:
@@ -642,6 +6784,9 @@ If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Foun
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
             response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
+
+        if transversal_profile:
+            system_content += _transversal_scoring_instructions(transversal_profile)
 
         # Bump reasoning effort for two-part: the 70/30 weighting needs more deliberation.
         resp = client.chat.completions.create(
@@ -905,8 +7050,57 @@ def _critic_impl(question, answer, reasoning, evidence, document_text=""):
     try:
         doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
         parsed = parse_two_part_question(question)
+        transversal_profile = detect_transversal_matter(parsed['part2'] if parsed['is_two_part'] else question)
+        if not transversal_profile and parsed['is_two_part']:
+            transversal_profile = detect_transversal_matter(question)
 
-        if parsed['is_two_part']:
+        if transversal_profile:
+            system_content = _CRITIC_TRANSVERSAL_SYSTEM
+            aliases = ", ".join(transversal_profile["aliases"])
+            if parsed['is_two_part']:
+                user_content = f"""PREGUNTA CON DOS PARTES - EVALÚA EL TEMA TRANSVERSAL EN LA PARTE 2.
+
+**Tema transversal configurado:** {transversal_profile['label']}
+**Alias reconocidos:** {aliases}
+
+**PARTE 2 (Sujeto Específico - el único que debe evaluarse):**
+{parsed['part2']}
+
+**PARTE 1 (Contexto - solo referencia, NO evaluar):**
+{parsed['part1']}
+
+**Respuesta del Documento:** {answer}
+**Razonamiento del Documento:** {reasoning}
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Completa los campos estructurados usando SOLO la regla transversal:
+A = presencia operacional del tema en objetivo, producto o actividad.
+B = presupuesto, recursos o línea presupuestaria en alguna actividad correspondiente.
+Yes = A y B; Partial = A o B; No = ni A ni B."""
+            else:
+                user_content = f"""PREGUNTA SOBRE TEMA TRANSVERSAL.
+
+**Tema transversal configurado:** {transversal_profile['label']}
+**Alias reconocidos:** {aliases}
+
+Pregunta: {question}
+
+**Respuesta del Documento:** {answer}
+**Razonamiento del Documento:** {reasoning}
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Completa los campos estructurados usando SOLO la regla transversal:
+A = presencia operacional del tema en objetivo, producto o actividad.
+B = presupuesto, recursos o línea presupuestaria en alguna actividad correspondiente.
+Yes = A y B; Partial = A o B; No = ni A ni B."""
+            schema = CRITIC_SCHEMA_TRANSVERSAL
+        elif parsed['is_two_part']:
             system_content = _CRITIC_TWO_PART_SYSTEM
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA LA PARTE 2 EXCLUSIVAMENTE.
 
@@ -959,10 +7153,29 @@ Completa los campos estructurados. Para CADA elemento A–E, decide presente/aus
         except json.JSONDecodeError:
             return "VEREDICTO: Keep\n\nError al procesar la evaluación crítica estructurada."
 
+        if transversal_profile:
+            return _apply_transversal_gate_and_render(result, transversal_profile, is_two_part=parsed['is_two_part'])
         return _apply_critic_gate_and_render(result, is_two_part=parsed['is_two_part'])
 
     except Exception as e:
         return f"VEREDICTO: Keep\n\nError en evaluación crítica: {str(e)}"
+
+
+_CRITIC_TRANSVERSAL_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
+
+You assess configured transversal matters with the reduced ILO handoff rule. Your output is a structured JSON enforced by schema. The verdict is derived mechanically from two criteria only.
+
+**TRANSVERSAL SCORING RULE**
+Use ONLY these two criteria:
+A. Objetivo, producto o actividad: mark presente when the transversal matter appears operationally in an objective, output/product, or activity. A generic stakeholder list or boilerplate inclusion phrase is not enough.
+B. Presupuesto: mark presente when a budget, resource allocation, or budget line is specified for at least one corresponding activity.
+
+**VERDICT**
+- A=presente and B=presente -> Yes
+- A=presente or B=presente -> Partial
+- A=ausente and B=ausente -> No
+
+Do not use indicators, targets, or the old five-element A-E total for configured transversal matters. If the question has two parts, Part 1 is context only and must not be scored."""
 
 
 _CRITIC_TWO_PART_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
@@ -1156,18 +7369,20 @@ synthesize a comprehensive subsection-level analysis.
 Each question's Razonamiento may begin with an enumeration line in the form:
   "Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=.... TOTAL=<N>."
 where A=sub-objetivo/output, B=indicador, C=actividad dedicada, D=línea presupuestaria, E=meta cuantificable.
-These enumerations are the authoritative evidence base — you MUST aggregate them, not restate them.
+Some transversal-matter questions may instead begin with:
+  "Criterios transversales Parte 2 [<tema> / <sujeto>]: A=<presente|ausente>, B=<presente|ausente>. Regla: Yes=A+B; Partial=A o B; No=sin A ni B."
+where A=objetivo/producto/actividad and B=presupuesto. These enumerations are the authoritative evidence base — you MUST aggregate them, not restate them.
 
 Subsection {subsection_id} - Individual Q&A:
 {qa_context}
 
 Provide a concise subsection-level analysis (1-2 paragraphs) that:
 1. Identifies the specific subject(s) evaluated across the questions (e.g., personas con discapacidad, género).
-2. Aggregates the A–E pattern: for each element (A through E), state how many questions found it presente vs ausente. Name the systematic gap (e.g., "en 4 de 5 preguntas la línea presupuestaria y la meta cuantificable están ausentes").
+2. Aggregates the A–E pattern, or the transversal A/B pattern when present: for each element, state how many questions found it presente vs ausente. Name the systematic gap (e.g., "en 4 de 5 preguntas la línea presupuestaria y la meta cuantificable están ausentes").
 3. Synthesizes 2–3 concrete, evidence-backed strengths or gaps.
 4. Provides a clear overall assessment (Yes / Partial / No distribution across the subsection).
 
-If different questions in the subsection address different subjects, aggregate A–E separately per subject.
+If different questions in the subsection address different subjects, aggregate A–E or transversal A/B separately per subject.
 
 Format as JSON with exactly this structure:
 {{"subsection_analysis": "Spanish text, 1-2 paragraphs, ending with the aggregated A-E summary"}}
@@ -1211,13 +7426,13 @@ def synthesize_section_analysis(section_num, subsection_analyses_dict):
 synthesize a comprehensive section-level analysis.
 
 **IMPORTANT — STRUCTURED DATA IN EACH SUBSECTION:**
-Each subsection analysis may include an aggregated A–E summary (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable, per specific subject such as personas con discapacidad, género, pueblos indígenas). Roll these up at the section level: identify which elements are systematically missing across the entire section, and for which subjects.
+Each subsection analysis may include an aggregated A–E summary (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable, per specific subject such as personas con discapacidad, género, pueblos indígenas) or a transversal A/B summary (A=objetivo/producto/actividad, B=presupuesto). Roll these up at the section level: identify which elements are systematically missing across the entire section, and for which subjects.
 
 Section {section_num} - Subsection Analyses:
 {subsection_context}
 
 Provide a detailed section-level analysis (2-3 paragraphs) that:
-1. Rolls up the A–E patterns across subsections: which dedicated elements are consistently absent for which specific subjects?
+1. Rolls up the A–E patterns and any transversal A/B patterns across subsections: which elements are consistently absent for which specific subjects?
 2. Identifies overarching structural gaps (e.g., "budget allocation and quantifiable targets are absent across inclusion-focused questions in this section").
 3. Provides strategic recommendations prioritized by which missing elements would have the largest effect if added.
 
@@ -1265,16 +7480,18 @@ synthesize a comprehensive subsection-level critical assessment.
 **IMPORTANT — STRUCTURED DATA IN EACH CRITICAL EVALUATION:**
 Each critical evaluation may begin with an enumeration line in the form:
   "Elementos dedicados [Parte 2] [<sujeto>]: A=..., B=..., C=..., D=..., E=.... TOTAL=<N>."
+or, for configured transversal matters:
+  "Criterios transversales Parte 2 [<tema> / <sujeto>]: A=..., B=.... Regla: Yes=A+B; Partial=A o B; No=sin A ni B."
 and may include audit notes like "[Ajuste automático: ... obliga a 'No']" or "[Cláusula general ignorada: ...]" or "[Downgrade por evidencia FRAMING: ...]". Read these as authoritative — they record where the automated grading intervened.
 
 Subsection {subsection_id} - Individual Critical Evaluations:
 {critical_context}
 
 Provide a concise subsection-level critical assessment (1-2 paragraphs) that:
-1. Aggregates the A–E pattern across the subsection and identifies the most common absent elements per specific subject.
+1. Aggregates the A–E pattern, or the transversal A/B pattern when present, across the subsection and identifies the most common absent elements per specific subject.
 2. Counts and reports how many questions received an automatic verdict override (e.g., "3 de 5 preguntas tuvieron veredicto ajustado a 'No' por TOTAL=0") — this is a strong signal of systematic weakness.
 3. Flags FRAMING-evidence downgrades and cláusula-general ignoradas that reveal where the document relies on boilerplate instead of dedicated attention.
-4. Recommends the 2–3 highest-priority interventions for the subsection (tied to the missing A–E elements).
+4. Recommends the 2–3 highest-priority interventions for the subsection (tied to the missing A–E or transversal A/B elements).
 
 Format as JSON with exactly this structure:
 {{"critical_evaluation": "Spanish text, 1-2 paragraphs, including explicit counts of overrides and the dominant missing element"}}
@@ -1318,13 +7535,13 @@ def synthesize_critical_evaluation_section(section_num, critical_subsection_dict
 synthesize a comprehensive section-level critical assessment.
 
 **IMPORTANT — STRUCTURED DATA IN EACH SUBSECTION EVALUATION:**
-Each subsection critical evaluation may reference A–E aggregated patterns (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable) and may report automatic verdict overrides ("TOTAL=0 obliga a 'No'"), FRAMING downgrades, or cláusula-general ignoradas. Treat these as hard signals, not narrative flourishes.
+Each subsection critical evaluation may reference A–E aggregated patterns (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable) or transversal A/B patterns (A=objetivo/producto/actividad, B=presupuesto), and may report automatic verdict overrides ("TOTAL=0 obliga a 'No'" or "regla transversal obliga a..."), FRAMING downgrades, or cláusula-general ignoradas. Treat these as hard signals, not narrative flourishes.
 
 Section {section_num} - Subsection Critical Evaluations:
 {critical_context}
 
 Provide a detailed section-level critical assessment (2-3 paragraphs) that:
-1. Rolls up the A–E absences across the entire section: which elements are most systematically missing, and for which specific subjects?
+1. Rolls up the A–E and transversal A/B absences across the entire section: which elements are most systematically missing, and for which specific subjects?
 2. Counts and reports the total automatic verdict overrides across the section (a high count signals a systemic issue, not isolated gaps).
 3. Identifies cross-subsection patterns of reliance on FRAMING mentions or general-clause substitution.
 4. Provides a prioritized list of strategic actions — ordered by which missing elements would close the most gaps if added.
@@ -1413,17 +7630,13 @@ def create_results_download_with_sections(results_df, subsection_analyses, subse
                 'text_wrap': True
             })
             
-            # Extract and ensure sorting columns exist
+            # Extract and ensure sorting columns exist. Always re-derive _sort_key from the
+            # question text so persisted session-state DataFrames (which may have been built
+            # with the old two-level sort key) are re-sorted by the full numeric prefix.
             if '_section' not in results_df.columns:
                 results_df['_section'] = results_df['Pregunta'].apply(extract_section_number)
             if '_subsection' not in results_df.columns:
                 results_df['_subsection'] = results_df['Pregunta'].apply(extract_subsection_number)
-            if '_sort_key' not in results_df.columns:
-                results_df['_sort_key'] = results_df['_subsection'].apply(parse_subsection_for_sorting)
-            
-            # Always re-derive _sort_key from the question text so persisted session-state
-            # DataFrames (which may have been built with the old two-level sort key) are
-            # re-sorted by the full numeric prefix.
             results_df['_sort_key'] = results_df['Pregunta'].apply(parse_question_sort_key)
 
             # Primary sort by full numeric prefix; _orig_idx breaks ties if available.
@@ -1542,6 +7755,7 @@ Distribución de respuestas:
     zip_buffer.seek(0)
     return zip_buffer
 
+# Main tab interface
 with tab1:
     st.header("📋 Valoración Preliminar de Calidad de Proyectos (Preliminary Project Quality Appraisal)")
     
@@ -2266,6 +8480,13 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
 - `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
 - `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
 
+**Para temas transversales configurados** (*género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, *sostenibilidad medioambiental*), se aplica una regla reducida:
+
+- **A. Objetivo, producto o actividad**: el tema aparece de forma operacional en alguno de estos niveles
+- **B. Presupuesto**: se especifica presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente
+
+La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No = ni A ni B**.
+
 **Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
 """)
 
@@ -2386,6 +8607,13 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
 - `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el veredicto propuesto no correspondía al conteo de elementos dedicados y el sistema lo corrigió automáticamente.
 - `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
 - `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
+
+**Para temas transversales configurados** (*género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, *sostenibilidad medioambiental*), se aplica una regla reducida:
+
+- **A. Objetivo, producto o actividad**: el tema aparece de forma operacional en alguno de estos niveles
+- **B. Presupuesto**: se especifica presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente
+
+La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No = ni A ni B**.
 
 **Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
 """)

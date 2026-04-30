@@ -9,6 +9,7 @@ import numpy as np
 import faiss
 import os
 import re
+import unicodedata
 from matplotlib import pyplot as plt
 import seaborn as sns
 from io import BytesIO
@@ -198,6 +199,189 @@ CRITIC_SCHEMA_SINGLE = {
         ],
     },
 }
+
+CRITIC_SCHEMA_TRANSVERSAL = {
+    "name": "critic_response_transversal",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "transversal_theme": {"type": "string"},
+            "named_subject_specific": {"type": "string"},
+            "general_clause_ignored": {"type": "string"},
+            "transversal_A_objective_product_activity": {"type": "string", "enum": ["presente", "ausente"]},
+            "transversal_A_evidence": {"type": "string"},
+            "transversal_B_budget": {"type": "string", "enum": ["presente", "ausente"]},
+            "transversal_B_evidence": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["Yes", "No", "Partial", "Not Found", "Keep"]},
+            "justification": {"type": "string"},
+            "recommendations": {"type": "string"},
+        },
+        "required": [
+            "transversal_theme",
+            "named_subject_specific", "general_clause_ignored",
+            "transversal_A_objective_product_activity", "transversal_A_evidence",
+            "transversal_B_budget", "transversal_B_evidence",
+            "verdict", "justification", "recommendations",
+        ],
+    },
+}
+
+TRANSVERSAL_MATTERS = {
+    "genero": {
+        "label": "Género",
+        "aliases": [
+            "género", "genero", "igualdad de género", "igualdad de genero",
+            "enfoque de género", "enfoque de genero", "mujeres", "niñas",
+        ],
+    },
+    "no_discriminacion": {
+        "label": "No discriminación",
+        "aliases": [
+            "no discriminación", "no discriminacion", "antidiscriminación",
+            "antidiscriminacion", "discriminación", "discriminacion",
+            "igualdad de oportunidades", "trato igualitario",
+        ],
+    },
+    "discapacidad": {
+        "label": "Discapacidad",
+        "aliases": [
+            "discapacidad", "personas con discapacidad", "persona con discapacidad",
+            "pcd", "accesibilidad", "inclusión de personas con discapacidad",
+            "inclusion de personas con discapacidad",
+        ],
+    },
+    "dialogo_social_tripartismo": {
+        "label": "Diálogo social y tripartismo",
+        "aliases": [
+            "diálogo social", "dialogo social", "tripartismo", "tripartita",
+            "tripartito", "sindicatos", "organizaciones de trabajadores",
+            "organizaciones de empleadores", "social dialogue", "tripartite",
+        ],
+    },
+    "sostenibilidad_medioambiental": {
+        "label": "Sostenibilidad medioambiental",
+        "aliases": [
+            "sostenibilidad medioambiental", "sostenibilidad ambiental",
+            "medioambiental", "medio ambiente", "ambiental", "cambio climático",
+            "cambio climatico", "acción climática", "accion climatica",
+            "economía verde", "economia verde", "environmental sustainability",
+        ],
+    },
+}
+
+
+def _normalize_for_match(value) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = re.sub(r"[^a-zA-Z0-9]+", " ", normalized.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return f" {normalized} "
+
+
+def detect_transversal_matter(question_text):
+    """Return the configured transversal matter profile matched in a question."""
+    normalized_question = _normalize_for_match(question_text)
+    for key, profile in TRANSVERSAL_MATTERS.items():
+        for alias in profile["aliases"]:
+            alias_norm = _normalize_for_match(alias).strip()
+            if alias_norm and f" {alias_norm} " in normalized_question:
+                matched_profile = profile.copy()
+                matched_profile["key"] = key
+                matched_profile["matched_alias"] = alias
+                return matched_profile
+    return None
+
+
+def _transversal_scoring_instructions(profile):
+    return f"""
+
+**TRANSVERSAL MATTER SCORING OVERRIDE**
+Tema transversal detectado: {profile['label']}.
+
+Para este tema NO uses la regla general de cinco elementos A-E. Usa solo:
+- A: Objetivo, producto o actividad. Marca A=presente si el tema transversal aparece de forma operacional en al menos uno de estos niveles.
+- B: Presupuesto. Marca B=presente si se especifica presupuesto, recursos o una línea presupuestaria para alguna actividad correspondiente.
+
+Calificación obligatoria:
+- Yes: A y B están presentes.
+- Partial: A o B está presente.
+- No: no están presentes ni A ni B.
+"""
+
+
+def _evidence_is_missing(evidence: str) -> bool:
+    if not evidence or not str(evidence).strip():
+        return True
+    normalized = _normalize_for_match(evidence)
+    missing_markers = [
+        " no aparece ", " no se identifica ", " no se evidencia ",
+        " no hay ", " no se especifica ", " sin evidencia ",
+        " ausente ", " no aplica ",
+    ]
+    return any(marker in normalized for marker in missing_markers)
+
+
+def _apply_transversal_gate_and_render(result: dict, profile: dict, is_two_part: bool) -> str:
+    """Apply the two-criterion scoring rule for configured transversal matters."""
+    a_state = result.get("transversal_A_objective_product_activity", "ausente") or "ausente"
+    b_state = result.get("transversal_B_budget", "ausente") or "ausente"
+    a_evidence = result.get("transversal_A_evidence", "") or ""
+    b_evidence = result.get("transversal_B_evidence", "") or ""
+
+    notes = []
+    if a_state == "presente" and _evidence_is_missing(a_evidence):
+        a_state = "ausente"
+        notes.append("A reclasificado a ausente por falta de evidencia operacional.")
+    if b_state == "presente" and _evidence_is_missing(b_evidence):
+        b_state = "ausente"
+        notes.append("B reclasificado a ausente por falta de evidencia presupuestaria.")
+
+    if a_state == "presente" and b_state == "presente":
+        verdict = "Yes"
+    elif a_state == "presente" or b_state == "presente":
+        verdict = "Partial"
+    else:
+        verdict = "No"
+
+    model_verdict = (result.get("verdict") or "").strip()
+    if model_verdict and model_verdict not in ("Keep", verdict):
+        notes.append(f"Ajuste automático: el modelo propuso '{model_verdict}' pero la regla transversal obliga a '{verdict}'.")
+
+    subject = (
+        result.get("named_subject_specific")
+        or result.get("transversal_theme")
+        or profile["label"]
+    ).strip()
+    ignored = (result.get("general_clause_ignored") or "").strip()
+    if ignored:
+        notes.append(f"Cláusula general ignorada: '{ignored}'.")
+
+    scope = "Parte 2" if is_two_part else "pregunta"
+    conteo_line = (
+        f"Criterios transversales {scope} [{profile['label']} / {subject}]: "
+        f"A={a_state}, B={b_state}. Regla: Yes=A+B; Partial=A o B; No=sin A ni B."
+    )
+
+    body_parts = [conteo_line]
+    if notes:
+        body_parts.append(" ".join(f"[{note}]" for note in notes))
+    if a_evidence:
+        body_parts.append(f"Evidencia A (objetivo/producto/actividad): {a_evidence}")
+    if b_evidence:
+        body_parts.append(f"Evidencia B (presupuesto): {b_evidence}")
+
+    justification = (result.get("justification") or "").strip()
+    recommendations = (result.get("recommendations") or "").strip()
+    if justification:
+        body_parts.append(justification)
+    if recommendations and verdict in ("No", "Partial", "Not Found"):
+        if not recommendations.lower().startswith("para mejorar la calificación"):
+            recommendations = f"**Para mejorar la calificación** debiese incluirse {recommendations}"
+        body_parts.append(recommendations)
+
+    return f"VEREDICTO: {verdict}\n\n" + "\n\n".join(body_parts)
 
 
 def _is_framing_evidence(evidence: str) -> tuple:
@@ -6465,6 +6649,9 @@ def analyze_question_with_llm_tab1(question, document_text):
 
         # Parse question to detect two-part structure
         parsed = parse_two_part_question(question)
+        transversal_profile = detect_transversal_matter(parsed['part2'] if parsed['is_two_part'] else question)
+        if not transversal_profile and parsed['is_two_part']:
+            transversal_profile = detect_transversal_matter(question)
 
         # Customize system prompt based on question structure
         if parsed['is_two_part']:
@@ -6589,6 +6776,9 @@ If every citable quote is a FRAMING mention, Respuesta MUST be "No" or "Not Foun
 
             user_content = f"Question: {question}\n\nDocument Text: {combined_text}"
             response_format = {"type": "json_schema", "json_schema": RUBRIC_SCHEMA_SINGLE}
+
+        if transversal_profile:
+            system_content += _transversal_scoring_instructions(transversal_profile)
 
         # Bump reasoning effort for two-part: the 70/30 weighting needs more deliberation.
         resp = client.chat.completions.create(
@@ -6852,8 +7042,57 @@ def _critic_impl(question, answer, reasoning, evidence, document_text=""):
     try:
         doc_context = truncate_to_token_limit(document_text or "", max_tokens=110000, encoding_obj=encoding)
         parsed = parse_two_part_question(question)
+        transversal_profile = detect_transversal_matter(parsed['part2'] if parsed['is_two_part'] else question)
+        if not transversal_profile and parsed['is_two_part']:
+            transversal_profile = detect_transversal_matter(question)
 
-        if parsed['is_two_part']:
+        if transversal_profile:
+            system_content = _CRITIC_TRANSVERSAL_SYSTEM
+            aliases = ", ".join(transversal_profile["aliases"])
+            if parsed['is_two_part']:
+                user_content = f"""PREGUNTA CON DOS PARTES - EVALÚA EL TEMA TRANSVERSAL EN LA PARTE 2.
+
+**Tema transversal configurado:** {transversal_profile['label']}
+**Alias reconocidos:** {aliases}
+
+**PARTE 2 (Sujeto Específico - el único que debe evaluarse):**
+{parsed['part2']}
+
+**PARTE 1 (Contexto - solo referencia, NO evaluar):**
+{parsed['part1']}
+
+**Respuesta del Documento:** {answer}
+**Razonamiento del Documento:** {reasoning}
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Completa los campos estructurados usando SOLO la regla transversal:
+A = presencia operacional del tema en objetivo, producto o actividad.
+B = presupuesto, recursos o línea presupuestaria en alguna actividad correspondiente.
+Yes = A y B; Partial = A o B; No = ni A ni B."""
+            else:
+                user_content = f"""PREGUNTA SOBRE TEMA TRANSVERSAL.
+
+**Tema transversal configurado:** {transversal_profile['label']}
+**Alias reconocidos:** {aliases}
+
+Pregunta: {question}
+
+**Respuesta del Documento:** {answer}
+**Razonamiento del Documento:** {reasoning}
+**Evidencia del Documento:** {evidence}
+
+**Contexto Completo del Documento:**
+{doc_context}
+
+Completa los campos estructurados usando SOLO la regla transversal:
+A = presencia operacional del tema en objetivo, producto o actividad.
+B = presupuesto, recursos o línea presupuestaria en alguna actividad correspondiente.
+Yes = A y B; Partial = A o B; No = ni A ni B."""
+            schema = CRITIC_SCHEMA_TRANSVERSAL
+        elif parsed['is_two_part']:
             system_content = _CRITIC_TWO_PART_SYSTEM
             user_content = f"""PREGUNTA CON DOS PARTES — EVALÚA LA PARTE 2 EXCLUSIVAMENTE.
 
@@ -6906,10 +7145,29 @@ Completa los campos estructurados. Para CADA elemento A–E, decide presente/aus
         except json.JSONDecodeError:
             return "VEREDICTO: Keep\n\nError al procesar la evaluación crítica estructurada."
 
+        if transversal_profile:
+            return _apply_transversal_gate_and_render(result, transversal_profile, is_two_part=parsed['is_two_part'])
         return _apply_critic_gate_and_render(result, is_two_part=parsed['is_two_part'])
 
     except Exception as e:
         return f"VEREDICTO: Keep\n\nError en evaluación crítica: {str(e)}"
+
+
+_CRITIC_TRANSVERSAL_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
+
+You assess configured transversal matters with the reduced ILO handoff rule. Your output is a structured JSON enforced by schema. The verdict is derived mechanically from two criteria only.
+
+**TRANSVERSAL SCORING RULE**
+Use ONLY these two criteria:
+A. Objetivo, producto o actividad: mark presente when the transversal matter appears operationally in an objective, output/product, or activity. A generic stakeholder list or boilerplate inclusion phrase is not enough.
+B. Presupuesto: mark presente when a budget, resource allocation, or budget line is specified for at least one corresponding activity.
+
+**VERDICT**
+- A=presente and B=presente -> Yes
+- A=presente or B=presente -> Partial
+- A=ausente and B=ausente -> No
+
+Do not use indicators, targets, or the old five-element A-E total for configured transversal matters. If the question has two parts, Part 1 is context only and must not be scored."""
 
 
 _CRITIC_TWO_PART_SYSTEM = """You are an expert in project quality appraisal (ILO standards).
@@ -7103,18 +7361,20 @@ synthesize a comprehensive subsection-level analysis.
 Each question's Razonamiento may begin with an enumeration line in the form:
   "Elementos dedicados [Parte 2] [<sujeto>]: A=<presente|ausente>, B=..., C=..., D=..., E=.... TOTAL=<N>."
 where A=sub-objetivo/output, B=indicador, C=actividad dedicada, D=línea presupuestaria, E=meta cuantificable.
-These enumerations are the authoritative evidence base — you MUST aggregate them, not restate them.
+Some transversal-matter questions may instead begin with:
+  "Criterios transversales Parte 2 [<tema> / <sujeto>]: A=<presente|ausente>, B=<presente|ausente>. Regla: Yes=A+B; Partial=A o B; No=sin A ni B."
+where A=objetivo/producto/actividad and B=presupuesto. These enumerations are the authoritative evidence base — you MUST aggregate them, not restate them.
 
 Subsection {subsection_id} - Individual Q&A:
 {qa_context}
 
 Provide a concise subsection-level analysis (1-2 paragraphs) that:
 1. Identifies the specific subject(s) evaluated across the questions (e.g., personas con discapacidad, género).
-2. Aggregates the A–E pattern: for each element (A through E), state how many questions found it presente vs ausente. Name the systematic gap (e.g., "en 4 de 5 preguntas la línea presupuestaria y la meta cuantificable están ausentes").
+2. Aggregates the A–E pattern, or the transversal A/B pattern when present: for each element, state how many questions found it presente vs ausente. Name the systematic gap (e.g., "en 4 de 5 preguntas la línea presupuestaria y la meta cuantificable están ausentes").
 3. Synthesizes 2–3 concrete, evidence-backed strengths or gaps.
 4. Provides a clear overall assessment (Yes / Partial / No distribution across the subsection).
 
-If different questions in the subsection address different subjects, aggregate A–E separately per subject.
+If different questions in the subsection address different subjects, aggregate A–E or transversal A/B separately per subject.
 
 Format as JSON with exactly this structure:
 {{"subsection_analysis": "Spanish text, 1-2 paragraphs, ending with the aggregated A-E summary"}}
@@ -7158,13 +7418,13 @@ def synthesize_section_analysis(section_num, subsection_analyses_dict):
 synthesize a comprehensive section-level analysis.
 
 **IMPORTANT — STRUCTURED DATA IN EACH SUBSECTION:**
-Each subsection analysis may include an aggregated A–E summary (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable, per specific subject such as personas con discapacidad, género, pueblos indígenas). Roll these up at the section level: identify which elements are systematically missing across the entire section, and for which subjects.
+Each subsection analysis may include an aggregated A–E summary (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable, per specific subject such as personas con discapacidad, género, pueblos indígenas) or a transversal A/B summary (A=objetivo/producto/actividad, B=presupuesto). Roll these up at the section level: identify which elements are systematically missing across the entire section, and for which subjects.
 
 Section {section_num} - Subsection Analyses:
 {subsection_context}
 
 Provide a detailed section-level analysis (2-3 paragraphs) that:
-1. Rolls up the A–E patterns across subsections: which dedicated elements are consistently absent for which specific subjects?
+1. Rolls up the A–E patterns and any transversal A/B patterns across subsections: which elements are consistently absent for which specific subjects?
 2. Identifies overarching structural gaps (e.g., "budget allocation and quantifiable targets are absent across inclusion-focused questions in this section").
 3. Provides strategic recommendations prioritized by which missing elements would have the largest effect if added.
 
@@ -7212,16 +7472,18 @@ synthesize a comprehensive subsection-level critical assessment.
 **IMPORTANT — STRUCTURED DATA IN EACH CRITICAL EVALUATION:**
 Each critical evaluation may begin with an enumeration line in the form:
   "Elementos dedicados [Parte 2] [<sujeto>]: A=..., B=..., C=..., D=..., E=.... TOTAL=<N>."
+or, for configured transversal matters:
+  "Criterios transversales Parte 2 [<tema> / <sujeto>]: A=..., B=.... Regla: Yes=A+B; Partial=A o B; No=sin A ni B."
 and may include audit notes like "[Ajuste automático: ... obliga a 'No']" or "[Cláusula general ignorada: ...]" or "[Downgrade por evidencia FRAMING: ...]". Read these as authoritative — they record where the automated grading intervened.
 
 Subsection {subsection_id} - Individual Critical Evaluations:
 {critical_context}
 
 Provide a concise subsection-level critical assessment (1-2 paragraphs) that:
-1. Aggregates the A–E pattern across the subsection and identifies the most common absent elements per specific subject.
+1. Aggregates the A–E pattern, or the transversal A/B pattern when present, across the subsection and identifies the most common absent elements per specific subject.
 2. Counts and reports how many questions received an automatic verdict override (e.g., "3 de 5 preguntas tuvieron veredicto ajustado a 'No' por TOTAL=0") — this is a strong signal of systematic weakness.
 3. Flags FRAMING-evidence downgrades and cláusula-general ignoradas that reveal where the document relies on boilerplate instead of dedicated attention.
-4. Recommends the 2–3 highest-priority interventions for the subsection (tied to the missing A–E elements).
+4. Recommends the 2–3 highest-priority interventions for the subsection (tied to the missing A–E or transversal A/B elements).
 
 Format as JSON with exactly this structure:
 {{"critical_evaluation": "Spanish text, 1-2 paragraphs, including explicit counts of overrides and the dominant missing element"}}
@@ -7265,13 +7527,13 @@ def synthesize_critical_evaluation_section(section_num, critical_subsection_dict
 synthesize a comprehensive section-level critical assessment.
 
 **IMPORTANT — STRUCTURED DATA IN EACH SUBSECTION EVALUATION:**
-Each subsection critical evaluation may reference A–E aggregated patterns (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable) and may report automatic verdict overrides ("TOTAL=0 obliga a 'No'"), FRAMING downgrades, or cláusula-general ignoradas. Treat these as hard signals, not narrative flourishes.
+Each subsection critical evaluation may reference A–E aggregated patterns (A=sub-objetivo, B=indicador, C=actividad, D=presupuesto, E=meta cuantificable) or transversal A/B patterns (A=objetivo/producto/actividad, B=presupuesto), and may report automatic verdict overrides ("TOTAL=0 obliga a 'No'" or "regla transversal obliga a..."), FRAMING downgrades, or cláusula-general ignoradas. Treat these as hard signals, not narrative flourishes.
 
 Section {section_num} - Subsection Critical Evaluations:
 {critical_context}
 
 Provide a detailed section-level critical assessment (2-3 paragraphs) that:
-1. Rolls up the A–E absences across the entire section: which elements are most systematically missing, and for which specific subjects?
+1. Rolls up the A–E and transversal A/B absences across the entire section: which elements are most systematically missing, and for which specific subjects?
 2. Counts and reports the total automatic verdict overrides across the section (a high count signals a systemic issue, not isolated gaps).
 3. Identifies cross-subsection patterns of reliance on FRAMING mentions or general-clause substitution.
 4. Provides a prioritized list of strategic actions — ordered by which missing elements would close the most gaps if added.
@@ -8210,6 +8472,13 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
 - `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
 - `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
 
+**Para temas transversales configurados** (*género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, *sostenibilidad medioambiental*), se aplica una regla reducida:
+
+- **A. Objetivo, producto o actividad**: el tema aparece de forma operacional en alguno de estos niveles
+- **B. Presupuesto**: se especifica presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente
+
+La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No = ni A ni B**.
+
 **Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
 """)
 
@@ -8330,6 +8599,13 @@ El **TOTAL** (de 0 a 5) determina la respuesta automáticamente:
 - `[Ajuste automático: el modelo propuso \'…\' pero TOTAL=0 obliga a \'No\']` — el veredicto propuesto no correspondía al conteo de elementos dedicados y el sistema lo corrigió automáticamente.
 - `[Downgrade por evidencia FRAMING: C (contains \'among others\')]` — el modelo marcó un elemento como presente pero su evidencia era en realidad una lista de grupos; fue reclasificado a ausente.
 - `[Cláusula general ignorada: \'…\']` — el modelo identificó una cláusula de contexto general en la pregunta y confirmó que NO la evaluó (solo el foco específico).
+
+**Para temas transversales configurados** (*género*, *no discriminación*, *discapacidad*, *diálogo social y tripartismo*, *sostenibilidad medioambiental*), se aplica una regla reducida:
+
+- **A. Objetivo, producto o actividad**: el tema aparece de forma operacional en alguno de estos niveles
+- **B. Presupuesto**: se especifica presupuesto, recursos o línea presupuestaria para alguna actividad correspondiente
+
+La calificación se determina así: **Yes = A y B**, **Partial = A o B**, **No = ni A ni B**.
 
 **Para preguntas estructurales** (¿está claro el objetivo general? ¿está completo el marco lógico?), el marco A–E se aplica con flexibilidad: A representa la presencia del elemento estructural, y B–E reflejan indicadores, actividades, presupuesto y metas asociados. Un TOTAL=1 (solo A presente) puede indicar que el elemento estructural existe pero no está operacionalizado.
 """)
