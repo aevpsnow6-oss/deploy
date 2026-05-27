@@ -514,10 +514,50 @@ toca el tema.
             """
         )
 
-        # --- 2. Razonamiento ---
+        # --- 2. Tipos de criterio ---
         st.markdown(
             """
-### 2. ¿Cómo está estructurado el "Razonamiento"?
+### 2. ¿Qué significa cada tipo de criterio?
+
+La columna **Tipo** te dice qué clase de juicio hace la rúbrica. Hay 6 tipos base y
+algunos criterios combinan varios (p.ej. "Lista transversal SMART"). Saber el tipo
+te ayuda a entender por qué el razonamiento luce como luce.
+
+| Tipo base | Qué evalúa | Cómo se ve la regla | Ejemplo |
+|---|---|---|---|
+| **Binario** | Presencia o ausencia clara, sin matices. | Un solo TEST: sí/no. | "¿El presupuesto de evaluación está en partida separada?" |
+| **Lista de verificación** | Múltiples elementos atómicos (A, B, C…). | Regla por cantidad: cumple X de N elementos. | El análisis del problema requiere descripción + fuentes + cuantificación + delimitación. |
+| **Calidad narrativa** | Coherencia, claridad o convicción de un argumento. | Tests más interpretativos. Subjetividad usualmente Media o Alta. | "¿La teoría del cambio es plausible para no especialistas?" |
+| **Condicional** | Solo aplica si una condición previa se cumple. | Primero verifica condición; si no se cumple → N/A. | Plantilla DCOMM exigida solo si presupuesto > 5M USD. |
+| **Transversal** | Tema transversal (género, discapacidad, NIT, EAS, indígenas, ambiente). | Aplica el filtro DEDICADO vs MARCO (sección 6). | Inclusión de personas con discapacidad. |
+| **Calibración** | Compara contra un benchmark externo (etiqueta CPO, marcador de género, % de presupuesto). | Pregunta: "¿el nivel del documento coincide con el benchmark?" | El nivel de ambición sobre discapacidad está a la par con la etiqueta del CPO. |
+
+#### Tipos compuestos
+
+Algunos criterios combinan dos o más de los tipos base. La etiqueta lo refleja:
+
+- **Lista transversal** = lista de verificación + filtro DEDICADO vs MARCO
+- **Lista condicional** = lista + se evalúa solo si se cumple una condición previa
+- **Lista condicional transversal** = los tres combinados
+- **Condicional binario** = binario + condicional (común en criterios con umbral USD)
+- **Calibración transversal** = calibración + filtro DEDICADO vs MARCO
+- **Binario calidad** = binario donde el "sí/no" depende de una valoración cualitativa
+- **Binario presencia** = binario sobre presencia simple de un elemento (sección, partida)
+- **Lista de verificación SMART** = lista que verifica los 5 atributos SMART (Específico, Medible, Alcanzable, Relevante, Temporal)
+
+💡 **Por qué importa**: el tipo te indica el nivel de rigor mecánico del veredicto.
+*Binario* y *Lista* son muy reproducibles. *Calidad narrativa* y los compuestos con
+"transversal" tienen más espacio interpretativo — por eso suelen aparecer con
+Subjetividad Media o Alta.
+
+---
+            """
+        )
+
+        # --- 3. Razonamiento ---
+        st.markdown(
+            """
+### 3. ¿Cómo está estructurado el "Razonamiento"?
 
 El razonamiento te muestra **exactamente por qué el modelo llegó a ese veredicto**.
 Sigue siempre el mismo formato:
@@ -555,10 +595,10 @@ un veredicto.
         )
         st.markdown("---")
 
-        # --- 3. Evidencia ---
+        # --- 4. Evidencia ---
         st.markdown(
             """
-### 3. ¿Cómo está estructurada la "Evidencia"?
+### 4. ¿Cómo está estructurada la "Evidencia"?
 
 Son citas textuales del PRODOC que respaldan el veredicto. Hay dos tipos válidos:
             """
@@ -581,10 +621,10 @@ Son citas textuales del PRODOC que respaldan el veredicto. Hay dos tipos válido
         )
         st.markdown("---")
 
-        # --- 4. Subjetividad ---
+        # --- 5. Subjetividad ---
         st.markdown(
             """
-### 4. ¿Qué es la columna "Subjetividad"?
+### 5. ¿Qué es la columna "Subjetividad"?
 
 Algunos criterios son **fáciles de verificar mecánicamente** (¿aparece un código ODS
 como 8.5.2? Sí o no). Otros requieren **juicio cualitativo** (¿la teoría del cambio es
@@ -604,10 +644,10 @@ criterios de Subjetividad Alta**. Para esos, el modelo es tu asistente, no tu ju
             """
         )
 
-        # --- 5. DEDICADO vs MARCO ---
+        # --- 6. DEDICADO vs MARCO ---
         st.markdown(
             """
-### 5. El filtro DEDICADO vs MARCO — el concepto más importante
+### 6. El filtro DEDICADO vs MARCO — el concepto más importante
 
 Este filtro aplica a los criterios que evalúan **temas transversales**: género,
 discapacidad, pueblos indígenas, normas laborales, medio ambiente, explotación y abuso
@@ -691,17 +731,27 @@ naturaleza del proyecto lo justifica.
         "Status",
     ]
     available_cols = [c for c in show_cols if c in df_res.columns]
+
+    # Explicit hierarchical sort by ID (1.1.1 → 1.1.2 → 1.2.1 → 1.2.2 → …).
+    # Defends against any reordering from filtering, pandas inference, or future edits.
+    df_res_sorted = (
+        df_res.assign(_sk=df_res["ID"].map(_id_sort_key))
+        .sort_values("_sk")
+        .drop(columns="_sk")
+        .reset_index(drop=True)
+    )
+
     st.caption(
         "📌 La columna **Pregunta orientadora** es el enunciado general de la "
         "subsección del cuestionario OIT (1.1, 1.2, …). Aparece como contexto y "
         "**no es evaluada**. Solo la columna **Criterio** dispara los TESTS de la rúbrica."
     )
-    st.dataframe(df_res[available_cols], use_container_width=True, height=500)
+    st.dataframe(df_res_sorted[available_cols], use_container_width=True, height=500)
 
     # Download xlsx
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df_res[available_cols].to_excel(writer, index=False, sheet_name="Resultados v3")
+        df_res_sorted[available_cols].to_excel(writer, index=False, sheet_name="Resultados v3")
     st.download_button(
         "📥 Descargar resultados v3 (.xlsx)",
         buf.getvalue(),
