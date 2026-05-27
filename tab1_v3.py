@@ -59,9 +59,29 @@ PROCESO OBLIGATORIO (en este orden):
 4. Aplica la DECISIÓN de Sí primero. Si no se cumple, aplica la DECISIÓN de Parcial. Si tampoco, aplica No.
 5. Veredicto final: Yes / Partial / No / Not Found / N/A.
 
+DEFINICIÓN CANÓNICA DE «DEDICADO vs MARCO» (idéntica a la usada en Tab 1):
+
+Una mención del sujeto (género, discapacidad, pueblos indígenas, etc.) cuenta como
+MARCO (NO cuenta para cumplimiento) cuando es cualquiera de:
+  - Mención en el objetivo general / declaración de impacto que enumera varios grupos
+  - Listas de partes interesadas / consulta / participantes de investigación
+  - Enumeraciones de alcance de seguimiento («…entre otros», «…incluyendo X, Y, Z»)
+  - Lenguaje boilerplate de inclusión
+  - Cualquier pasaje donde el sujeto aparece en una lista de ≥3 grupos sin seguimiento dedicado
+
+Una mención cuenta como DEDICADO si es cualquiera de:
+  A. Sub-objetivo, resultado o producto cuyo título/propósito nombra al sujeto
+  B. Indicador desagregado por el sujeto o que lo mide específicamente
+  C. Actividad cuyo propósito principal aborda al sujeto
+  D. Partida presupuestaria o asignación de recursos para el sujeto
+  E. Meta cuantificable relativa al sujeto
+
+Si toda la evidencia citable es MARCO, el veredicto DEBE ser "No" o "Not Found",
+sin importar cuántas veces se nombre al sujeto.
+
 REGLAS CRÍTICAS:
 - NO inventes elementos. Si la rúbrica lista T1/T2/T3, evalúa exactamente esos — no añadas T4 propio.
-- NO apliques el filtro DEDICADO vs MARCO globalmente. Aplícalo SOLO cuando la rúbrica del criterio lo invoque explícitamente (texto «filtro DEDICADO vs MARCO» en la rúbrica).
+- El filtro DEDICADO vs MARCO definido arriba aplica SOLO cuando la rúbrica del criterio lo invoque explícitamente (criterios marcados con ASPECTOS TRANSVERSALES ≠ «Ninguno»). Para criterios sin transversales, ignóralo.
 - Cita evidencia textual entre comillas. Si la evidencia es ausencia, dilo: «No se encontró sección X».
 - Si el documento carece de información para evaluar el criterio, veredicto = "Not Found".
 - "N/A" solo cuando la APLICABILIDAD condicional no se satisface.
@@ -599,20 +619,30 @@ El filtro distingue dos formas en que aparece un tema en el documento:
             """
         )
         st.error(
-            "❌ **MARCO** — solo aparece en listas de grupos o lenguaje inclusivo genérico. "
-            "**NO cuenta** para cumplimiento.\n\n"
+            "❌ **MARCO** — la mención del sujeto NO cuenta como cumplimiento si encaja en "
+            "cualquiera de estos 5 patrones (definición idéntica a Tab 1):\n\n"
+            "1. Mención en el **objetivo general / declaración de impacto** que enumera varios "
+            "grupos.\n"
+            "2. **Listas de partes interesadas, consulta o participantes** de investigación.\n"
+            "3. **Enumeraciones de alcance** («…entre otros», «…incluyendo X, Y, Z»).\n"
+            "4. **Lenguaje boilerplate** de inclusión.\n"
+            "5. Cualquier pasaje donde el sujeto aparece en una **lista de ≥3 grupos sin "
+            "seguimiento dedicado**.\n\n"
             "*Ejemplo*: «El proyecto beneficiará a poblaciones vulnerables, incluyendo mujeres, "
-            "personas con discapacidad y comunidades indígenas, entre otros grupos.»\n\n"
-            "Aquí «personas con discapacidad» aparece, pero no hay nada dedicado a ese grupo: "
-            "ni sub-objetivo, ni indicador, ni actividad, ni partida, ni meta."
+            "personas con discapacidad y comunidades indígenas, entre otros grupos.» → MARCO "
+            "(encaja en los patrones 1 y 3)."
         )
         st.success(
-            "✅ **DEDICADO** — hay algo específicamente para el sujeto. **Sí cuenta**.\n\n"
+            "✅ **DEDICADO** — la mención SÍ cuenta si es cualquiera de estos 5 elementos "
+            "(definición idéntica a Tab 1):\n\n"
+            "A. **Sub-objetivo, resultado o producto** cuyo título/propósito nombra al sujeto.\n"
+            "B. **Indicador desagregado** por el sujeto o que lo mide específicamente.\n"
+            "C. **Actividad** cuyo propósito principal aborda al sujeto.\n"
+            "D. **Partida presupuestaria** o asignación de recursos para el sujeto.\n"
+            "E. **Meta cuantificable** relativa al sujeto.\n\n"
             "*Ejemplo*: «Indicador 3.2: número de personas con discapacidad capacitadas en el "
-            "oficio (meta: 200). Partida presupuestaria 4.1.5: USD 35,000 para accesibilidad "
-            "de materiales y lenguaje de señas.»\n\n"
-            "Aquí hay un indicador específico, una meta cuantificable y una partida "
-            "presupuestaria — tres elementos DEDICADOS."
+            "oficio (meta: 200). Partida presupuestaria 4.1.5: USD 35,000 para accesibilidad de "
+            "materiales y lenguaje de señas.» → DEDICADO (cumple B, D y E)."
         )
         st.info(
             "💡 **Consecuencia práctica**: una propuesta puede mencionar género 50 veces y aún "
@@ -624,12 +654,14 @@ El filtro distingue dos formas en que aparece un tema en el documento:
             """
 #### ¿Cómo se diferencia este filtro respecto a la pestaña Tab 1 actual?
 
-Existe en ambas pestañas, pero **se aplica diferente**. Resumen breve:
+La **definición es idéntica** (los 5 patrones de MARCO y los 5 elementos de DEDICADO
+de arriba son los mismos en ambas pestañas). Lo que cambia es **cómo se aplica**:
 
 | Aspecto | Tab 1 (actual) | Tab 7 (v3, esta pestaña) |
 |---|---|---|
-| **¿A qué criterios se aplica?** | A todos | Solo a los criterios cuya rúbrica lo invoca |
-| **¿Cuántos elementos son obligatorios?** | Siempre 5: sub-objetivo, indicador, actividad, presupuesto, meta | Varía por criterio. Algunos elementos son opcionales según la naturaleza del proyecto |
+| **Definición de DEDICADO / MARCO** | Los 5 patrones / 5 elementos descritos arriba | **Idénticos** a Tab 1 |
+| **¿A qué criterios se aplica?** | A todos | Solo a los criterios cuya rúbrica lo invoca (los marcados con Transversales ≠ Ninguno) |
+| **¿Cuántos elementos son obligatorios?** | Siempre 5: A/B/C/D/E con peso igual | Varía por criterio. Algunos elementos son opcionales según la naturaleza del proyecto |
 | **¿Cómo se traduce a veredicto?** | Escala fija: 0→No, 1-2→Parcial, 3-4→Parcial-o-Sí, 5→Sí | Cada criterio tiene su regla propia (p.ej. ≥2 de 3 obligatorios = Sí) |
 | **¿Cómo se ve en el razonamiento?** | Prosa con etiquetas [DEDICATED]/[FRAMING] | Lista de chequeos T1/T2/T3 con verdadero/falso explícito |
 
@@ -646,12 +678,12 @@ naturaleza del proyecto lo justifica.
         "ID",
         "Subsección",
         "Criterio",
-        "Respuesta",
-        "Razonamiento",
-        "Evidencia",
         "Tipo",
         "Subjetividad",
         "Transversales",
+        "Respuesta",
+        "Razonamiento",
+        "Evidencia",
         "Status",
     ]
     available_cols = [c for c in show_cols if c in df_res.columns]
