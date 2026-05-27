@@ -24,6 +24,9 @@ import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import zipfile
 
+# Tab 1 v3 (experimental) — módulo aislado. Ver tab1_v3.py para retirar.
+import tab1_v3
+
 # --- Utility function for Excel export ---
 def to_excel(df):
     output = BytesIO()
@@ -2475,13 +2478,14 @@ def load_lessons_embeddings():
     
     
 # Tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([ "Valoración Preliminar de Calidad de Proyectos",
                                          "Diagnóstico de Atributos Específicos",
                                          "Diagnóstico de Sostenibilidad del Proyecto",
                                          "Pregúntale a tus Documentos",
                                         #  "Estadísticas sobre Recomendaciones de Evaluaciones y sus Planes de Acción",
                                          "Clasificación de Recomendaciones",
-                                         "Recommendation Classification"])
+                                         "Recommendation Classification",
+                                         "🧪 v3 (Experimental)"])
 
 #-----------------------#-----------------------#
 #-----------------------#-----------------------#
@@ -10919,3 +10923,11 @@ with tab6:
                     pd.DataFrame({'Summary': [st.session_state['summary_result_en']]}).to_excel(writer, index=False, sheet_name='Summary')
 
                 st.download_button("📥 Download Summary + Data (.xlsx)", out_summ_en.getvalue(), "executive_summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# -----------------------------------------------------------------------------
+# Tab 7 — Valoración v3 (experimental). Aislado en tab1_v3.py.
+# Para retirar: eliminar este bloque, el import y `tab7` del tuple de st.tabs.
+# -----------------------------------------------------------------------------
+with tab7:
+    tab1_v3.render(client)
