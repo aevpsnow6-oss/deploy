@@ -307,90 +307,6 @@ def render(client: Any) -> None:
             """
         )
 
-    with st.expander("📖 Cómo leer e interpretar los resultados", expanded=False):
-        st.markdown(
-            """
-### 1. Veredictos (columna **Respuesta**)
-
-| Veredicto | Significado |
-|---|---|
-| **Yes** | El criterio se cumple. La DECISIÓN de la rúbrica Sí se satisfizo (todos los TESTS obligatorios = verdadero). |
-| **Partial** | Cumplimiento parcial. La DECISIÓN de la rúbrica Sí falló pero la de Parcial se satisfizo. |
-| **No** | El criterio no se cumple. La DECISIÓN de No se satisfizo. |
-| **Not Found** | No se encontró información en el documento para evaluar. Distinto de **No** — aquí el modelo no halló sección/contenido relacionado. |
-| **N/A** | El criterio tiene aplicabilidad condicional y la condición no se cumple (p.ej. 4.4.3 N/A cuando presupuesto ≤ 5M USD). |
-| **Error** | Falla técnica en la evaluación. Revisar columna Razonamiento. |
-
-### 2. Razonamiento — cómo está estructurado
-
-El modelo enumera el resultado de cada TEST antes del veredicto. Formato esperado:
-
-```
-T1: verdadero — Cita explícita de P&B en sección 1.2
-T2: falso — No se identifica DWCP del país
-T3: verdadero — CPO ABC-101 mencionado en anexo
-T4: verdadero — Verbo «contribuye a» presente
-DECISIÓN: T1 ∧ ¬T2 ∧ T3 ∧ T4 = falso (regla Sí requiere los 4) → Parcial
-VEREDICTO: Partial
-```
-
-**Si el razonamiento NO sigue este formato**, es señal de alerta: el modelo no aplicó la rúbrica mecánicamente. Leer con cuidado y verificar manualmente.
-
-### 3. Evidencia
-
-Citas textuales del PRODOC que respaldan el veredicto. Si dice *«No se encontró sección X»* o *«Documento no contiene…»*, es **ausencia documentada** — evidencia legítima para No / Not Found.
-
-### 4. Subjetividad residual (columna **Subjetividad**)
-
-Indica cuánto juicio cualitativo irreducible queda después de mecanizar la rúbrica:
-
-| Nivel | # criterios | Cómo tratar el veredicto |
-|---|---|---|
-| 🟢 **Baja** | 27 | Reproducible. Confiar; muestrear ~10% para auditoría. |
-| 🟡 **Media** | 37 | Pequeña variabilidad esperable. Confiar pero verificar bordes (Partial / Not Found). |
-| 🟠 **Alta** | 12 | Tratar como hipótesis. Revisar razonamiento y evidencia manualmente antes de aceptar. |
-
-Los 12 de Subjetividad Alta son los candidatos a calibrar con ejemplos reales si más adelante se hace el bootstrap.
-
-### 5. Aspectos transversales — filtro DEDICADO vs MARCO
-
-Cuando un criterio tiene aspectos transversales (Género, Discapacidad, NIT, EAS, Pueblos indígenas, etc.), se aplica este filtro:
-
-- ✅ **DEDICADO**: el documento tiene **un sub-objetivo, indicador, actividad, partida presupuestaria o meta específica** para el sujeto. Cuenta.
-- ❌ **MARCO**: el documento solo lista al sujeto entre otros grupos (*«mujeres, indígenas, jóvenes, entre otros»*) o usa lenguaje inclusivo genérico. **NO cuenta** para cumplimiento.
-
-Una propuesta puede mencionar género 50 veces y aun así sacar **No** si todas las menciones son MARCO.
-
-### 6. Cómo actuar sobre los resultados
-
-| Combinación | Acción recomendada |
-|---|---|
-| Yes + Subjetividad Baja/Media | Aceptar; muestreo aleatorio para auditoría |
-| Yes + Subjetividad Alta | Revisar razonamiento y evidencia antes de aceptar |
-| Partial | Leer TESTS para identificar qué elementos faltan — guía direct para feedback al equipo de proyecto |
-| No | Verificar que la evidencia documenta ausencia, no que el modelo no encontró |
-| Not Found | Confirmar manualmente; posiblemente el contenido está en un anexo no cargado |
-| N/A | Verificar la condición de aplicabilidad — si la condición sí aplica al proyecto, hay error de identificación |
-| Error | Reintentar; si persiste, reportar |
-
-### 7. Señales de alerta — cuándo desconfiar del veredicto
-
-- ⚠️ Razonamiento **sin enumerar TESTS** → el modelo no aplicó la rúbrica mecánicamente.
-- ⚠️ Subjetividad **Alta** + evidencia escueta o genérica → caso candidato a revisión humana.
-- ⚠️ Veredictos contradictorios entre criterios de la misma subsección → indagar inconsistencia.
-- ⚠️ **N/A** en criterios marcados como *Aplicabilidad: Siempre* → bug, reportar.
-- ⚠️ Evidencia que cita texto que **no aparece literalmente** en el PRODOC → posible alucinación.
-
-### 8. Orden sugerido para revisar resultados
-
-1. Filtrar por **Status = Error** → resolver primero (suelen ser pocos).
-2. Filtrar por **Subjetividad = Alta** → revisar todos manualmente (12 criterios).
-3. Filtrar por **Respuesta = Not Found** → verificar si hay contenido en anexos no cargados.
-4. Filtrar por **Respuesta = Partial** → leer TESTS para identificar qué elementos faltan; es la columna más informativa para retroalimentar al equipo de proyecto.
-5. Muestrear **Respuesta = Yes** (~10%) → auditoría de calidad del modelo.
-            """
-        )
-
     # ---- Load rubric ----
     try:
         df_rub = load_rubrica_v3()
@@ -517,6 +433,106 @@ Una propuesta puede mencionar género 50 veces y aun así sacar **No** si todas 
         st.dataframe(
             df_res.groupby("Subjetividad")["Respuesta"].value_counts().unstack(fill_value=0),
             use_container_width=True,
+        )
+
+    # Interpretation guide — placed right before the detailed table so it's
+    # accessible exactly where the user needs it.
+    with st.expander("📖 Cómo leer e interpretar los resultados", expanded=False):
+        st.markdown(
+            """
+### 1. Veredictos (columna **Respuesta**)
+
+| Veredicto | Significado |
+|---|---|
+| **Yes** | El criterio se cumple. La DECISIÓN de la rúbrica Sí se satisfizo (todos los TESTS obligatorios = verdadero). |
+| **Partial** | Cumplimiento parcial. La DECISIÓN de la rúbrica Sí falló pero la de Parcial se satisfizo. |
+| **No** | El criterio no se cumple. La DECISIÓN de No se satisfizo. |
+| **Not Found** | No se encontró información en el documento para evaluar. Distinto de **No** — aquí el modelo no halló sección/contenido relacionado. |
+| **N/A** | El criterio tiene aplicabilidad condicional y la condición no se cumple (p.ej. 4.4.3 N/A cuando presupuesto ≤ 5M USD). |
+| **Error** | Falla técnica en la evaluación. Revisar columna Razonamiento. |
+
+### 2. Razonamiento — cómo está estructurado
+
+El modelo enumera el resultado de cada TEST antes del veredicto. Formato esperado:
+
+```
+T1: verdadero — Cita explícita de P&B en sección 1.2
+T2: falso — No se identifica DWCP del país
+T3: verdadero — CPO ABC-101 mencionado en anexo
+T4: verdadero — Verbo «contribuye a» presente
+DECISIÓN: T1 ∧ ¬T2 ∧ T3 ∧ T4 = falso (regla Sí requiere los 4) → Parcial
+VEREDICTO: Partial
+```
+
+**Si el razonamiento NO sigue este formato**, es señal de alerta: el modelo no aplicó la rúbrica mecánicamente. Leer con cuidado y verificar manualmente.
+
+### 3. Evidencia
+
+Citas textuales del PRODOC que respaldan el veredicto. Si dice *«No se encontró sección X»* o *«Documento no contiene…»*, es **ausencia documentada** — evidencia legítima para No / Not Found.
+
+### 4. Subjetividad residual (columna **Subjetividad**)
+
+Indica cuánto juicio cualitativo irreducible queda después de mecanizar la rúbrica:
+
+| Nivel | # criterios | Cómo tratar el veredicto |
+|---|---|---|
+| 🟢 **Baja** | 27 | Reproducible. Confiar; muestrear ~10% para auditoría. |
+| 🟡 **Media** | 37 | Pequeña variabilidad esperable. Confiar pero verificar bordes (Partial / Not Found). |
+| 🟠 **Alta** | 12 | Tratar como hipótesis. Revisar razonamiento y evidencia manualmente antes de aceptar. |
+
+Los 12 de Subjetividad Alta son los candidatos a calibrar con ejemplos reales si más adelante se hace el bootstrap.
+
+### 5. Aspectos transversales — filtro DEDICADO vs MARCO
+
+Cuando un criterio tiene aspectos transversales (Género, Discapacidad, NIT, EAS, Pueblos indígenas, etc.) se aplica el filtro:
+
+- ✅ **DEDICADO**: el documento tiene **un sub-objetivo, indicador, actividad, partida presupuestaria o meta específica** para el sujeto. Cuenta.
+- ❌ **MARCO**: el documento solo lista al sujeto entre otros grupos (*«mujeres, indígenas, jóvenes, entre otros»*) o usa lenguaje inclusivo genérico. **NO cuenta** para cumplimiento.
+
+Una propuesta puede mencionar género 50 veces y aun así sacar **No** si todas las menciones son MARCO.
+
+#### Diferencias respecto a Tab 1 actual
+
+El filtro existe en ambos tabs, pero **se expone de forma diferente**:
+
+| Dimensión | Tab 1 (actual) | Tab 7 (v3) |
+|---|---|---|
+| **Alcance de aplicación** | Global: el system prompt lo impone a TODOS los criterios | Selectivo: se aplica solo donde la rúbrica del criterio lo invoca explícitamente |
+| **Elementos contables** | Fijos: A/B/C/D/E (sub-objetivo, indicador, actividad, presupuesto, meta) — todos peso igual | Variables por criterio; algunos elementos marcados como OPCIONALES según naturaleza del proyecto (resultado de la revisión cliente) |
+| **Regla de decisión** | Escalonada: 0→No/NF, 1–2→Partial, 3–4→Partial-o-Yes, 5→Yes | Per-criterio: regla booleana explícita (p.ej. 1.5.1 = ≥2 de 3 obligatorios; 3.3.1 = condicional según si la inclusión es explícita o implícita) |
+| **Trazabilidad** | El modelo etiqueta cada cita como [DEDICATED]/[FRAMING] dentro de un razonamiento en prosa | El modelo enumera T1/T2/T3 con verdadero/falso y luego aplica DECISIÓN — más auditable |
+| **Criterios no transversales** | El filtro igual se inyecta como sistema (puede sesgar veredictos de criterios donde no aplica) | El filtro NO se aplica en criterios no transversales (no hay sesgo cruzado) |
+
+**Consecuencia práctica**: el mismo PRODOC puede recibir un veredicto distinto entre Tab 1 y v3 en criterios transversales. La razón más común es que v3 admite Sí con menos elementos DEDICADOS si la rúbrica así lo define para ese criterio.
+
+### 6. Cómo actuar sobre los resultados
+
+| Combinación | Acción recomendada |
+|---|---|
+| Yes + Subjetividad Baja/Media | Aceptar; muestreo aleatorio para auditoría |
+| Yes + Subjetividad Alta | Revisar razonamiento y evidencia antes de aceptar |
+| Partial | Leer TESTS para identificar qué elementos faltan — guía directa para feedback al equipo de proyecto |
+| No | Verificar que la evidencia documenta ausencia, no que el modelo no encontró |
+| Not Found | Confirmar manualmente; posiblemente el contenido está en un anexo no cargado |
+| N/A | Verificar la condición de aplicabilidad — si la condición sí aplica al proyecto, hay error de identificación |
+| Error | Reintentar; si persiste, reportar |
+
+### 7. Señales de alerta — cuándo desconfiar del veredicto
+
+- ⚠️ Razonamiento **sin enumerar TESTS** → el modelo no aplicó la rúbrica mecánicamente.
+- ⚠️ Subjetividad **Alta** + evidencia escueta o genérica → caso candidato a revisión humana.
+- ⚠️ Veredictos contradictorios entre criterios de la misma subsección → indagar inconsistencia.
+- ⚠️ **N/A** en criterios marcados como *Aplicabilidad: Siempre* → bug, reportar.
+- ⚠️ Evidencia que cita texto que **no aparece literalmente** en el PRODOC → posible alucinación.
+
+### 8. Orden sugerido para revisar resultados
+
+1. Filtrar por **Status = Error** → resolver primero (suelen ser pocos).
+2. Filtrar por **Subjetividad = Alta** → revisar todos manualmente (12 criterios).
+3. Filtrar por **Respuesta = Not Found** → verificar si hay contenido en anexos no cargados.
+4. Filtrar por **Respuesta = Partial** → leer TESTS para identificar qué elementos faltan; es la columna más informativa para retroalimentar al equipo de proyecto.
+5. Muestrear **Respuesta = Yes** (~10%) → auditoría de calidad del modelo.
+            """
         )
 
     # Detailed view
