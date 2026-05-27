@@ -237,6 +237,9 @@ def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[
     base = {
         "ID": crit_id,
         "Subsección": _extract_subsection(crit_id),
+        "Pregunta orientadora (no evaluada)": str(
+            row.get("Pregunta orientadora (CONTEXTO — no evaluar)", "")
+        ),
         "Criterio": str(row.get("Criterio a evaluar", "")),
         "Tipo": str(row.get("Tipo de criterio", "")),
         "Subjetividad": subj,
@@ -677,6 +680,7 @@ naturaleza del proyecto lo justifica.
     show_cols = [
         "ID",
         "Subsección",
+        "Pregunta orientadora (no evaluada)",
         "Criterio",
         "Tipo",
         "Subjetividad",
@@ -687,6 +691,11 @@ naturaleza del proyecto lo justifica.
         "Status",
     ]
     available_cols = [c for c in show_cols if c in df_res.columns]
+    st.caption(
+        "📌 La columna **Pregunta orientadora** es el enunciado general de la "
+        "subsección del cuestionario OIT (1.1, 1.2, …). Aparece como contexto y "
+        "**no es evaluada**. Solo la columna **Criterio** dispara los TESTS de la rúbrica."
+    )
     st.dataframe(df_res[available_cols], use_container_width=True, height=500)
 
     # Download xlsx
