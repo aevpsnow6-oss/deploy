@@ -438,100 +438,310 @@ def render(client: Any) -> None:
     # Interpretation guide — placed right before the detailed table so it's
     # accessible exactly where the user needs it.
     with st.expander("📖 Cómo leer e interpretar los resultados", expanded=False):
+
+        # --- En una frase + analogía ---
         st.markdown(
             """
-### 1. Veredictos (columna **Respuesta**)
+### En una frase
 
-| Veredicto | Significado |
-|---|---|
-| **Yes** | El criterio se cumple. La DECISIÓN de la rúbrica Sí se satisfizo (todos los TESTS obligatorios = verdadero). |
-| **Partial** | Cumplimiento parcial. La DECISIÓN de la rúbrica Sí falló pero la de Parcial se satisfizo. |
-| **No** | El criterio no se cumple. La DECISIÓN de No se satisfizo. |
-| **Not Found** | No se encontró información en el documento para evaluar. Distinto de **No** — aquí el modelo no halló sección/contenido relacionado. |
-| **N/A** | El criterio tiene aplicabilidad condicional y la condición no se cumple (p.ej. 4.4.3 N/A cuando presupuesto ≤ 5M USD). |
-| **Error** | Falla técnica en la evaluación. Revisar columna Razonamiento. |
+La herramienta lee tu PRODOC y, para cada uno de los **76 criterios de calidad** de la
+OIT, decide si **se cumple, se cumple parcialmente, no se cumple, o no se encontró
+información** — explicándote por qué.
 
-### 2. Razonamiento — cómo está estructurado
+### Cómo funciona, en términos sencillos
 
-El modelo enumera el resultado de cada TEST antes del veredicto. Formato esperado:
+Imagina a un revisor experto leyendo tu PRODOC con una lista de verificación en mano.
+Para cada criterio:
 
-```
-T1: verdadero — Cita explícita de P&B en sección 1.2
-T2: falso — No se identifica DWCP del país
-T3: verdadero — CPO ABC-101 mencionado en anexo
-T4: verdadero — Verbo «contribuye a» presente
-DECISIÓN: T1 ∧ ¬T2 ∧ T3 ∧ T4 = falso (regla Sí requiere los 4) → Parcial
-VEREDICTO: Partial
-```
+1. Tiene una **lista clara** de lo que debe encontrar en el documento.
+2. Va al PRODOC y **verifica cada punto** uno por uno.
+3. Aplica una **regla simple** para decidir el veredicto.
+4. Te entrega el veredicto **junto con el resultado de cada chequeo**, para que tú puedas
+   verificarlo.
 
-**Si el razonamiento NO sigue este formato**, es señal de alerta: el modelo no aplicó la rúbrica mecánicamente. Leer con cuidado y verificar manualmente.
+Eso es exactamente lo que hace esta herramienta. La diferencia con la pestaña principal
+(Tab 1) es que aquí las reglas son **explícitas y mecánicas** — no dependen de la
+interpretación subjetiva del modelo.
 
-### 3. Evidencia
+---
+            """
+        )
 
-Citas textuales del PRODOC que respaldan el veredicto. Si dice *«No se encontró sección X»* o *«Documento no contiene…»*, es **ausencia documentada** — evidencia legítima para No / Not Found.
+        # --- 1. Veredictos ---
+        st.markdown(
+            """
+### 1. ¿Qué significa cada veredicto?
 
-### 4. Subjetividad residual (columna **Subjetividad**)
+La columna **Respuesta** te dice el resultado de la evaluación. Hay 6 valores posibles:
 
-Indica cuánto juicio cualitativo irreducible queda después de mecanizar la rúbrica:
-
-| Nivel | # criterios | Cómo tratar el veredicto |
+| Veredicto | Significado | Ejemplo concreto |
 |---|---|---|
-| 🟢 **Baja** | 27 | Reproducible. Confiar; muestrear ~10% para auditoría. |
-| 🟡 **Media** | 37 | Pequeña variabilidad esperable. Confiar pero verificar bordes (Partial / Not Found). |
-| 🟠 **Alta** | 12 | Tratar como hipótesis. Revisar razonamiento y evidencia manualmente antes de aceptar. |
+| 🟢 **Yes** | El criterio se cumple completamente. | El PRODOC cita el Convenio núm. 190 por número y lo integra a la estrategia y los indicadores. |
+| 🟡 **Partial** | Se cumple en parte. Faltan elementos específicos. | Cita el Convenio núm. 190 pero solo en antecedentes, no lo integra a la estrategia. |
+| 🔴 **No** | El criterio no se cumple. | No menciona ningún convenio por número, solo «las normas de la OIT» genéricamente. |
+| ⚫ **Not Found** | No se encontró información para evaluar (distinto de **No**: aquí ni siquiera había contenido relacionado). | La sección sobre normas internacionales del trabajo no existe en el documento. |
+| ⚪ **N/A** | El criterio no aplica al proyecto. | Criterio 4.4.3 (plantilla DCOMM para proyectos > 5 millones USD): tu proyecto es de $800,000 → no aplica. |
+| ⚠️ **Error** | Falla técnica en la evaluación. | Revisar columna Razonamiento. Reintentar. |
 
-Los 12 de Subjetividad Alta son los candidatos a calibrar con ejemplos reales si más adelante se hace el bootstrap.
+💡 **Distinción importante**: **No** ≠ **Not Found**. *No* significa que el documento sí
+trata el tema pero falla el criterio; *Not Found* significa que el documento ni siquiera
+toca el tema.
 
-### 5. Aspectos transversales — filtro DEDICADO vs MARCO
+---
+            """
+        )
 
-Cuando un criterio tiene aspectos transversales (Género, Discapacidad, NIT, EAS, Pueblos indígenas, etc.) se aplica el filtro:
+        # --- 2. Razonamiento ---
+        st.markdown(
+            """
+### 2. ¿Cómo está estructurado el "Razonamiento"?
 
-- ✅ **DEDICADO**: el documento tiene **un sub-objetivo, indicador, actividad, partida presupuestaria o meta específica** para el sujeto. Cuenta.
-- ❌ **MARCO**: el documento solo lista al sujeto entre otros grupos (*«mujeres, indígenas, jóvenes, entre otros»*) o usa lenguaje inclusivo genérico. **NO cuenta** para cumplimiento.
+El razonamiento te muestra **exactamente por qué el modelo llegó a ese veredicto**.
+Sigue siempre el mismo formato:
+            """
+        )
+        st.code(
+            "T1: verdadero — Cita explícita de P&B en sección 1.2\n"
+            "T2: falso — No se identifica DWCP del país\n"
+            "T3: verdadero — CPO ABC-101 mencionado en anexo\n"
+            "T4: verdadero — Aparece el verbo «contribuye a»\n"
+            "DECISIÓN: la regla pide T1, T2, T3 y T4 los cuatro verdaderos.\n"
+            "          T2 falló → no se cumple la regla de Sí.\n"
+            "          Sí se cumple la regla de Parcial.\n"
+            "VEREDICTO: Partial",
+            language="text",
+        )
+        st.markdown(
+            """
+**Cómo leerlo:**
+- Cada **T** es un chequeo independiente. Resultado: *verdadero* (se cumple en el
+  documento) o *falso* (no se cumple).
+- La línea **DECISIÓN** explica qué regla se aplicó y por qué.
+- El **VEREDICTO** final es la conclusión.
 
-Una propuesta puede mencionar género 50 veces y aun así sacar **No** si todas las menciones son MARCO.
+💡 **Por qué importa**: este desglose te permite ver *exactamente qué chequeo falló*. Si
+el veredicto es Parcial y T2 falló, ya sabes qué hay que arreglar en el proyecto (en este
+caso, añadir referencia explícita al DWCP del país). Es información accionable, no solo
+un veredicto.
+            """
+        )
+        st.warning(
+            "**Si el razonamiento NO sigue este formato** (no enumera T1, T2…), es señal de "
+            "alerta: el modelo no aplicó la rúbrica mecánicamente. Verifica manualmente antes "
+            "de confiar en el veredicto."
+        )
+        st.markdown("---")
 
-#### Diferencias respecto a Tab 1 actual
+        # --- 3. Evidencia ---
+        st.markdown(
+            """
+### 3. ¿Cómo está estructurada la "Evidencia"?
 
-El filtro existe en ambos tabs, pero **se expone de forma diferente**:
+Son citas textuales del PRODOC que respaldan el veredicto. Hay dos tipos válidos:
+            """
+        )
+        st.success(
+            "✅ **Cita afirmativa** — el modelo copia un pasaje del PRODOC que demuestra que el "
+            "criterio se cumple. Ejemplo:\n\n"
+            "> *«El proyecto se alinea con el resultado P&B 2.3 del bienio 2024-25 y contribuye "
+            "al CPO ABC-101 del DWCP de Honduras.»*"
+        )
+        st.info(
+            "📝 **Ausencia documentada** — el modelo declara que cierto contenido NO aparece en "
+            "el documento. Es evidencia legítima para sustentar *No* o *Not Found*. Ejemplo:\n\n"
+            "> *«No se encontró una sección de análisis de riesgos en el documento.»*"
+        )
+        st.error(
+            "⚠️ **Alerta de alucinación**: si la evidencia cita texto que tú **no encuentras** "
+            "en tu PRODOC al buscarlo literalmente, puede ser una alucinación del modelo. "
+            "Reportar."
+        )
+        st.markdown("---")
 
-| Dimensión | Tab 1 (actual) | Tab 7 (v3) |
+        # --- 4. Subjetividad ---
+        st.markdown(
+            """
+### 4. ¿Qué es la columna "Subjetividad"?
+
+Algunos criterios son **fáciles de verificar mecánicamente** (¿aparece un código ODS
+como 8.5.2? Sí o no). Otros requieren **juicio cualitativo** (¿la teoría del cambio es
+"convincente"?). La columna **Subjetividad** te dice cuánto juicio cualitativo queda
+después de aplicar la rúbrica:
+
+| Nivel | # criterios | Qué tan reproducible es | Qué hacer |
+|---|---|---|---|
+| 🟢 **Baja** | 27 | Muy reproducible — dos corridas del mismo PRODOC darían el mismo resultado. | Confiar. Auditar ~10% al azar. |
+| 🟡 **Media** | 37 | Reproducible en general; algunos casos en el borde pueden variar. | Confiar; verificar manualmente los *Partial* y *Not Found*. |
+| 🟠 **Alta** | 12 | Juicio cualitativo irreducible — puede variar entre corridas. | Tratar como hipótesis. Leer razonamiento y evidencia manualmente. |
+
+💡 **En la práctica**: si tienes poco tiempo, enfoca tu revisión humana en los **12
+criterios de Subjetividad Alta**. Para esos, el modelo es tu asistente, no tu juez final.
+
+---
+            """
+        )
+
+        # --- 5. DEDICADO vs MARCO ---
+        st.markdown(
+            """
+### 5. El filtro DEDICADO vs MARCO — el concepto más importante
+
+Este filtro aplica a los criterios que evalúan **temas transversales**: género,
+discapacidad, pueblos indígenas, normas laborales, medio ambiente, explotación y abuso
+sexuales (EAS), etc.
+
+**El problema que resuelve**: muchas propuestas mencionan estos temas, pero solo de
+manera decorativa, sin asignarles recursos o acciones específicas. Una propuesta puede
+decir *"beneficiará a mujeres, jóvenes, personas con discapacidad y comunidades indígenas"*
+y aun así no tener una sola actividad dedicada a alguno de esos grupos.
+
+El filtro distingue dos formas en que aparece un tema en el documento:
+            """
+        )
+        st.error(
+            "❌ **MARCO** — solo aparece en listas de grupos o lenguaje inclusivo genérico. "
+            "**NO cuenta** para cumplimiento.\n\n"
+            "*Ejemplo*: «El proyecto beneficiará a poblaciones vulnerables, incluyendo mujeres, "
+            "personas con discapacidad y comunidades indígenas, entre otros grupos.»\n\n"
+            "Aquí «personas con discapacidad» aparece, pero no hay nada dedicado a ese grupo: "
+            "ni sub-objetivo, ni indicador, ni actividad, ni partida, ni meta."
+        )
+        st.success(
+            "✅ **DEDICADO** — hay algo específicamente para el sujeto. **Sí cuenta**.\n\n"
+            "*Ejemplo*: «Indicador 3.2: número de personas con discapacidad capacitadas en el "
+            "oficio (meta: 200). Partida presupuestaria 4.1.5: USD 35,000 para accesibilidad "
+            "de materiales y lenguaje de señas.»\n\n"
+            "Aquí hay un indicador específico, una meta cuantificable y una partida "
+            "presupuestaria — tres elementos DEDICADOS."
+        )
+        st.info(
+            "💡 **Consecuencia práctica**: una propuesta puede mencionar género 50 veces y aún "
+            "así sacar **No** si todas las menciones son MARCO. Lo que cuenta es la "
+            "dedicación operativa, no la frecuencia del lenguaje."
+        )
+
+        st.markdown(
+            """
+#### ¿Cómo se diferencia este filtro respecto a la pestaña Tab 1 actual?
+
+Existe en ambas pestañas, pero **se aplica diferente**. Resumen breve:
+
+| Aspecto | Tab 1 (actual) | Tab 7 (v3, esta pestaña) |
 |---|---|---|
-| **Alcance de aplicación** | Global: el system prompt lo impone a TODOS los criterios | Selectivo: se aplica solo donde la rúbrica del criterio lo invoca explícitamente |
-| **Elementos contables** | Fijos: A/B/C/D/E (sub-objetivo, indicador, actividad, presupuesto, meta) — todos peso igual | Variables por criterio; algunos elementos marcados como OPCIONALES según naturaleza del proyecto (resultado de la revisión cliente) |
-| **Regla de decisión** | Escalonada: 0→No/NF, 1–2→Partial, 3–4→Partial-o-Yes, 5→Yes | Per-criterio: regla booleana explícita (p.ej. 1.5.1 = ≥2 de 3 obligatorios; 3.3.1 = condicional según si la inclusión es explícita o implícita) |
-| **Trazabilidad** | El modelo etiqueta cada cita como [DEDICATED]/[FRAMING] dentro de un razonamiento en prosa | El modelo enumera T1/T2/T3 con verdadero/falso y luego aplica DECISIÓN — más auditable |
-| **Criterios no transversales** | El filtro igual se inyecta como sistema (puede sesgar veredictos de criterios donde no aplica) | El filtro NO se aplica en criterios no transversales (no hay sesgo cruzado) |
+| **¿A qué criterios se aplica?** | A todos | Solo a los criterios cuya rúbrica lo invoca |
+| **¿Cuántos elementos son obligatorios?** | Siempre 5: sub-objetivo, indicador, actividad, presupuesto, meta | Varía por criterio. Algunos elementos son opcionales según la naturaleza del proyecto |
+| **¿Cómo se traduce a veredicto?** | Escala fija: 0→No, 1-2→Parcial, 3-4→Parcial-o-Sí, 5→Sí | Cada criterio tiene su regla propia (p.ej. ≥2 de 3 obligatorios = Sí) |
+| **¿Cómo se ve en el razonamiento?** | Prosa con etiquetas [DEDICATED]/[FRAMING] | Lista de chequeos T1/T2/T3 con verdadero/falso explícito |
 
-**Consecuencia práctica**: el mismo PRODOC puede recibir un veredicto distinto entre Tab 1 y v3 en criterios transversales. La razón más común es que v3 admite Sí con menos elementos DEDICADOS si la rúbrica así lo define para ese criterio.
+**Por qué importa**: el mismo PRODOC puede recibir veredictos diferentes entre Tab 1 y
+esta pestaña en criterios transversales. La razón habitual: la rúbrica de v3 (validada
+con la revisión de su equipo) admite *Sí* con menos elementos DEDICADOS cuando la
+naturaleza del proyecto lo justifica.
 
-### 6. Cómo actuar sobre los resultados
+---
+            """
+        )
 
-| Combinación | Acción recomendada |
+        # --- 6. Qué hacer ---
+        st.markdown(
+            """
+### 6. ¿Qué hacer con los resultados? — guía de acción
+
+| Si ves... | Haz esto |
 |---|---|
-| Yes + Subjetividad Baja/Media | Aceptar; muestreo aleatorio para auditoría |
-| Yes + Subjetividad Alta | Revisar razonamiento y evidencia antes de aceptar |
-| Partial | Leer TESTS para identificar qué elementos faltan — guía directa para feedback al equipo de proyecto |
-| No | Verificar que la evidencia documenta ausencia, no que el modelo no encontró |
-| Not Found | Confirmar manualmente; posiblemente el contenido está en un anexo no cargado |
-| N/A | Verificar la condición de aplicabilidad — si la condición sí aplica al proyecto, hay error de identificación |
-| Error | Reintentar; si persiste, reportar |
+| 🟢 **Yes** + Subjetividad Baja o Media | Aceptar el veredicto. Auditar ~10% al azar para control de calidad. |
+| 🟢 **Yes** + Subjetividad Alta | Leer razonamiento y evidencia antes de aceptar. 3 minutos de revisión humana valen la pena. |
+| 🟡 **Partial** | Leer los TESTS para identificar qué falta. Es la **columna más útil** para retroalimentar al equipo de proyecto: tienes la lista exacta de elementos no cumplidos. |
+| 🔴 **No** | Confirmar que la evidencia documenta **ausencia** del contenido, no que el modelo buscó mal. |
+| ⚫ **Not Found** | Verificar si el contenido está en un anexo que no se cargó. Falla común. |
+| ⚪ **N/A** | Verificar la regla de aplicabilidad. Si la condición sí aplica a tu proyecto pero el modelo dijo N/A, hay error de identificación. |
+| ⚠️ **Error** | Reintentar la evaluación. Si persiste, reportar. |
 
+---
+            """
+        )
+
+        # --- 7. Señales de alerta ---
+        st.markdown(
+            """
 ### 7. Señales de alerta — cuándo desconfiar del veredicto
+            """
+        )
+        st.warning(
+            "⚠️ **Razonamiento sin TESTS enumerados** → el modelo no aplicó la rúbrica "
+            "mecánicamente. Verificar manualmente.\n\n"
+            "⚠️ **Subjetividad Alta + evidencia escueta** → candidato a revisión humana.\n\n"
+            "⚠️ **Veredictos contradictorios entre criterios de la misma subsección** → "
+            "indagar inconsistencia.\n\n"
+            "⚠️ **N/A en criterio marcado como *Aplicabilidad: Siempre*** → bug, reportar.\n\n"
+            "⚠️ **Evidencia con texto que no aparece literalmente en el PRODOC** → posible "
+            "alucinación del modelo. Reportar."
+        )
+        st.markdown("---")
 
-- ⚠️ Razonamiento **sin enumerar TESTS** → el modelo no aplicó la rúbrica mecánicamente.
-- ⚠️ Subjetividad **Alta** + evidencia escueta o genérica → caso candidato a revisión humana.
-- ⚠️ Veredictos contradictorios entre criterios de la misma subsección → indagar inconsistencia.
-- ⚠️ **N/A** en criterios marcados como *Aplicabilidad: Siempre* → bug, reportar.
-- ⚠️ Evidencia que cita texto que **no aparece literalmente** en el PRODOC → posible alucinación.
+        # --- 8. Orden recomendado ---
+        st.markdown(
+            """
+### 8. Orden recomendado para revisar — empieza por lo más importante
 
-### 8. Orden sugerido para revisar resultados
+1. **Errores primero** (`Status = Error`). Suelen ser pocos. Resolver antes de mirar
+   todo lo demás.
+2. **Subjetividad Alta** (12 criterios). Revisar todos manualmente — aquí el modelo
+   es asistente, no juez.
+3. **Not Found**. Verificar si el contenido está en anexos no cargados.
+4. **Partial**. La fuente más rica de feedback para el equipo de proyecto — sabes
+   exactamente qué falta.
+5. **Yes** (muestrear ~10%). Auditoría aleatoria.
 
-1. Filtrar por **Status = Error** → resolver primero (suelen ser pocos).
-2. Filtrar por **Subjetividad = Alta** → revisar todos manualmente (12 criterios).
-3. Filtrar por **Respuesta = Not Found** → verificar si hay contenido en anexos no cargados.
-4. Filtrar por **Respuesta = Partial** → leer TESTS para identificar qué elementos faltan; es la columna más informativa para retroalimentar al equipo de proyecto.
-5. Muestrear **Respuesta = Yes** (~10%) → auditoría de calidad del modelo.
+---
+            """
+        )
+
+        # --- 9. FAQ ---
+        st.markdown(
+            """
+### 9. Preguntas frecuentes
+
+**¿Por qué los resultados pueden cambiar si corro la misma evaluación dos veces?**
+
+- Para criterios de Subjetividad **Baja**, no cambian.
+- Para **Media**, raramente cambian (1-2 criterios al borde).
+- Para **Alta**, sí pueden cambiar — porque el juicio cualitativo es irreducible. La
+  columna *Subjetividad* te dice dónde esperarlo.
+
+**¿Qué hago si el modelo dice "Not Found" pero yo sé que el contenido está en el PRODOC?**
+
+Verifica que el contenido esté en el cuerpo del documento que subiste, no solo en un
+anexo separado. La herramienta lee únicamente lo que subes — si lo relevante está en un
+anexo no cargado, súbelo también o consolida todo en un solo archivo.
+
+**¿Puedo confiar en los veredictos para una decisión final de financiamiento?**
+
+No directamente. La herramienta es **asistente, no decisor**. Sirve para:
+1. Descubrir rápidamente qué criterios necesitan más atención.
+2. Tener evidencia textual citada para discutir con el equipo de proyecto.
+3. Generar retroalimentación accionable (especialmente con los *Partial*).
+
+La decisión de calidad final sigue siendo humana.
+
+**¿Por qué el veredicto difiere entre Tab 1 y Tab 7?**
+
+Porque las dos pestañas usan rúbricas diferentes. Tab 1 aplica una regla global a todos
+los criterios; Tab 7 aplica reglas por criterio (algunas más estrictas, otras más laxas
+según la revisión del equipo cliente). En criterios transversales (género, discapacidad,
+NIT, etc.) es donde verás más diferencias.
+
+**¿Qué pasa con el orden de los criterios en la tabla?**
+
+Están ordenados por ID jerárquico (1.1.1, 1.1.2, 1.1.3, 1.2.1, …). Esto coincide con
+las secciones temáticas del cuestionario de evaluación de la OIT (Pertinencia, Validez
+del diseño, Marco de resultados / M&E, Implementación, Presentación).
+
+**¿Qué hago con la evidencia que el modelo cita — ¿la puedo usar directamente para el
+informe?**
+
+Sí, pero verifica primero que la cita aparezca **literalmente** en el PRODOC. Es buena
+práctica para todo veredicto, especialmente los *Yes* con Subjetividad Alta.
             """
         )
 
