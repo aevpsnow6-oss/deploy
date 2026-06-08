@@ -1,0 +1,20 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.gpt-action.txt .
+RUN pip install --no-cache-dir -r requirements.gpt-action.txt
+
+COPY tab1_v3_core.py .
+COPY gpt_action_api.py .
+COPY Rubrica_Tab1_Detallada_Full_v3.xlsx .
+
+EXPOSE 8000
+
+HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()" || exit 1
+
+CMD ["uvicorn", "gpt_action_api:app", "--host", "0.0.0.0", "--port", "8000"]

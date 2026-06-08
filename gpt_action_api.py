@@ -1,0 +1,260 @@
+"""FastAPI backend for the ILO PRODOC Quality Appraisal v3 Custom GPT action.
+
+The API follows the GPT Actions file-passing convention: ChatGPT sends uploaded
+files in a JSON field named `openaiFileIdRefs`, each with a short-lived
+download_link. Results are returned with `openaiFileResponse` so ChatGPT exposes
+the generated XLSX to the user.
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+import re
+import threading
+import time
+import uuid
+import urllib.request
+from typing import Any
+
+from fastapi import Depends, FastAPI, Header, HTTPException
+from openai import OpenAI
+from pydantic import BaseModel, Field
+
+import tab1_v3_core as v3_core
+
+APP_TITLE = "ILO PRODOC Quality Appraisal v3 Action API"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+app = FastAPI(
+    title=APP_TITLE,
+    version="0.1.0",
+    description=(
+        "Runs the experimental v3 ILO PRODOC quality appraisal rubric and "
+        "returns an XLSX result file for Custom GPT Actions."
+    ),
+)
+
+JOBS: dict[str, dict[str, Any]] = {}
+JOBS_LOCK = threading.Lock()
+
+
+class OpenAIFileRef(BaseModel):
+    name: str = Field(..., description="Original file name shown in ChatGPT.")
+    id: str | None = Field(None, description="Stable ChatGPT file id.")
+    mime_type: str | None = Field(None, description="MIME type inferred by ChatGPT.")
+    download_link: str = Field(..., description="Short-lived URL for downloading the file.")
+
+
+class EvaluationJobRequest(BaseModel):
+    openaiFileIdRefs: list[OpenAIFileRef] = Field(
+        ...,
+        description=(
+            "Exactly one DOCX PRODOC uploaded by the user. ChatGPT populates "
+            "this from the conversation file attachment."
+        ),
+        min_length=1,
+    )
+    sections: list[int] | None = Field(
+        None,
+        description="Optional rubric section numbers to evaluate, e.g. [1, 2].",
+    )
+    subsections: list[str] | None = Field(
+        None,
+        description="Optional rubric subsection IDs to evaluate, e.g. ['1.1', '2.3'].",
+    )
+    max_workers: int = Field(
+        v3_core.MAX_WORKERS,
+        ge=1,
+        le=v3_core.MAX_WORKERS,
+        description="Parallel OpenAI calls for criterion evaluation.",
+    )
+
+
+class JobCreated(BaseModel):
+    job_id: str
+    status: str
+    message: str
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Protect deployed endpoints when ILO_GPT_ACTION_API_KEY is configured."""
+    expected = os.getenv("ILO_GPT_ACTION_API_KEY")
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key.")
+
+
+def _now() -> float:
+    return time.time()
+
+
+def _set_job(job_id: str, **updates: Any) -> None:
+    with JOBS_LOCK:
+        job = JOBS.setdefault(job_id, {})
+        job.update(updates)
+        job["updated_at"] = _now()
+
+
+def _get_job(job_id: str) -> dict[str, Any]:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        return dict(job)
+
+
+def _is_docx(ref: OpenAIFileRef) -> bool:
+    name = ref.name.lower()
+    mime = (ref.mime_type or "").lower()
+    return name.endswith(".docx") or mime.endswith(
+        "vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+def _download_docx_file(file_refs: list[OpenAIFileRef]) -> tuple[str, bytes]:
+    docx_refs = [ref for ref in file_refs if _is_docx(ref)]
+    if len(docx_refs) != 1:
+        raise ValueError(
+            f"Expected exactly one DOCX PRODOC file; received {len(docx_refs)} DOCX files."
+        )
+
+    ref = docx_refs[0]
+    request = urllib.request.Request(ref.download_link, headers={"User-Agent": "ilo-gpt-action/0.1"})
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - URL comes from ChatGPT file ref
+        content = response.read()
+    if not content:
+        raise ValueError("Downloaded DOCX file is empty.")
+    return ref.name, content
+
+
+def _safe_filename_stem(filename: str) -> str:
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("_")
+    return stem or "prodoc"
+
+
+def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
+    try:
+        _set_job(job_id, status="running", message="Downloading DOCX from ChatGPT.")
+        filename, docx_bytes = _download_docx_file(request.openaiFileIdRefs)
+
+        _set_job(job_id, message="Extracting DOCX text.")
+        document_text = v3_core.extract_docx_text_from_bytes(docx_bytes)
+        word_count = len(document_text.split())
+
+        _set_job(job_id, message="Loading and filtering v3 rubric.")
+        rubric = v3_core.load_rubrica_v3()
+        criteria = v3_core.filter_rubric(rubric, request.sections, request.subsections)
+        if criteria.empty:
+            raise ValueError("No v3 rubric criteria matched the selected filters.")
+
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY is not configured on the API server.")
+        client = OpenAI(api_key=openai_api_key)
+
+        def progress(done: int, total: int) -> None:
+            _set_job(
+                job_id,
+                completed=done,
+                total=total,
+                message=f"Evaluated {done}/{total} criteria.",
+            )
+
+        _set_job(
+            job_id,
+            message="Evaluating criteria with OpenAI.",
+            completed=0,
+            total=len(criteria),
+            document_name=filename,
+            document_word_count=word_count,
+        )
+        results = v3_core.evaluate_criteria(
+            client,
+            criteria,
+            document_text,
+            max_workers=request.max_workers,
+            progress_callback=progress,
+        )
+        summary = v3_core.summarize_results(results)
+        xlsx_bytes = v3_core.results_to_xlsx_bytes(results)
+        xlsx_name = f"valoracion_v3_{_safe_filename_stem(filename)}.xlsx"
+
+        _set_job(
+            job_id,
+            status="succeeded",
+            message="Evaluation complete.",
+            completed=len(results),
+            total=len(results),
+            summary=summary,
+            result_filename=xlsx_name,
+            result_xlsx_b64=base64.b64encode(xlsx_bytes).decode("ascii"),
+            result_preview=v3_core.results_to_dataframe(results).head(10).to_dict("records"),
+        )
+    except Exception as exc:  # noqa: BLE001 - report job failures to the GPT
+        _set_job(job_id, status="failed", message=str(exc), error=str(exc))
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/v3/jobs", response_model=JobCreated, dependencies=[Depends(require_api_key)])
+def start_v3_appraisal_job(request: EvaluationJobRequest) -> JobCreated:
+    job_id = str(uuid.uuid4())
+    _set_job(
+        job_id,
+        status="queued",
+        message="Job queued.",
+        created_at=_now(),
+        completed=0,
+        total=0,
+    )
+    thread = threading.Thread(target=_run_evaluation_job, args=(job_id, request), daemon=True)
+    thread.start()
+    return JobCreated(
+        job_id=job_id,
+        status="queued",
+        message="Evaluation job started. Poll /v3/jobs/{job_id} until status is succeeded or failed.",
+    )
+
+
+@app.get("/v3/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+def get_v3_appraisal_job(job_id: str) -> dict[str, Any]:
+    job = _get_job(job_id)
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "message": job.get("message"),
+        "completed": job.get("completed", 0),
+        "total": job.get("total", 0),
+        "document_name": job.get("document_name"),
+        "document_word_count": job.get("document_word_count"),
+        "summary": job.get("summary"),
+        "error": job.get("error"),
+    }
+
+
+@app.get("/v3/jobs/{job_id}/result", dependencies=[Depends(require_api_key)])
+def get_v3_appraisal_result(job_id: str) -> dict[str, Any]:
+    job = _get_job(job_id)
+    if job.get("status") != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is {job.get('status')}; result is available only after success.",
+        )
+
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "summary": job.get("summary"),
+        "result_preview": job.get("result_preview", []),
+        "openaiFileResponse": [
+            {
+                "name": job.get("result_filename", "valoracion_v3_resultados.xlsx"),
+                "mime_type": XLSX_MIME,
+                "content": job["result_xlsx_b64"],
+            }
+        ],
+    }

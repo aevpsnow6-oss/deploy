@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  ilo-prodoc-v3-action:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpt-action
+    container_name: ilo-prodoc-v3-action
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ILO_GPT_ACTION_API_KEY=${ILO_GPT_ACTION_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3

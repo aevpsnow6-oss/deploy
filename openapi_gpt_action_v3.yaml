@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info:
+  title: ILO PRODOC Quality Appraisal v3 Action API
+  version: 0.1.0
+  description: >
+    Starts and retrieves experimental v3 ILO PRODOC quality-appraisal jobs.
+    Replace the server URL with the HTTPS domain where the API is deployed
+    before importing this schema into the Custom GPT editor.
+servers:
+  - url: https://YOUR_ILO_APPROVED_DOMAIN
+security:
+  - ApiKeyAuth: []
+paths:
+  /v3/jobs:
+    post:
+      operationId: startV3AppraisalJob
+      summary: Start a v3 PRODOC quality-appraisal job
+      description: >
+        Starts an asynchronous evaluation of exactly one DOCX PRODOC using the
+        server-side v3 rubric. The file must be sent through openaiFileIdRefs.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - openaiFileIdRefs
+              properties:
+                openaiFileIdRefs:
+                  type: array
+                  description: >
+                    Exactly one DOCX PRODOC uploaded by the user. ChatGPT will
+                    populate this array with file reference objects containing
+                    name, id, mime_type, and download_link.
+                  minItems: 1
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      id:
+                        type: string
+                      mime_type:
+                        type: string
+                      download_link:
+                        type: string
+                        format: uri
+                    required:
+                      - name
+                      - download_link
+                sections:
+                  type: array
+                  description: Optional section numbers to evaluate, e.g. [1, 2].
+                  items:
+                    type: integer
+                subsections:
+                  type: array
+                  description: Optional subsection IDs to evaluate, e.g. ["1.1", "2.3"].
+                  items:
+                    type: string
+                max_workers:
+                  type: integer
+                  description: Parallel OpenAI calls for criterion evaluation. Default is 48.
+                  minimum: 1
+                  maximum: 48
+      responses:
+        "200":
+          description: Job was accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+  /v3/jobs/{job_id}:
+    get:
+      operationId: getV3AppraisalJobStatus
+      summary: Get v3 appraisal job status
+      description: Poll this endpoint until status is succeeded or failed.
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current job status and summary when available.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - running
+                      - succeeded
+                      - failed
+                  message:
+                    type: string
+                  completed:
+                    type: integer
+                  total:
+                    type: integer
+                  document_name:
+                    type: string
+                  document_word_count:
+                    type: integer
+                  summary:
+                    type: object
+                  error:
+                    type: string
+  /v3/jobs/{job_id}/result:
+    get:
+      operationId: getV3AppraisalResult
+      summary: Get v3 appraisal XLSX result
+      description: >
+        Returns the completed summary, a small preview, and an XLSX file via
+        openaiFileResponse. Call only after status is succeeded.
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Completed result and downloadable XLSX file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                  summary:
+                    type: object
+                  result_preview:
+                    type: array
+                    items:
+                      type: object
+                  openaiFileResponse:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        mime_type:
+                          type: string
+                        content:
+                          type: string
+                          format: byte
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

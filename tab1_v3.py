@@ -16,290 +16,32 @@ Sin estado compartido con Tab 1 actual (claves de session_state con prefijo "v3_
 from __future__ import annotations
 
 import io
-import json
 import os
-import re
-import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import pandas as pd
 import streamlit as st
-from docx2python import docx2python
+import tab1_v3_core as v3_core
+from tab1_v3_core import (
+    MAX_WORKERS,
+    RUBRICA_V3_PATH,
+    _extract_section,
+    _extract_subsection,
+    _id_sort_key,
+    evaluate_criterion,
+)
 
-# ---------- Configuration ----------
-
-RUBRICA_V3_PATH = "./Rubrica_Tab1_Detallada_Full_v3.xlsx"
-SHEET_NAME = "Rúbrica Tab 1"
-HEADER_ROW_INDEX = 1  # row index 0 = instructions; index 1 = column headers
-MODEL = "gpt-5-mini"
-MAX_WORKERS = 48
-MAX_COMPLETION_TOKENS = 4000
-
-# ---------- Prompt v3 (mecanizado, TESTS + DECISIÓN) ----------
-
-V3_SYSTEM_PROMPT = """Eres un analista experto en evaluación de documentos de proyecto (PRODOC) de la OIT.
-
-Tu tarea: evaluar UN criterio específico contra el documento provisto, aplicando una rúbrica mecanizada.
-
-ESTRUCTURA DE LA RÚBRICA QUE RECIBES:
-- CRITERIO: el enunciado a evaluar.
-- PREGUNTA ORIENTADORA: contexto general (NO se evalúa, solo enmarca).
-- TIPO: forma del criterio (binario, lista, transversal, etc.).
-- APLICABILIDAD: si el criterio aplica siempre o bajo condición.
-- ASPECTOS TRANSVERSALES: indica si aplica filtro DEDICADO vs MARCO.
-- ELEMENTOS A VERIFICAR: componentes atómicos del criterio.
-- RÚBRICA Sí/Parcial/No/No aplica: TESTS atómicos (T1, T2, ...) y DECISIÓN booleana.
-- ANCLAS VERIFICABLES: patrones de texto, códigos, nombres concretos a buscar.
-
-PROCESO OBLIGATORIO (en este orden):
-1. Si APLICABILIDAD es condicional: primero determina si la condición se cumple. Si no, veredicto = "N/A".
-2. Localiza en el DOCUMENTO la(s) sección(es) que tratan del criterio. Usa las ANCLAS como guía de búsqueda.
-3. Para cada TEST listado en la rúbrica Sí (T1, T2, T3, ...): evalúa explícitamente si se cumple (verdadero/falso) con base en el documento.
-4. Aplica la DECISIÓN de Sí primero. Si no se cumple, aplica la DECISIÓN de Parcial. Si tampoco, aplica No.
-5. Veredicto final: Yes / Partial / No / Not Found / N/A.
-
-DEFINICIÓN CANÓNICA DE «DEDICADO vs MARCO» (idéntica a la usada en Tab 1):
-
-Una mención del sujeto (género, discapacidad, pueblos indígenas, etc.) cuenta como
-MARCO (NO cuenta para cumplimiento) cuando es cualquiera de:
-  - Mención en el objetivo general / declaración de impacto que enumera varios grupos
-  - Listas de partes interesadas / consulta / participantes de investigación
-  - Enumeraciones de alcance de seguimiento («…entre otros», «…incluyendo X, Y, Z»)
-  - Lenguaje boilerplate de inclusión
-  - Cualquier pasaje donde el sujeto aparece en una lista de ≥3 grupos sin seguimiento dedicado
-
-Una mención cuenta como DEDICADO si es cualquiera de:
-  A. Sub-objetivo, resultado o producto cuyo título/propósito nombra al sujeto
-  B. Indicador desagregado por el sujeto o que lo mide específicamente
-  C. Actividad cuyo propósito principal aborda al sujeto
-  D. Partida presupuestaria o asignación de recursos para el sujeto
-  E. Meta cuantificable relativa al sujeto
-
-Si toda la evidencia citable es MARCO, el veredicto DEBE ser "No" o "Not Found",
-sin importar cuántas veces se nombre al sujeto.
-
-REGLAS CRÍTICAS:
-- NO inventes elementos. Si la rúbrica lista T1/T2/T3, evalúa exactamente esos — no añadas T4 propio.
-- El filtro DEDICADO vs MARCO definido arriba aplica SOLO cuando la rúbrica del criterio lo invoque explícitamente (criterios marcados con ASPECTOS TRANSVERSALES ≠ «Ninguno»). Para criterios sin transversales, ignóralo.
-- Cita evidencia textual entre comillas. Si la evidencia es ausencia, dilo: «No se encontró sección X».
-- Si el documento carece de información para evaluar el criterio, veredicto = "Not Found".
-- "N/A" solo cuando la APLICABILIDAD condicional no se satisface.
-- El Razonamiento DEBE enumerar el resultado de cada TEST seguido de la DECISIÓN aplicada.
-
-FORMATO DEL Razonamiento (estricto):
-  T1: <verdadero/falso> — <una línea de justificación>
-  T2: <verdadero/falso> — <una línea de justificación>
-  ...
-  DECISIÓN: <regla booleana evaluada con los resultados, p.ej. T1 ∧ T2 ∧ ¬T3 = falso → Parcial>
-  VEREDICTO: <Yes/No/Partial/Not Found/N/A>
-
-Devuelve SIEMPRE JSON con: {"Respuesta", "Razonamiento", "Evidencia"}. Idioma: español."""
-
-
-V3_USER_PROMPT_TEMPLATE = """═════ CRITERIO A EVALUAR ═════
-ID del criterio: {id}
-CRITERIO: {criterio}
-
-PREGUNTA ORIENTADORA (solo contexto, NO evaluar): {head}
-
-═════ METADATA ═════
-TIPO: {tipo}
-APLICABILIDAD: {aplicabilidad}
-ASPECTOS TRANSVERSALES: {transv}
-
-═════ ELEMENTOS A VERIFICAR ═════
-{elementos}
-
-═════ RÚBRICA — Sí ═════
-{si}
-
-═════ RÚBRICA — Parcial ═════
-{par}
-
-═════ RÚBRICA — No ═════
-{no}
-
-═════ RÚBRICA — No aplica ═════
-{na}
-
-═════ ANCLAS VERIFICABLES ═════
-{anclas}
-
-═════ DOCUMENTO (PRODOC) ═════
-{document_text}
-
-═════ TU TAREA ═════
-1. Verifica APLICABILIDAD. Si no aplica → Respuesta = "N/A".
-2. Evalúa cada TEST de la rúbrica de Sí con base en el DOCUMENTO.
-3. Aplica DECISIÓN Sí → Parcial → No en orden.
-4. Devuelve JSON con Respuesta + Razonamiento (con todos los TESTS enumerados + DECISIÓN + VEREDICTO) + Evidencia (citas textuales)."""
-
-
-V3_RESPONSE_SCHEMA = {
-    "name": "rubric_eval_v3",
-    "schema": {
-        "type": "object",
-        "properties": {
-            "Respuesta": {
-                "type": "string",
-                "enum": ["Yes", "No", "Partial", "Not Found", "N/A"],
-            },
-            "Razonamiento": {"type": "string"},
-            "Evidencia": {"type": "string"},
-        },
-        "required": ["Respuesta", "Razonamiento", "Evidencia"],
-        "additionalProperties": False,
-    },
-    "strict": True,
-}
-
-
-# ---------- Loaders & helpers ----------
 
 @st.cache_data
 def load_rubrica_v3() -> pd.DataFrame:
     """Load the v3 rubric xlsx and return one row per criterion."""
-    df = pd.read_excel(RUBRICA_V3_PATH, sheet_name=SHEET_NAME, header=HEADER_ROW_INDEX)
-    df = df.dropna(subset=["ID"]).reset_index(drop=True)
-    df["ID"] = df["ID"].astype(str)
-    return df
-
-
-def _id_sort_key(id_str: str) -> tuple[int, ...]:
-    return tuple(int(p) for p in str(id_str).split(".") if p.isdigit())
-
-
-def _extract_section(id_str: str) -> int:
-    m = re.match(r"(\d+)", str(id_str))
-    return int(m.group(1)) if m else 0
-
-
-def _extract_subsection(id_str: str) -> str:
-    m = re.match(r"(\d+\.\d+)", str(id_str))
-    return m.group(1) if m else ""
+    return v3_core.load_rubrica_v3()
 
 
 def extract_docx_text(uploaded_file) -> str:
     """Extract full text from an uploaded .docx file."""
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-        tmp.write(uploaded_file.read())
-        tmp_path = tmp.name
-    try:
-        result = docx2python(tmp_path)
-        return result.text or ""
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-
-
-def build_user_prompt(row: pd.Series, document_text: str) -> str:
-    """Inject one criterion's rubric into the user prompt template."""
-
-    def get(col: str, default: str = "") -> str:
-        v = row.get(col, default)
-        if pd.isna(v) or v is None:
-            return default
-        s = str(v).strip()
-        return s if s else default
-
-    na_text = get("Rúbrica — No aplica", "")
-    if not na_text:
-        na_text = "(esta rúbrica no contempla la categoría «No aplica»)"
-
-    return V3_USER_PROMPT_TEMPLATE.format(
-        id=get("ID"),
-        criterio=get("Criterio a evaluar"),
-        head=get("Pregunta orientadora (CONTEXTO — no evaluar)"),
-        tipo=get("Tipo de criterio"),
-        aplicabilidad=get("Aplicabilidad"),
-        transv=get("Aspectos transversales", "Ninguno"),
-        elementos=get("Elementos a verificar"),
-        si=get("Rúbrica — Sí"),
-        par=get("Rúbrica — Parcial"),
-        no=get("Rúbrica — No"),
-        na=na_text,
-        anclas=get("Anclas verificables (v3)"),
-        document_text=document_text,
-    )
-
-
-def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[str, Any]:
-    """Run a single criterion through the v3 prompt and return a result dict."""
-    crit_id = str(row.get("ID", ""))
-    subj = str(row.get("Subjetividad residual (v3)", "Media")).strip()
-    # Higher reasoning effort for high-subjectivity criteria where mechanical rules
-    # still leave interpretive room; minimal effort elsewhere keeps cost in check.
-    effort = "medium" if subj == "Alta" else "minimal"
-
-    base = {
-        "ID": crit_id,
-        "Subsección": _extract_subsection(crit_id),
-        "Pregunta orientadora (no evaluada)": str(
-            row.get("Pregunta orientadora (CONTEXTO — no evaluar)", "")
-        ),
-        "Criterio": str(row.get("Criterio a evaluar", "")),
-        "Tipo": str(row.get("Tipo de criterio", "")),
-        "Subjetividad": subj,
-        "Transversales": str(row.get("Aspectos transversales", "Ninguno")),
-    }
-
-    if not document_text or not document_text.strip():
-        return {
-            **base,
-            "Respuesta": "Not Found",
-            "Razonamiento": "Documento vacío.",
-            "Evidencia": "",
-            "Status": "Success",
-        }
-
-    user_prompt = build_user_prompt(row, document_text)
-
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": V3_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_completion_tokens=MAX_COMPLETION_TOKENS,
-            reasoning_effort=effort,
-            response_format={"type": "json_schema", "json_schema": V3_RESPONSE_SCHEMA},
-        )
-        content = (resp.choices[0].message.content or "").strip()
-        if not content:
-            return {
-                **base,
-                "Respuesta": "Error",
-                "Razonamiento": "Respuesta vacía del modelo.",
-                "Evidencia": "",
-                "Status": "Error",
-            }
-        result = json.loads(content)
-        return {
-            **base,
-            "Respuesta": result.get("Respuesta", "Not Found"),
-            "Razonamiento": result.get("Razonamiento", ""),
-            "Evidencia": result.get("Evidencia", ""),
-            "Status": "Success",
-        }
-    except Exception as e:  # noqa: BLE001 — we want all failures contained per criterion
-        return {
-            **base,
-            "Respuesta": "Error",
-            "Razonamiento": f"Error en evaluación v3: {e}",
-            "Evidencia": "",
-            "Status": "Error",
-        }
-
-
-def _truncate_text_for_display(text: str, words: int = 60) -> str:
-    parts = text.split()
-    if len(parts) <= words:
-        return text
-    return " ".join(parts[:words]) + " […]"
+    return v3_core.extract_docx_text_from_bytes(uploaded_file.read())
 
 
 # ---------- Streamlit UI ----------

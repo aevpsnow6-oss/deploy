@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ilo-prodoc-appraisal-v3
+    runtime: docker
+    dockerfilePath: ./Dockerfile.gpt-action
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Set both values in the Render dashboard. sync:false keeps them
+      # out of git; Render will prompt for them on first deploy.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ILO_GPT_ACTION_API_KEY
+        sync: false
