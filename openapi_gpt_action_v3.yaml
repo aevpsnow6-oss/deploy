@@ -7,7 +7,7 @@ info:
     Replace the server URL with the HTTPS domain where the API is deployed
     before importing this schema into the Custom GPT editor.
 servers:
-  - url: https://YOUR_ILO_APPROVED_DOMAIN
+  - url: https://ilo-prodoc-appraisal-v3.onrender.com
 security:
   - ApiKeyAuth: []
 paths:
@@ -167,6 +167,7 @@ paths:
                           type: string
                           format: byte
 components:
+  schemas: {}
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
