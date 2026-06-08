@@ -18,6 +18,7 @@ import urllib.request
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
@@ -198,6 +199,60 @@ def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+PRIVACY_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy - ILO PRODOC Quality Appraisal v3</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:48rem;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1a1a1a}
+h1{font-size:1.6rem}h2{font-size:1.15rem;margin-top:2rem}small{color:#555}
+</style>
+</head>
+<body>
+<h1>Privacy Policy</h1>
+<p><small>ILO PRODOC Quality Appraisal v3 (pilot). Last updated: 2026-06-08.</small></p>
+
+<p>This service supports a pilot Custom GPT that evaluates ILO PRODOC documents
+against an experimental quality-appraisal rubric. This policy describes how data
+submitted to the service is handled.</p>
+
+<h2>What we process</h2>
+<p>When you submit a PRODOC, ChatGPT sends the service a short-lived download link
+to the uploaded DOCX file. The service downloads the file, extracts its text, and
+evaluates it against the server-side rubric. We do not request or process any
+information beyond the document you choose to submit.</p>
+
+<h2>Third-party processing</h2>
+<p>Document text is sent to the OpenAI API to perform the evaluation. OpenAI
+processes this content under its API data-usage terms; API inputs are not used to
+train OpenAI models by default. The service is hosted on Render.</p>
+
+<h2>Retention</h2>
+<p>This pilot does not use a database. Evaluation jobs and their results are held
+only in server memory while a job runs and are discarded when the service
+restarts. We do not persist uploaded documents or generated result files to disk.</p>
+
+<h2>Access control</h2>
+<p>Evaluation endpoints require an API key shared only with the configured Custom
+GPT. The service is intended for authorized ILO personnel, not public use.</p>
+
+<h2>Caveats</h2>
+<p>Results are AI-assisted and require expert validation. They do not constitute an
+official ILO determination.</p>
+
+<h2>Contact</h2>
+<p>Direct questions about this pilot to the ILO team that operates this GPT.</p>
+</body>
+</html>"""
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy() -> str:
+    return PRIVACY_HTML
 
 
 @app.post("/v3/jobs", response_model=JobCreated, dependencies=[Depends(require_api_key)])
