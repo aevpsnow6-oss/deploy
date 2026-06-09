@@ -10,8 +10,10 @@ COPY requirements.gpt-action.txt .
 RUN pip install --no-cache-dir -r requirements.gpt-action.txt
 
 COPY tab1_v3_core.py .
+COPY sustainability_core.py .
 COPY gpt_action_api.py .
 COPY Rubrica_Tab1_Detallada_Full_v3.xlsx .
+COPY ["Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx", "."]
 
 EXPOSE 8000
 

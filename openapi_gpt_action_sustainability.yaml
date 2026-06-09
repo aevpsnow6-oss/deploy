@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: ILO PRODOC Sustainability Diagnosis Action API
+  version: 0.1.0
+  description: >
+    Starts and retrieves ILO project-sustainability diagnosis jobs. Replace the
+    server URL with the HTTPS domain where the shared action API is deployed
+    before importing this schema into the Custom GPT editor.
+servers:
+  - url: https://ilo-prodoc-appraisal-v3.onrender.com
+security:
+  - ApiKeyAuth: []
+paths:
+  /sustainability/jobs:
+    post:
+      operationId: startSustainabilityDiagnosisJob
+      summary: Start a project-sustainability diagnosis job
+      description: >
+        Starts an asynchronous sustainability-rubric evaluation of exactly one
+        DOCX project document. The file must be sent through openaiFileIdRefs.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - openaiFileIdRefs
+              properties:
+                openaiFileIdRefs:
+                  type: array
+                  description: >
+                    Exactly one DOCX project document uploaded by the user.
+                    ChatGPT will populate this array with file reference objects
+                    containing name, id, mime_type, and download_link.
+                  minItems: 1
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      id:
+                        type: string
+                      mime_type:
+                        type: string
+                      download_link:
+                        type: string
+                        format: uri
+                    required:
+                      - name
+                      - download_link
+                dimensions:
+                  type: array
+                  description: >
+                    Optional dimensions to evaluate. Use Diseño for PRODOC/design
+                    documents, Implementación for progress/implementation
+                    documents, Evaluación for evaluation reports, or omit for
+                    the full rubric.
+                  items:
+                    type: string
+                    enum:
+                      - Diseño
+                      - Implementación
+                      - Evaluación
+                indicators:
+                  type: array
+                  description: Optional indicator IDs to evaluate, e.g. ["1.1", "3.1"].
+                  items:
+                    type: string
+                max_workers:
+                  type: integer
+                  description: Parallel OpenAI calls for indicator evaluation. Default is 8.
+                  minimum: 1
+                  maximum: 8
+      responses:
+        "200":
+          description: Job was accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+  /sustainability/jobs/{job_id}:
+    get:
+      operationId: getSustainabilityDiagnosisJobStatus
+      summary: Get sustainability diagnosis job status
+      description: Poll this endpoint until status is succeeded or failed.
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current job status and summary when available.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - running
+                      - succeeded
+                      - failed
+                  message:
+                    type: string
+                  completed:
+                    type: integer
+                  total:
+                    type: integer
+                  document_name:
+                    type: string
+                  document_word_count:
+                    type: integer
+                  summary:
+                    type: object
+                  error:
+                    type: string
+  /sustainability/jobs/{job_id}/result:
+    get:
+      operationId: getSustainabilityDiagnosisResult
+      summary: Get sustainability diagnosis XLSX result
+      description: >
+        Returns the completed summary, a small user-facing preview, and an XLSX
+        file via openaiFileResponse. The workbook includes a friendly summary
+        sheet plus a technical audit sheet. Call only after status is succeeded.
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Completed result and downloadable XLSX file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                  summary:
+                    type: object
+                  result_preview:
+                    type: array
+                    items:
+                      type: object
+                  openaiFileResponse:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        mime_type:
+                          type: string
+                        content:
+                          type: string
+                          format: byte
+components:
+  schemas: {}
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

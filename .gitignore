@@ -2,3 +2,7 @@
 .env
 .env.*
 !.env.example
+
+# Local stability-audit data
+stability_inputs/
+stability_outputs/
