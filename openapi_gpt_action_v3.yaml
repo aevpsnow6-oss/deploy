@@ -127,8 +127,9 @@ paths:
       operationId: getV3AppraisalResult
       summary: Get v3 appraisal XLSX result
       description: >
-        Returns the completed summary, a small preview, and an XLSX file via
-        openaiFileResponse. Call only after status is succeeded.
+        Returns the completed summary, a small user-facing preview, and an XLSX
+        file via openaiFileResponse. The workbook includes a friendly summary
+        sheet plus a technical audit sheet. Call only after status is succeeded.
       x-openai-isConsequential: false
       parameters:
         - in: path

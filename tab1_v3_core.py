@@ -38,6 +38,20 @@ RESULT_COLUMNS = [
     "Status",
 ]
 
+PUBLIC_RESULT_COLUMNS = [
+    "ID",
+    "Subsección",
+    "Criterio",
+    "Tipo",
+    "Subjetividad",
+    "Transversales",
+    "Resultado de valoración",
+    "Lectura rápida",
+    "Principal oportunidad de mejora",
+    "Evidencia clave",
+    "Revisión humana recomendada",
+]
+
 V3_SYSTEM_PROMPT = """Eres un analista experto en evaluación de documentos de proyecto (PRODOC) de la OIT.
 
 Tu tarea: evaluar UN criterio específico contra el documento provisto, aplicando una rúbrica mecanizada.
@@ -53,11 +67,11 @@ ESTRUCTURA DE LA RÚBRICA QUE RECIBES:
 - ANCLAS VERIFICABLES: patrones de texto, códigos, nombres concretos a buscar.
 
 PROCESO OBLIGATORIO (en este orden):
-1. Si APLICABILIDAD es condicional: primero determina si la condición se cumple. Si no, veredicto = "N/A".
+1. Si APLICABILIDAD es condicional: primero determina si la condición se cumple. Si no, resultado = "N/A".
 2. Localiza en el DOCUMENTO la(s) sección(es) que tratan del criterio. Usa las ANCLAS como guía de búsqueda.
 3. Para cada TEST listado en la rúbrica Sí (T1, T2, T3, ...): evalúa explícitamente si se cumple (verdadero/falso) con base en el documento.
 4. Aplica la DECISIÓN de Sí primero. Si no se cumple, aplica la DECISIÓN de Parcial. Si tampoco, aplica No.
-5. Veredicto final: Yes / Partial / No / Not Found / N/A.
+5. Resultado final: Yes / Partial / No / Not Found / N/A.
 
 DEFINICIÓN CANÓNICA DE «DEDICADO vs MARCO» (idéntica a la usada en Tab 1):
 
@@ -76,23 +90,24 @@ Una mención cuenta como DEDICADO si es cualquiera de:
   D. Partida presupuestaria o asignación de recursos para el sujeto
   E. Meta cuantificable relativa al sujeto
 
-Si toda la evidencia citable es MARCO, el veredicto DEBE ser "No" o "Not Found",
+Si toda la evidencia citable es MARCO, el resultado DEBE ser "No" o "Not Found",
 sin importar cuántas veces se nombre al sujeto.
 
 REGLAS CRÍTICAS:
 - NO inventes elementos. Si la rúbrica lista T1/T2/T3, evalúa exactamente esos — no añadas T4 propio.
 - El filtro DEDICADO vs MARCO definido arriba aplica SOLO cuando la rúbrica del criterio lo invoque explícitamente (criterios marcados con ASPECTOS TRANSVERSALES ≠ «Ninguno»). Para criterios sin transversales, ignóralo.
 - Cita evidencia textual entre comillas. Si la evidencia es ausencia, dilo: «No se encontró sección X».
-- Si el documento carece de información para evaluar el criterio, veredicto = "Not Found".
+- Si el documento carece de información para evaluar el criterio, resultado = "Not Found".
 - "N/A" solo cuando la APLICABILIDAD condicional no se satisface.
 - El Razonamiento DEBE enumerar el resultado de cada TEST seguido de la DECISIÓN aplicada.
+- No presentes el resultado como una determinación oficial de la OIT; es una valoración asistida que requiere validación experta.
 
 FORMATO DEL Razonamiento (estricto):
   T1: <verdadero/falso> — <una línea de justificación>
   T2: <verdadero/falso> — <una línea de justificación>
   ...
   DECISIÓN: <regla booleana evaluada con los resultados, p.ej. T1 ∧ T2 ∧ ¬T3 = falso → Parcial>
-  VEREDICTO: <Yes/No/Partial/Not Found/N/A>
+  RESULTADO: <Yes/No/Partial/Not Found/N/A>
 
 Devuelve SIEMPRE JSON con: {"Respuesta", "Razonamiento", "Evidencia"}. Idioma: español."""
 
@@ -133,7 +148,7 @@ ASPECTOS TRANSVERSALES: {transv}
 1. Verifica APLICABILIDAD. Si no aplica → Respuesta = "N/A".
 2. Evalúa cada TEST de la rúbrica de Sí con base en el DOCUMENTO.
 3. Aplica DECISIÓN Sí → Parcial → No en orden.
-4. Devuelve JSON con Respuesta + Razonamiento (con todos los TESTS enumerados + DECISIÓN + VEREDICTO) + Evidencia (citas textuales)."""
+4. Devuelve JSON con Respuesta + Razonamiento (con todos los TESTS enumerados + DECISIÓN + RESULTADO) + Evidencia (citas textuales)."""
 
 
 V3_RESPONSE_SCHEMA = {
@@ -361,12 +376,131 @@ def results_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
     return df_sorted[available]
 
 
+def _compact_text(value: Any, max_chars: int = 700) -> str:
+    """Return readable one-cell text without technical decision scaffolding."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    lines = []
+    for line in text.splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        if re.match(r"^T\d+\s*:", clean):
+            continue
+        if clean.upper().startswith(("DECISIÓN:", "DECISION:", "RESULTADO:", "VEREDICTO:")):
+            continue
+        lines.append(clean)
+    compact = " ".join(lines) if lines else text.replace("\n", " ")
+    compact = re.sub(r"\s+", " ", compact).strip()
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 1].rstrip() + "…"
+
+
+def _quick_reading(answer: str) -> str:
+    mapping = {
+        "Yes": "Cumple el criterio según la evidencia encontrada.",
+        "Partial": "Cumple parcialmente; hay elementos específicos por reforzar.",
+        "No": "No cumple el criterio con la evidencia disponible.",
+        "Not Found": "No se encontró información suficiente para valorar el criterio.",
+        "N/A": "El criterio no aplica según las condiciones de la rúbrica.",
+        "Error": "Hubo una falla técnica; revisar o reintentar la evaluación.",
+    }
+    return mapping.get(str(answer), "Revisar el detalle técnico.")
+
+
+def _improvement_hint(answer: str) -> str:
+    mapping = {
+        "Yes": "Mantener la evidencia y verificar que las citas sean localizables en el PRODOC.",
+        "Partial": "Revisar los chequeos marcados como falso en la auditoría técnica y completar esos elementos.",
+        "No": "Incorporar evidencia específica para los elementos exigidos por la rúbrica.",
+        "Not Found": "Añadir una sección, anexo o referencia explícita que permita valorar este criterio.",
+        "N/A": "Sin acción, salvo que cambien las condiciones de aplicabilidad del proyecto.",
+        "Error": "Reintentar la evaluación o revisar si el documento/rúbrica contiene texto problemático.",
+    }
+    return mapping.get(str(answer), "Revisar la auditoría técnica.")
+
+
+def _review_flag(row: pd.Series) -> str:
+    reasons = []
+    if str(row.get("Subjetividad", "")).strip() == "Alta":
+        reasons.append("subjetividad alta")
+    if str(row.get("Respuesta", "")).strip() in {"Partial", "No", "Not Found", "Error"}:
+        reasons.append("resultado requiere revisión")
+    return "Sí - " + "; ".join(reasons) if reasons else "No - revisión muestral"
+
+
+def results_to_public_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
+    """Return a user-facing results table without technical test scaffolding."""
+    technical = results_to_dataframe(results)
+    if technical.empty:
+        return pd.DataFrame(columns=PUBLIC_RESULT_COLUMNS)
+
+    public = technical.copy()
+    public["Resultado de valoración"] = public["Respuesta"]
+    public["Lectura rápida"] = public["Respuesta"].map(_quick_reading)
+    public["Principal oportunidad de mejora"] = public["Respuesta"].map(_improvement_hint)
+    public["Evidencia clave"] = public["Evidencia"].map(_compact_text)
+    public["Revisión humana recomendada"] = public.apply(_review_flag, axis=1)
+    available = [c for c in PUBLIC_RESULT_COLUMNS if c in public.columns]
+    return public[available]
+
+
 def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
-    """Serialize v3 results to an XLSX workbook."""
-    df = results_to_dataframe(results)
+    """Serialize v3 results to a two-level XLSX workbook.
+
+    The first sheet is a readable summary for ordinary users. The second sheet
+    keeps the full audit trail so reviewers can inspect the exact TEST logic.
+    """
+    public_df = results_to_public_dataframe(results)
+    technical_df = results_to_dataframe(results)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Resultados v3")
+        public_df.to_excel(writer, index=False, sheet_name="Lectura amigable")
+        technical_df.to_excel(writer, index=False, sheet_name="Auditoria tecnica")
+
+        workbook = writer.book
+        header_fmt = workbook.add_format(
+            {"bold": True, "text_wrap": True, "valign": "top", "fg_color": "#D9EAF7", "border": 1}
+        )
+        wrap_fmt = workbook.add_format({"text_wrap": True, "valign": "top"})
+
+        sheet_specs = {
+            "Lectura amigable": (
+                public_df,
+                {
+                    "A:A": 10,
+                    "B:B": 12,
+                    "C:C": 58,
+                    "D:F": 18,
+                    "G:G": 18,
+                    "H:J": 42,
+                    "K:K": 28,
+                },
+            ),
+            "Auditoria tecnica": (
+                technical_df,
+                {
+                    "A:B": 10,
+                    "C:D": 52,
+                    "E:G": 18,
+                    "H:H": 18,
+                    "I:J": 60,
+                    "K:K": 14,
+                },
+            ),
+        }
+        for sheet_name, (df_sheet, widths) in sheet_specs.items():
+            worksheet = writer.sheets[sheet_name]
+            worksheet.freeze_panes(1, 0)
+            worksheet.autofilter(0, 0, max(len(df_sheet), 1), max(len(df_sheet.columns) - 1, 0))
+            for col_num, value in enumerate(df_sheet.columns):
+                worksheet.write(0, col_num, value, header_fmt)
+            for col_range, width in widths.items():
+                worksheet.set_column(col_range, width, wrap_fmt)
     return buf.getvalue()
 
 

@@ -15,7 +15,6 @@ Sin estado compartido con Tab 1 actual (claves de session_state con prefijo "v3_
 
 from __future__ import annotations
 
-import io
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -67,7 +66,7 @@ def render(client: Any) -> None:
   indicadores ODS, etc.).
 - **Filtro DEDICADO vs MARCO selectivo**: se aplica solo donde la rúbrica del criterio lo invoca,
   no globalmente a los 76.
-- **Razonamiento auditable**: el modelo enumera el resultado de cada TEST antes del veredicto.
+- **Razonamiento auditable**: el modelo enumera el resultado de cada TEST antes del resultado final.
 - **Subjetividad declarada**: 12 criterios marcados como Alta (esperable: más variabilidad).
             """
         )
@@ -178,10 +177,11 @@ def render(client: Any) -> None:
         return
 
     results = st.session_state["v3_results"]
-    df_res = pd.DataFrame(results)
+    df_public = v3_core.results_to_public_dataframe(results)
+    df_res = v3_core.results_to_dataframe(results)
 
     # Summary metrics
-    st.markdown("### Resumen")
+    st.markdown("### Resumen de valoración")
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total", len(df_res))
     c2.metric("Yes", int((df_res["Respuesta"] == "Yes").sum()))
@@ -220,8 +220,8 @@ Para cada criterio:
 
 1. Tiene una **lista clara** de lo que debe encontrar en el documento.
 2. Va al PRODOC y **verifica cada punto** uno por uno.
-3. Aplica una **regla simple** para decidir el veredicto.
-4. Te entrega el veredicto **junto con el resultado de cada chequeo**, para que tú puedas
+3. Aplica una **regla simple** para decidir el resultado de valoración.
+4. Te entrega el resultado **junto con el resultado de cada chequeo**, para que tú puedas
    verificarlo.
 
 Eso es exactamente lo que hace esta herramienta. La diferencia con la pestaña principal
@@ -232,14 +232,15 @@ interpretación subjetiva del modelo.
             """
         )
 
-        # --- 1. Veredictos ---
+        # --- 1. Resultados ---
         st.markdown(
             """
-### 1. ¿Qué significa cada veredicto?
+### 1. ¿Qué significa cada resultado?
 
-La columna **Respuesta** te dice el resultado de la evaluación. Hay 6 valores posibles:
+La columna **Resultado de valoración** te dice el resultado de la revisión asistida.
+No es una determinación oficial de la OIT. Hay 6 valores posibles:
 
-| Veredicto | Significado | Ejemplo concreto |
+| Resultado | Significado | Ejemplo concreto |
 |---|---|---|
 | 🟢 **Yes** | El criterio se cumple completamente. | El PRODOC cita el Convenio núm. 190 por número y lo integra a la estrategia y los indicadores. |
 | 🟡 **Partial** | Se cumple en parte. Faltan elementos específicos. | Cita el Convenio núm. 190 pero solo en antecedentes, no lo integra a la estrategia. |
@@ -287,7 +288,7 @@ Algunos criterios combinan dos o más de los tipos base. La etiqueta lo refleja:
 - **Binario presencia** = binario sobre presencia simple de un elemento (sección, partida)
 - **Lista de verificación SMART** = lista que verifica los 5 atributos SMART (Específico, Medible, Alcanzable, Relevante, Temporal)
 
-💡 **Por qué importa**: el tipo te indica el nivel de rigor mecánico del veredicto.
+💡 **Por qué importa**: el tipo te indica el nivel de rigor mecánico del resultado.
 *Binario* y *Lista* son muy reproducibles. *Calidad narrativa* y los compuestos con
 "transversal" tienen más espacio interpretativo — por eso suelen aparecer con
 Subjetividad Media o Alta.
@@ -301,8 +302,8 @@ Subjetividad Media o Alta.
             """
 ### 3. ¿Cómo está estructurado el "Razonamiento"?
 
-El razonamiento te muestra **exactamente por qué el modelo llegó a ese veredicto**.
-Sigue siempre el mismo formato:
+El razonamiento técnico te muestra **exactamente por qué el modelo llegó a ese resultado**.
+En la descarga aparece en la hoja **Auditoria tecnica** y sigue este formato:
             """
         )
         st.code(
@@ -313,7 +314,7 @@ Sigue siempre el mismo formato:
             "DECISIÓN: la regla pide T1, T2, T3 y T4 los cuatro verdaderos.\n"
             "          T2 falló → no se cumple la regla de Sí.\n"
             "          Sí se cumple la regla de Parcial.\n"
-            "VEREDICTO: Partial",
+            "RESULTADO: Partial",
             language="text",
         )
         st.markdown(
@@ -322,18 +323,18 @@ Sigue siempre el mismo formato:
 - Cada **T** es un chequeo independiente. Resultado: *verdadero* (se cumple en el
   documento) o *falso* (no se cumple).
 - La línea **DECISIÓN** explica qué regla se aplicó y por qué.
-- El **VEREDICTO** final es la conclusión.
+- El **RESULTADO** final es la conclusión técnica.
 
 💡 **Por qué importa**: este desglose te permite ver *exactamente qué chequeo falló*. Si
-el veredicto es Parcial y T2 falló, ya sabes qué hay que arreglar en el proyecto (en este
+el resultado es Parcial y T2 falló, ya sabes qué hay que arreglar en el proyecto (en este
 caso, añadir referencia explícita al DWCP del país). Es información accionable, no solo
-un veredicto.
+una etiqueta final.
             """
         )
         st.warning(
             "**Si el razonamiento NO sigue este formato** (no enumera T1, T2…), es señal de "
             "alerta: el modelo no aplicó la rúbrica mecánicamente. Verifica manualmente antes "
-            "de confiar en el veredicto."
+            "de confiar en el resultado."
         )
         st.markdown("---")
 
@@ -342,7 +343,7 @@ un veredicto.
             """
 ### 4. ¿Cómo está estructurada la "Evidencia"?
 
-Son citas textuales del PRODOC que respaldan el veredicto. Hay dos tipos válidos:
+Son citas textuales del PRODOC que respaldan el resultado. Hay dos tipos válidos:
             """
         )
         st.success(
@@ -447,56 +448,34 @@ de arriba son los mismos en ambas pestañas). Lo que cambia es **cómo se aplica
 | **Definición de DEDICADO / MARCO** | Los 5 patrones / 5 elementos descritos arriba | **Idénticos** a Tab 1 |
 | **¿A qué criterios se aplica?** | A todos | Solo a los criterios cuya rúbrica lo invoca (los marcados con Transversales ≠ Ninguno) |
 | **¿Cuántos elementos son obligatorios?** | Siempre 5: A/B/C/D/E con peso igual | Varía por criterio. Algunos elementos son opcionales según la naturaleza del proyecto |
-| **¿Cómo se traduce a veredicto?** | Escala fija: 0→No, 1-2→Parcial, 3-4→Parcial-o-Sí, 5→Sí | Cada criterio tiene su regla propia (p.ej. ≥2 de 3 obligatorios = Sí) |
+| **¿Cómo se traduce a resultado?** | Escala fija: 0→No, 1-2→Parcial, 3-4→Parcial-o-Sí, 5→Sí | Cada criterio tiene su regla propia (p.ej. ≥2 de 3 obligatorios = Sí) |
 | **¿Cómo se ve en el razonamiento?** | Prosa con etiquetas [DEDICATED]/[FRAMING] | Lista de chequeos T1/T2/T3 con verdadero/falso explícito |
 
-**Por qué importa**: el mismo PRODOC puede recibir veredictos diferentes entre Tab 1 y
+**Por qué importa**: el mismo PRODOC puede recibir resultados diferentes entre Tab 1 y
 esta pestaña en criterios transversales. La razón habitual: la rúbrica de v3 (validada
 con la revisión de su equipo) admite *Sí* con menos elementos DEDICADOS cuando la
 naturaleza del proyecto lo justifica.
             """
         )
 
-    # Detailed view
-    st.markdown("### Resultados detallados")
-    show_cols = [
-        "ID",
-        "Subsección",
-        "Pregunta orientadora (no evaluada)",
-        "Criterio",
-        "Tipo",
-        "Subjetividad",
-        "Transversales",
-        "Respuesta",
-        "Razonamiento",
-        "Evidencia",
-        "Status",
-    ]
-    available_cols = [c for c in show_cols if c in df_res.columns]
-
-    # Explicit hierarchical sort by ID (1.1.1 → 1.1.2 → 1.2.1 → 1.2.2 → …).
-    # Defends against any reordering from filtering, pandas inference, or future edits.
-    df_res_sorted = (
-        df_res.assign(_sk=df_res["ID"].map(_id_sort_key))
-        .sort_values("_sk")
-        .drop(columns="_sk")
-        .reset_index(drop=True)
-    )
-
+    # Results view: public first, audit detail second.
+    st.markdown("### Lectura amigable")
     st.caption(
         "📌 La columna **Pregunta orientadora** es el enunciado general de la "
         "subsección del cuestionario OIT (1.1, 1.2, …). Aparece como contexto y "
-        "**no es evaluada**. Solo la columna **Criterio** dispara los TESTS de la rúbrica."
+        "**no es evaluada**. Solo la columna **Criterio** dispara los TESTS de la rúbrica. "
+        "Los criterios largos se mantienen completos en la tabla y en la descarga."
     )
-    st.dataframe(df_res_sorted[available_cols], use_container_width=True, height=500)
+    st.dataframe(df_public, use_container_width=True, height=500)
+
+    with st.expander("Auditoría técnica: TESTS, decisión y evidencia completa", expanded=False):
+        st.dataframe(df_res, use_container_width=True, height=500)
 
     # Download xlsx
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df_res_sorted[available_cols].to_excel(writer, index=False, sheet_name="Resultados v3")
+    xlsx_bytes = v3_core.results_to_xlsx_bytes(results)
     st.download_button(
         "📥 Descargar resultados v3 (.xlsx)",
-        buf.getvalue(),
+        xlsx_bytes,
         file_name=f"valoracion_v3_{os.path.splitext(st.session_state.get('v3_doc_name','sin_nombre'))[0]}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )

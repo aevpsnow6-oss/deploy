@@ -190,7 +190,7 @@ def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
             summary=summary,
             result_filename=xlsx_name,
             result_xlsx_b64=base64.b64encode(xlsx_bytes).decode("ascii"),
-            result_preview=v3_core.results_to_dataframe(results).head(10).to_dict("records"),
+            result_preview=v3_core.results_to_public_dataframe(results).head(10).to_dict("records"),
         )
     except Exception as exc:  # noqa: BLE001 - report job failures to the GPT
         _set_job(job_id, status="failed", message=str(exc), error=str(exc))
