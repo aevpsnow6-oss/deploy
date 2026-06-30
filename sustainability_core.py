@@ -13,11 +13,12 @@ import re
 import tempfile
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
+
+import stability
 
 RUBRIC_FILENAME = "Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx"
 SHEET_NAME = "rubric"
@@ -26,7 +27,11 @@ MAX_WORKERS = 8
 MAX_COMPLETION_TOKENS = 6500
 MAX_DOCUMENT_CHARS = 420_000
 
-DIMENSION_ORDER = {"Diseño": 0, "Implementación": 1, "Evaluación": 2}
+STABILITY_REPEATS = 5
+STABILITY_THRESHOLD_PCT = 80.0
+SCORE_ORDER = [0, 1, 2, 3, "Error"]
+
+DIMENSION_ORDER = {"Diseño": 0, "Implementación": 1, "Pre-Cierre": 2}
 
 TECHNICAL_COLUMNS = [
     "Dimensión",
@@ -37,6 +42,7 @@ TECHNICAL_COLUMNS = [
     "Nivel 2",
     "Nivel 3",
     "Score",
+    *stability.STABILITY_COLUMNS,
     "Análisis",
     "Evidencia",
     "Status",
@@ -48,6 +54,8 @@ PUBLIC_COLUMNS = [
     "Criterio",
     "Indicador",
     "Puntuación (0-3)",
+    "Estabilidad (%)",
+    "Deriva principal (si inestable)",
     "Lectura rápida",
     "Principal oportunidad de mejora",
     "Evidencia clave",
@@ -334,6 +342,39 @@ def evaluate_indicator(
     }
 
 
+def _aggregate_indicator_runs(repeated_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Collapse one indicator's repeated runs into a modal score + stability."""
+    agg = stability.aggregate_runs(
+        repeated_results,
+        value_key="Score",
+        value_order=SCORE_ORDER,
+        threshold_pct=STABILITY_THRESHOLD_PCT,
+        evidence_key="Evidencia",
+    )
+    rep = agg["representative"]
+    is_error = agg["modal"] == "Error"
+    analysis = (
+        f"{agg['reasoning_prefix']}\n\n"
+        "Análisis representativo de una corrida con el resultado modal:\n"
+        f"{rep.get('Análisis', '')}"
+    ).strip()
+    return {
+        "Dimensión": rep.get("Dimensión", ""),
+        "Criterio": rep.get("Criterio", ""),
+        "Indicador": rep.get("Indicador", ""),
+        "Nivel 0": rep.get("Nivel 0", ""),
+        "Nivel 1": rep.get("Nivel 1", ""),
+        "Nivel 2": rep.get("Nivel 2", ""),
+        "Nivel 3": rep.get("Nivel 3", ""),
+        "Score": "" if is_error else int(agg["modal"]),
+        **agg["columns"],
+        "Análisis": analysis,
+        "Evidencia": rep.get("Evidencia", ""),
+        "Status": "Error" if is_error else "Success",
+        "Error": rep.get("Error", "") if is_error else "",
+    }
+
+
 def evaluate_indicators(
     client: Any,
     df_indicators: pd.DataFrame,
@@ -341,25 +382,19 @@ def evaluate_indicators(
     max_workers: int = MAX_WORKERS,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Evaluate all selected indicators."""
-    total = len(df_indicators)
-    if total == 0:
+    """Evaluate all selected indicators with the 5-run stability scheme."""
+    if len(df_indicators) == 0:
         return []
 
-    workers = max(1, min(int(max_workers), total, MAX_WORKERS))
-    results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(evaluate_indicator, client, row, document_text): idx
-            for idx, row in df_indicators.iterrows()
-        }
-        done = 0
-        for future in as_completed(futures):
-            results.append(future.result())
-            done += 1
-            if progress_callback:
-                progress_callback(done, total)
-
+    items = [(idx, row.copy()) for idx, row in df_indicators.iterrows()]
+    results = stability.evaluate_with_stability(
+        items,
+        lambda row: evaluate_indicator(client, row, document_text),
+        lambda _key, runs: _aggregate_indicator_runs(runs),
+        repeats=STABILITY_REPEATS,
+        max_workers=max_workers,
+        progress_callback=progress_callback,
+    )
     results.sort(key=lambda r: (DIMENSION_ORDER.get(r.get("Dimensión", ""), 99), _sort_key(r.get("Indicador", ""))))
     return results
 
@@ -412,13 +447,22 @@ def _improvement_hint(score: Any) -> str:
 
 
 def _review_flag(row: pd.Series) -> str:
+    reasons = []
     if str(row.get("Status", "")) == "Error":
-        return "Sí - falla técnica"
+        reasons.append("falla técnica")
+    stability_pct = row.get("Estabilidad (%)")
+    if stability_pct is not None and not pd.isna(stability_pct):
+        try:
+            if float(stability_pct) < STABILITY_THRESHOLD_PCT:
+                reasons.append(f"estabilidad <{STABILITY_THRESHOLD_PCT:.0f}%")
+        except (TypeError, ValueError):
+            pass
     try:
-        score = int(row.get("Score", 0))
+        if int(row.get("Score", 0)) < 3:
+            reasons.append("puntaje menor a 3")
     except (TypeError, ValueError):
-        score = 0
-    return "Sí - puntaje menor a 3" if score < 3 else "No - revisión muestral"
+        pass
+    return "Sí - " + "; ".join(reasons) if reasons else "No - revisión muestral"
 
 
 def results_to_public_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
@@ -482,25 +526,57 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
                 worksheet.write(0, col_num, value, header_fmt)
             for col_range, width in widths.items():
                 worksheet.set_column(col_range, width, wrap_fmt)
+            if "Estabilidad (%)" in df_sheet.columns:
+                col_idx = df_sheet.columns.get_loc("Estabilidad (%)")
+                number_fmt = workbook.add_format({"num_format": "0.0", "valign": "top"})
+                worksheet.set_column(col_idx, col_idx, 16, number_fmt)
     return buf.getvalue()
 
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Create a compact summary for GPT responses."""
-    scores = [int(r.get("Score", 0)) for r in results if str(r.get("Status", "")) == "Success"]
+    def _as_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    scores = [
+        _as_int(r.get("Score"))
+        for r in results
+        if str(r.get("Status", "")) == "Success" and _as_int(r.get("Score")) is not None
+    ]
     status_counts = Counter(r.get("Status", "Unknown") for r in results)
-    score_counts = Counter(str(r.get("Score", 0)) for r in results)
+    score_counts = Counter(str(r.get("Score", "")) for r in results)
     by_dimension: dict[str, dict[str, Any]] = {}
 
     for result in results:
         dim = str(result.get("Dimensión", "No especificada"))
-        by_dimension.setdefault(dim, {"count": 0, "average_score": 0.0, "_scores": []})
+        by_dimension.setdefault(dim, {"count": 0, "average_score": None, "_scores": []})
         by_dimension[dim]["count"] += 1
-        by_dimension[dim]["_scores"].append(int(result.get("Score", 0)))
+        value = _as_int(result.get("Score"))
+        if value is not None and str(result.get("Status")) == "Success":
+            by_dimension[dim]["_scores"].append(value)
 
-    for dim, payload in by_dimension.items():
+    for payload in by_dimension.values():
         dim_scores = payload.pop("_scores")
-        payload["average_score"] = round(sum(dim_scores) / len(dim_scores), 2) if dim_scores else 0.0
+        payload["average_score"] = round(sum(dim_scores) / len(dim_scores), 2) if dim_scores else None
+
+    stability_values = []
+    unstable = []
+    repeat_error_count = 0
+    for result in results:
+        try:
+            stab = float(result.get("Estabilidad (%)"))
+        except (TypeError, ValueError):
+            continue
+        stability_values.append(stab)
+        if stab < STABILITY_THRESHOLD_PCT:
+            unstable.append(result)
+        try:
+            repeat_error_count += int(result.get("Corridas con error", 0) or 0)
+        except (TypeError, ValueError):
+            pass
 
     return {
         "total_indicators": len(results),
@@ -508,4 +584,20 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "score_counts": dict(score_counts),
         "statuses": dict(status_counts),
         "by_dimension": by_dimension,
+        "stability_repeats": STABILITY_REPEATS,
+        "stable_threshold_pct": STABILITY_THRESHOLD_PCT,
+        "average_stability_pct": (
+            round(sum(stability_values) / len(stability_values), 1) if stability_values else None
+        ),
+        "stable_count": len(results) - len(unstable),
+        "unstable_count": len(unstable),
+        "unstable": [
+            {
+                "indicador": r.get("Indicador"),
+                "dimension": r.get("Dimensión"),
+                "drift": r.get("Deriva principal (si inestable)", ""),
+            }
+            for r in unstable
+        ],
+        "repeat_error_count": repeat_error_count,
     }

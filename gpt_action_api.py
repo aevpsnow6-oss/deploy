@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 import sustainability_core
 import tab1_v3_core as v3_core
+import tab2_core
 
 APP_TITLE = "ILO PRODOC Evaluation Action API"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -86,7 +87,7 @@ class SustainabilityJobRequest(BaseModel):
         None,
         description=(
             "Optional sustainability rubric dimensions to evaluate. Supported "
-            "values are Diseño, Implementación, and Evaluación."
+            "values are Diseño, Implementación, and Pre-Cierre."
         ),
     )
     indicators: list[str] | None = Field(
@@ -98,6 +99,30 @@ class SustainabilityJobRequest(BaseModel):
         ge=1,
         le=sustainability_core.MAX_WORKERS,
         description="Parallel OpenAI calls for sustainability indicator evaluation.",
+    )
+
+
+class AttributesJobRequest(BaseModel):
+    openaiFileIdRefs: list[OpenAIFileRef] = Field(
+        ...,
+        description=(
+            "Exactly one DOCX document uploaded by the user. ChatGPT populates "
+            "this from the conversation file attachment."
+        ),
+        min_length=1,
+    )
+    rubrics: list[str] | None = Field(
+        None,
+        description=(
+            "Which rubric(s) to evaluate. Supported values are 'participatory', "
+            "'gender', and 'just_transition'. Omit to evaluate all three."
+        ),
+    )
+    max_workers: int = Field(
+        tab2_core.MAX_WORKERS,
+        ge=1,
+        le=tab2_core.MAX_WORKERS,
+        description="Parallel OpenAI calls for repeated criterion evaluation.",
     )
 
 
@@ -188,14 +213,18 @@ def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
                 job_id,
                 completed=done,
                 total=total,
-                message=f"Evaluated {done}/{total} criteria.",
+                message=f"Completed {done}/{total} repeated criterion calls.",
             )
 
+        total_calls = len(criteria) * v3_core.STABILITY_REPEATS
         _set_job(
             job_id,
-            message="Evaluating criteria with OpenAI.",
+            message=(
+                "Evaluating criteria with OpenAI "
+                f"({v3_core.STABILITY_REPEATS} independent runs per criterion)."
+            ),
             completed=0,
-            total=len(criteria),
+            total=total_calls,
             document_name=filename,
             document_word_count=word_count,
         )
@@ -214,8 +243,8 @@ def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
             job_id,
             status="succeeded",
             message="Evaluation complete.",
-            completed=len(results),
-            total=len(results),
+            completed=total_calls,
+            total=total_calls,
             summary=summary,
             result_filename=xlsx_name,
             result_xlsx_b64=base64.b64encode(xlsx_bytes).decode("ascii"),
@@ -254,14 +283,18 @@ def _run_sustainability_job(job_id: str, request: SustainabilityJobRequest) -> N
                 job_id,
                 completed=done,
                 total=total,
-                message=f"Evaluated {done}/{total} indicators.",
+                message=f"Completed {done}/{total} repeated indicator calls.",
             )
 
+        total_calls = len(indicators) * sustainability_core.STABILITY_REPEATS
         _set_job(
             job_id,
-            message="Evaluating sustainability indicators with OpenAI.",
+            message=(
+                "Evaluating sustainability indicators with OpenAI "
+                f"({sustainability_core.STABILITY_REPEATS} independent runs per indicator)."
+            ),
             completed=0,
-            total=len(indicators),
+            total=total_calls,
             document_name=filename,
             document_word_count=word_count,
         )
@@ -280,14 +313,80 @@ def _run_sustainability_job(job_id: str, request: SustainabilityJobRequest) -> N
             job_id,
             status="succeeded",
             message="Sustainability diagnosis complete.",
-            completed=len(results),
-            total=len(results),
+            completed=total_calls,
+            total=total_calls,
             summary=summary,
             result_filename=xlsx_name,
             result_xlsx_b64=base64.b64encode(xlsx_bytes).decode("ascii"),
             result_preview=sustainability_core.results_to_public_dataframe(results)
             .head(10)
             .to_dict("records"),
+        )
+    except Exception as exc:  # noqa: BLE001 - report job failures to the GPT
+        _set_job(job_id, status="failed", message=str(exc), error=str(exc))
+
+
+def _run_attributes_job(job_id: str, request: AttributesJobRequest) -> None:
+    try:
+        _set_job(job_id, status="running", message="Downloading DOCX from ChatGPT.")
+        filename, docx_bytes = _download_docx_file(request.openaiFileIdRefs)
+
+        _set_job(job_id, message="Extracting DOCX text.")
+        document_text = tab2_core.extract_docx_text_from_bytes(docx_bytes)
+        word_count = len(document_text.split())
+
+        _set_job(job_id, message="Selecting attribute rubric(s).")
+        rubric_keys = tab2_core.resolve_rubric_keys(request.rubrics)
+        criteria_count = tab2_core.count_criteria(rubric_keys)
+        if criteria_count == 0:
+            raise ValueError("The selected rubric(s) contain no criteria to evaluate.")
+
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY is not configured on the API server.")
+        client = OpenAI(api_key=openai_api_key)
+
+        def progress(done: int, total: int) -> None:
+            _set_job(
+                job_id,
+                completed=done,
+                total=total,
+                message=f"Completed {done}/{total} repeated criterion calls.",
+            )
+
+        total_calls = criteria_count * tab2_core.STABILITY_REPEATS
+        _set_job(
+            job_id,
+            message=(
+                "Evaluating attribute criteria with OpenAI "
+                f"({tab2_core.STABILITY_REPEATS} independent runs per criterion)."
+            ),
+            completed=0,
+            total=total_calls,
+            document_name=filename,
+            document_word_count=word_count,
+        )
+        results = tab2_core.evaluate_rubrics(
+            client,
+            rubric_keys,
+            document_text,
+            max_workers=request.max_workers,
+            progress_callback=progress,
+        )
+        summary = tab2_core.summarize_results(results)
+        xlsx_bytes = tab2_core.results_to_xlsx_bytes(results)
+        xlsx_name = f"diagnostico_atributos_{_safe_filename_stem(filename)}.xlsx"
+
+        _set_job(
+            job_id,
+            status="succeeded",
+            message="Attribute diagnosis complete.",
+            completed=total_calls,
+            total=total_calls,
+            summary=summary,
+            result_filename=xlsx_name,
+            result_xlsx_b64=base64.b64encode(xlsx_bytes).decode("ascii"),
+            result_preview=tab2_core.results_to_public_dataframe(results).head(10).to_dict("records"),
         )
     except Exception as exc:  # noqa: BLE001 - report job failures to the GPT
         _set_job(job_id, status="failed", message=str(exc), error=str(exc))
@@ -468,6 +567,69 @@ def get_sustainability_diagnosis_result(job_id: str) -> dict[str, Any]:
         "openaiFileResponse": [
             {
                 "name": job.get("result_filename", "diagnostico_sostenibilidad_resultados.xlsx"),
+                "mime_type": XLSX_MIME,
+                "content": job["result_xlsx_b64"],
+            }
+        ],
+    }
+
+
+@app.post("/attributes/jobs", response_model=JobCreated, dependencies=[Depends(require_api_key)])
+def start_attributes_diagnosis_job(request: AttributesJobRequest) -> JobCreated:
+    job_id = str(uuid.uuid4())
+    _set_job(
+        job_id,
+        status="queued",
+        message="Job queued.",
+        created_at=_now(),
+        completed=0,
+        total=0,
+    )
+    thread = threading.Thread(target=_run_attributes_job, args=(job_id, request), daemon=True)
+    thread.start()
+    return JobCreated(
+        job_id=job_id,
+        status="queued",
+        message=(
+            "Attribute diagnosis job started. Poll "
+            "/attributes/jobs/{job_id} until status is succeeded or failed."
+        ),
+    )
+
+
+@app.get("/attributes/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+def get_attributes_diagnosis_job(job_id: str) -> dict[str, Any]:
+    job = _get_job(job_id)
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "message": job.get("message"),
+        "completed": job.get("completed", 0),
+        "total": job.get("total", 0),
+        "document_name": job.get("document_name"),
+        "document_word_count": job.get("document_word_count"),
+        "summary": job.get("summary"),
+        "error": job.get("error"),
+    }
+
+
+@app.get("/attributes/jobs/{job_id}/result", dependencies=[Depends(require_api_key)])
+def get_attributes_diagnosis_result(job_id: str) -> dict[str, Any]:
+    job = _get_job(job_id)
+    if job.get("status") != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is {job.get('status')}; result is available only after success.",
+        )
+
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "summary": job.get("summary"),
+        "result_preview": job.get("result_preview", []),
+        "openaiFileResponse": [
+            {
+                "name": job.get("result_filename", "diagnostico_atributos_resultados.xlsx"),
                 "mime_type": XLSX_MIME,
                 "content": job["result_xlsx_b64"],
             }

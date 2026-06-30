@@ -1,27 +1,29 @@
 openapi: 3.1.0
 info:
-  title: ILO PRODOC Quality Appraisal v3 Action API
+  title: ILO PRODOC Specific-Attributes Diagnosis Action API
   version: 0.1.0
   description: >
-    Starts and retrieves experimental v3 ILO PRODOC quality-appraisal jobs.
-    Each criterion is evaluated 10 independent times; results return one modal
-    result per criterion with stability percentage and principal drift when
-    unstable. Replace the server URL with the HTTPS domain where the API is
-    deployed before importing this schema into the Custom GPT editor.
+    Starts and retrieves ILO specific-attributes diagnosis jobs (participatory
+    methods, gender, just transition). The caller chooses which rubric(s) to
+    evaluate. Each criterion is evaluated 5 independent times; results return one
+    modal score (1-5) per criterion with a stability percentage and principal
+    drift when unstable. Replace the server URL with the HTTPS domain where the
+    shared action API is deployed before importing this schema into the Custom
+    GPT editor.
 servers:
   - url: https://ilo-prodoc-appraisal-v3.onrender.com
 security:
   - ApiKeyAuth: []
 paths:
-  /v3/jobs:
+  /attributes/jobs:
     post:
-      operationId: startV3AppraisalJob
-      summary: Start a v3 PRODOC quality-appraisal job
+      operationId: startAttributesDiagnosisJob
+      summary: Start a specific-attributes diagnosis job
       description: >
-        Starts an asynchronous evaluation of exactly one DOCX PRODOC using the
-        server-side v3 rubric. Each selected criterion is evaluated 10 times
-        and collapsed to one modal result with stability metrics. The file must
-        be sent through openaiFileIdRefs.
+        Starts an asynchronous evaluation of exactly one DOCX document against
+        the selected attribute rubric(s). Each selected criterion is evaluated 5
+        times and collapsed to one modal score with stability metrics. The file
+        must be sent through openaiFileIdRefs.
       x-openai-isConsequential: false
       requestBody:
         required: true
@@ -35,7 +37,7 @@ paths:
                 openaiFileIdRefs:
                   type: array
                   description: >
-                    Exactly one DOCX PRODOC uploaded by the user. ChatGPT will
+                    Exactly one DOCX document uploaded by the user. ChatGPT will
                     populate this array with file reference objects containing
                     name, id, mime_type, and download_link.
                   minItems: 1
@@ -54,21 +56,24 @@ paths:
                     required:
                       - name
                       - download_link
-                sections:
+                rubrics:
                   type: array
-                  description: Optional section numbers to evaluate, e.g. [1, 2].
-                  items:
-                    type: integer
-                subsections:
-                  type: array
-                  description: Optional subsection IDs to evaluate, e.g. ["1.1", "2.3"].
+                  description: >
+                    Which rubric(s) to evaluate. Use 'participatory' for
+                    participatory methodologies, 'gender' for gender integration,
+                    'just_transition' for the modern just-transition approach.
+                    Omit to evaluate all three.
                   items:
                     type: string
+                    enum:
+                      - participatory
+                      - gender
+                      - just_transition
                 max_workers:
                   type: integer
-                  description: Parallel OpenAI calls for repeated criterion evaluation. Default is 48.
+                  description: Parallel OpenAI calls for repeated criterion evaluation. Default is 8.
                   minimum: 1
-                  maximum: 48
+                  maximum: 8
       responses:
         "200":
           description: Job was accepted.
@@ -83,10 +88,10 @@ paths:
                     type: string
                   message:
                     type: string
-  /v3/jobs/{job_id}:
+  /attributes/jobs/{job_id}:
     get:
-      operationId: getV3AppraisalJobStatus
-      summary: Get v3 appraisal job status
+      operationId: getAttributesDiagnosisJobStatus
+      summary: Get specific-attributes diagnosis job status
       description: Poll this endpoint until status is succeeded or failed.
       x-openai-isConsequential: false
       parameters:
@@ -126,15 +131,15 @@ paths:
                     type: object
                   error:
                     type: string
-  /v3/jobs/{job_id}/result:
+  /attributes/jobs/{job_id}/result:
     get:
-      operationId: getV3AppraisalResult
-      summary: Get v3 appraisal XLSX result
+      operationId: getAttributesDiagnosisResult
+      summary: Get specific-attributes diagnosis XLSX result
       description: >
         Returns the completed summary, a small user-facing preview, and an XLSX
         file via openaiFileResponse. The workbook includes a friendly summary
-        sheet plus a technical audit sheet with stability distribution. Call
-        only after status is succeeded.
+        sheet plus a technical audit sheet with stability distribution. Call only
+        after status is succeeded.
       x-openai-isConsequential: false
       parameters:
         - in: path

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
@@ -23,6 +24,11 @@ HEADER_ROW_INDEX = 1
 MODEL = "gpt-5-mini"
 MAX_WORKERS = 48
 MAX_COMPLETION_TOKENS = 4000
+STABILITY_REPEATS = 10
+STABILITY_THRESHOLD_PCT = 80.0
+MAX_REPEAT_CALL_RETRIES = 4
+RETRY_BACKOFF_SECONDS = 1.5
+ANSWER_ORDER = ["Yes", "Partial", "No", "Not Found", "N/A", "Error"]
 
 RESULT_COLUMNS = [
     "ID",
@@ -33,6 +39,13 @@ RESULT_COLUMNS = [
     "Subjetividad",
     "Transversales",
     "Respuesta",
+    "N corridas",
+    "Conteo modal",
+    "Estabilidad (%)",
+    "Estable (>=80%)",
+    "Deriva principal (si inestable)",
+    "Distribución de respuestas",
+    "Corridas con error",
     "Razonamiento",
     "Evidencia",
     "Status",
@@ -46,6 +59,8 @@ PUBLIC_RESULT_COLUMNS = [
     "Subjetividad",
     "Transversales",
     "Resultado de valoración",
+    "Estabilidad (%)",
+    "Deriva principal (si inestable)",
     "Lectura rápida",
     "Principal oportunidad de mejora",
     "Evidencia clave",
@@ -266,6 +281,26 @@ def build_user_prompt(row: pd.Series, document_text: str) -> str:
     )
 
 
+def _extract_usage(resp: Any) -> dict[str, int]:
+    """Pull token-usage fields from a chat.completions response (all default to 0)."""
+    usage = getattr(resp, "usage", None)
+    if usage is None:
+        return {
+            "usage_prompt_tokens": 0,
+            "usage_cached_tokens": 0,
+            "usage_completion_tokens": 0,
+            "usage_reasoning_tokens": 0,
+        }
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    completion_details = getattr(usage, "completion_tokens_details", None)
+    return {
+        "usage_prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+        "usage_cached_tokens": getattr(prompt_details, "cached_tokens", 0) or 0,
+        "usage_completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+        "usage_reasoning_tokens": getattr(completion_details, "reasoning_tokens", 0) or 0,
+    }
+
+
 def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[str, Any]:
     """Run a single criterion through the v3 prompt and return a result dict."""
     crit_id = str(row.get("ID", ""))
@@ -282,6 +317,12 @@ def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[
         "Tipo": str(row.get("Tipo de criterio", "")),
         "Subjetividad": subj,
         "Transversales": str(row.get("Aspectos transversales", "Ninguno")),
+        "reasoning_effort": effort,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
+        "usage_prompt_tokens": 0,
+        "usage_cached_tokens": 0,
+        "usage_completion_tokens": 0,
+        "usage_reasoning_tokens": 0,
     }
 
     if not document_text or not document_text.strip():
@@ -308,6 +349,7 @@ def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[
         if not content:
             return {
                 **base,
+                **_extract_usage(resp),
                 "Respuesta": "Error",
                 "Razonamiento": "Respuesta vacía del modelo.",
                 "Evidencia": "",
@@ -316,6 +358,7 @@ def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[
         result = json.loads(content)
         return {
             **base,
+            **_extract_usage(resp),
             "Respuesta": result.get("Respuesta", "Not Found"),
             "Razonamiento": result.get("Razonamiento", ""),
             "Evidencia": result.get("Evidencia", ""),
@@ -331,6 +374,172 @@ def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[
         }
 
 
+def _answer_order_index(answer: str) -> int:
+    try:
+        return ANSWER_ORDER.index(str(answer))
+    except ValueError:
+        return len(ANSWER_ORDER)
+
+
+def _format_pct(value: float) -> str:
+    return f"{value:.0f}%" if float(value).is_integer() else f"{value:.1f}%"
+
+
+def _distribution_text(counts: Counter[str]) -> str:
+    parts = []
+    for answer in ANSWER_ORDER:
+        count = counts.get(answer, 0)
+        if count:
+            parts.append(f"{answer}={count}")
+    for answer in sorted(set(counts) - set(ANSWER_ORDER)):
+        parts.append(f"{answer}={counts[answer]}")
+    return "; ".join(parts)
+
+
+def _drift_text(
+    counts: Counter[str],
+    modal_answer: str,
+    total: int,
+    stable: bool,
+) -> str:
+    if stable:
+        return ""
+
+    remaining = total - counts.get(modal_answer, 0)
+    if remaining <= 0:
+        return ""
+
+    non_modal = {
+        answer: count
+        for answer, count in counts.items()
+        if answer != modal_answer and count > 0
+    }
+    if not non_modal:
+        return ""
+
+    max_count = max(non_modal.values())
+    top_answers = sorted(
+        [answer for answer, count in non_modal.items() if count == max_count],
+        key=_answer_order_index,
+    )
+    label = " / ".join(top_answers)
+    tie_prefix = "empate: " if len(top_answers) > 1 else ""
+    total_pct = 100 * max_count / total
+    return (
+        f"{label} "
+        f"({tie_prefix}{max_count}/{remaining} restantes; {_format_pct(total_pct)} total)"
+    )
+
+
+def _representative_modal_result(
+    repeated_results: list[dict[str, Any]],
+    modal_answer: str,
+) -> dict[str, Any]:
+    candidates = [
+        result
+        for result in repeated_results
+        if str(result.get("Respuesta", "Error")) == modal_answer
+    ] or repeated_results
+
+    return max(
+        candidates,
+        key=lambda result: (
+            result.get("Status") == "Success",
+            len(str(result.get("Evidencia", ""))),
+            -int(result.get("repeat", 0) or 0),
+        ),
+    )
+
+
+def aggregate_repeated_criterion_results(
+    repeated_results: list[dict[str, Any]],
+    stability_threshold_pct: float = STABILITY_THRESHOLD_PCT,
+) -> dict[str, Any]:
+    """Collapse repeated criterion evaluations into one modal result plus stability."""
+    if not repeated_results:
+        return {
+            "Respuesta": "Error",
+            "N corridas": 0,
+            "Conteo modal": 0,
+            "Estabilidad (%)": 0.0,
+            "Estable (>=80%)": "No",
+            "Deriva principal (si inestable)": "",
+            "Distribución de respuestas": "",
+            "Corridas con error": 0,
+            "Razonamiento": "No se recibieron corridas para este criterio.",
+            "Evidencia": "",
+            "Status": "Error",
+        }
+
+    repeated_results = sorted(
+        repeated_results,
+        key=lambda result: int(result.get("repeat", 0) or 0),
+    )
+    counts: Counter[str] = Counter(
+        str(result.get("Respuesta", "Error")) for result in repeated_results
+    )
+    total = len(repeated_results)
+    modal_answer = min(
+        counts,
+        key=lambda answer: (-counts[answer], _answer_order_index(answer)),
+    )
+    modal_count = counts[modal_answer]
+    stability_pct = round(100 * modal_count / total, 1)
+    stable = stability_pct >= stability_threshold_pct
+    drift = _drift_text(counts, modal_answer, total, stable)
+    distribution = _distribution_text(counts)
+    representative = _representative_modal_result(repeated_results, modal_answer)
+    error_count = sum(
+        1
+        for result in repeated_results
+        if result.get("Status") == "Error" or str(result.get("Respuesta")) == "Error"
+    )
+
+    reasoning_prefix = (
+        f"Resultado modal tras {total} corridas independientes: {modal_answer} "
+        f"({modal_count}/{total}; {_format_pct(stability_pct)} de estabilidad). "
+        f"Distribución: {distribution}."
+    )
+    if not stable:
+        reasoning_prefix += f" Resultado inestable (<{_format_pct(stability_threshold_pct)})."
+        if drift:
+            reasoning_prefix += f" Deriva principal: {drift}."
+
+    return {
+        **representative,
+        "Respuesta": modal_answer,
+        "N corridas": total,
+        "Conteo modal": modal_count,
+        "Estabilidad (%)": stability_pct,
+        "Estable (>=80%)": "Sí" if stable else "No",
+        "Deriva principal (si inestable)": drift,
+        "Distribución de respuestas": distribution,
+        "Corridas con error": error_count,
+        "Razonamiento": (
+            f"{reasoning_prefix}\n\n"
+            "Razonamiento representativo de una corrida con el resultado modal:\n"
+            f"{representative.get('Razonamiento', '')}"
+        ).strip(),
+        "Status": "Error" if modal_answer == "Error" else "Success",
+    }
+
+
+def evaluate_criterion_with_retries(
+    client: Any,
+    row: pd.Series,
+    document_text: str,
+    max_retries: int = MAX_REPEAT_CALL_RETRIES,
+) -> dict[str, Any]:
+    """Run one criterion call, retrying only model/API failures reported as Error."""
+    result = evaluate_criterion(client, row, document_text)
+    for attempt in range(1, max_retries + 1):
+        if result.get("Status") != "Error":
+            break
+        time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+        result = evaluate_criterion(client, row, document_text)
+    return result
+
+
 def evaluate_criteria(
     client: Any,
     df_criteria: pd.DataFrame,
@@ -338,25 +547,40 @@ def evaluate_criteria(
     max_workers: int = MAX_WORKERS,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Evaluate all rows in a rubric dataframe."""
-    total = len(df_criteria)
+    """Evaluate all rows using the standard 10-repeat stability scheme."""
+    total_criteria = len(df_criteria)
     results: list[dict[str, Any]] = []
-    if total == 0:
+    if total_criteria == 0:
         return results
 
-    workers = max(1, min(int(max_workers), total))
+    rows = [(str(row["ID"]), row.copy()) for _, row in df_criteria.iterrows()]
+    total_calls = total_criteria * STABILITY_REPEATS
+    repeated_by_id: dict[str, list[dict[str, Any]]] = {
+        crit_id: [] for crit_id, _ in rows
+    }
+    workers = max(1, min(int(max_workers), total_calls))
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {
-            ex.submit(evaluate_criterion, client, row, document_text): row["ID"]
-            for _, row in df_criteria.iterrows()
-        }
+        futures = {}
+        for crit_id, row in rows:
+            for repeat in range(1, STABILITY_REPEATS + 1):
+                futures[
+                    ex.submit(evaluate_criterion_with_retries, client, row, document_text)
+                ] = (crit_id, repeat)
+
         done = 0
         for fut in as_completed(futures):
-            results.append(fut.result())
+            crit_id, repeat = futures[fut]
+            result = fut.result()
+            result["repeat"] = repeat
+            repeated_by_id[crit_id].append(result)
             done += 1
             if progress_callback:
-                progress_callback(done, total)
+                progress_callback(done, total_calls)
 
+    results = [
+        aggregate_repeated_criterion_results(repeated_by_id[crit_id])
+        for crit_id, _ in rows
+    ]
     results.sort(key=lambda r: _id_sort_key(r["ID"]))
     return results
 
@@ -428,6 +652,16 @@ def _review_flag(row: pd.Series) -> str:
     reasons = []
     if str(row.get("Subjetividad", "")).strip() == "Alta":
         reasons.append("subjetividad alta")
+    stability = row.get("Estabilidad (%)")
+    if stability is not None and not pd.isna(stability):
+        try:
+            if float(stability) < STABILITY_THRESHOLD_PCT:
+                reasons.append(
+                    f"estabilidad <{_format_pct(STABILITY_THRESHOLD_PCT)} "
+                    f"({_format_pct(float(stability))})"
+                )
+        except (TypeError, ValueError):
+            pass
     if str(row.get("Respuesta", "")).strip() in {"Partial", "No", "Not Found", "Error"}:
         reasons.append("resultado requiere revisión")
     return "Sí - " + "; ".join(reasons) if reasons else "No - revisión muestral"
@@ -453,7 +687,7 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
     """Serialize v3 results to a two-level XLSX workbook.
 
     The first sheet is a readable summary for ordinary users. The second sheet
-    keeps the full audit trail so reviewers can inspect the exact TEST logic.
+    keeps the stability distribution and representative TEST audit trail.
     """
     public_df = results_to_public_dataframe(results)
     technical_df = results_to_dataframe(results)
@@ -476,9 +710,10 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
                     "B:B": 12,
                     "C:C": 58,
                     "D:F": 18,
-                    "G:G": 18,
-                    "H:J": 42,
-                    "K:K": 28,
+                    "G:H": 18,
+                    "I:I": 34,
+                    "J:L": 42,
+                    "M:M": 32,
                 },
             ),
             "Auditoria tecnica": (
@@ -487,9 +722,11 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
                     "A:B": 10,
                     "C:D": 52,
                     "E:G": 18,
-                    "H:H": 18,
-                    "I:J": 60,
-                    "K:K": 14,
+                    "H:L": 16,
+                    "M:N": 34,
+                    "O:O": 14,
+                    "P:Q": 60,
+                    "R:R": 14,
                 },
             ),
         }
@@ -501,6 +738,10 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
                 worksheet.write(0, col_num, value, header_fmt)
             for col_range, width in widths.items():
                 worksheet.set_column(col_range, width, wrap_fmt)
+            if "Estabilidad (%)" in df_sheet.columns:
+                col_idx = df_sheet.columns.get_loc("Estabilidad (%)")
+                number_fmt = workbook.add_format({"num_format": "0.0", "valign": "top"})
+                worksheet.set_column(col_idx, col_idx, 18, number_fmt)
     return buf.getvalue()
 
 
@@ -518,6 +759,26 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         by_subjectivity.setdefault(subj, {})
         by_subjectivity[subj][ans] = by_subjectivity[subj].get(ans, 0) + 1
 
+    stability_values = []
+    unstable_results = []
+    repeat_error_count = 0
+    criteria_with_repeat_errors = []
+    for result in results:
+        try:
+            stability = float(result.get("Estabilidad (%)"))
+        except (TypeError, ValueError):
+            continue
+        stability_values.append(stability)
+        if stability < STABILITY_THRESHOLD_PCT:
+            unstable_results.append(result)
+        try:
+            repeat_errors = int(result.get("Corridas con error", 0) or 0)
+        except (TypeError, ValueError):
+            repeat_errors = 0
+        repeat_error_count += repeat_errors
+        if repeat_errors:
+            criteria_with_repeat_errors.append(result.get("ID"))
+
     return {
         "total_criteria": len(results),
         "answers": dict(answer_counts),
@@ -525,4 +786,20 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "by_subjectivity": by_subjectivity,
         "high_subjectivity_count": len(high_subjectivity),
         "high_subjectivity_ids": [r.get("ID") for r in high_subjectivity],
+        "stability_repeats": STABILITY_REPEATS,
+        "stable_threshold_pct": STABILITY_THRESHOLD_PCT,
+        "average_stability_pct": (
+            round(sum(stability_values) / len(stability_values), 1)
+            if stability_values
+            else None
+        ),
+        "stable_count": len(results) - len(unstable_results),
+        "unstable_count": len(unstable_results),
+        "unstable_ids": [r.get("ID") for r in unstable_results],
+        "unstable_drift": {
+            str(r.get("ID")): r.get("Deriva principal (si inestable)", "")
+            for r in unstable_results
+        },
+        "repeat_error_count": repeat_error_count,
+        "criteria_with_repeat_errors": criteria_with_repeat_errors,
     }

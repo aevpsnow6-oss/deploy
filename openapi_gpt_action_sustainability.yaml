@@ -3,9 +3,12 @@ info:
   title: ILO PRODOC Sustainability Diagnosis Action API
   version: 0.1.0
   description: >
-    Starts and retrieves ILO project-sustainability diagnosis jobs. Replace the
-    server URL with the HTTPS domain where the shared action API is deployed
-    before importing this schema into the Custom GPT editor.
+    Starts and retrieves ILO project-sustainability diagnosis jobs. Each
+    indicator is evaluated 5 independent times; results return one modal score
+    (0-3) per indicator with a stability percentage and principal drift when
+    unstable. Replace the server URL with the HTTPS domain where the shared
+    action API is deployed before importing this schema into the Custom GPT
+    editor.
 servers:
   - url: https://ilo-prodoc-appraisal-v3.onrender.com
 security:
@@ -17,7 +20,9 @@ paths:
       summary: Start a project-sustainability diagnosis job
       description: >
         Starts an asynchronous sustainability-rubric evaluation of exactly one
-        DOCX project document. The file must be sent through openaiFileIdRefs.
+        DOCX project document. Each selected indicator is evaluated 5 times and
+        collapsed to one modal score with stability metrics. The file must be
+        sent through openaiFileIdRefs.
       x-openai-isConsequential: false
       requestBody:
         required: true
@@ -55,14 +60,14 @@ paths:
                   description: >
                     Optional dimensions to evaluate. Use Diseño for PRODOC/design
                     documents, Implementación for progress/implementation
-                    documents, Evaluación for evaluation reports, or omit for
-                    the full rubric.
+                    documents, Pre-Cierre for pre-closure verification, or omit
+                    for the full rubric.
                   items:
                     type: string
                     enum:
                       - Diseño
                       - Implementación
-                      - Evaluación
+                      - Pre-Cierre
                 indicators:
                   type: array
                   description: Optional indicator IDs to evaluate, e.g. ["1.1", "3.1"].
@@ -70,7 +75,7 @@ paths:
                     type: string
                 max_workers:
                   type: integer
-                  description: Parallel OpenAI calls for indicator evaluation. Default is 8.
+                  description: Parallel OpenAI calls for repeated indicator evaluation. Default is 8.
                   minimum: 1
                   maximum: 8
       responses:

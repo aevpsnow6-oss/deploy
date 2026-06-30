@@ -16,7 +16,6 @@ Sin estado compartido con Tab 1 actual (claves de session_state con prefijo "v3_
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import pandas as pd
@@ -25,10 +24,10 @@ import tab1_v3_core as v3_core
 from tab1_v3_core import (
     MAX_WORKERS,
     RUBRICA_V3_PATH,
+    STABILITY_REPEATS,
+    STABILITY_THRESHOLD_PCT,
     _extract_section,
     _extract_subsection,
-    _id_sort_key,
-    evaluate_criterion,
 )
 
 
@@ -62,6 +61,8 @@ def render(client: Any) -> None:
 - **Rúbrica por criterio**: cada uno de los 76 criterios tiene TESTS atómicos (T1, T2, T3...) con
   una regla de decisión booleana explícita.
 - **Decisión mecanizada**: el modelo aplica la regla, no interpreta prosa.
+- **Estabilidad estándar**: cada criterio se evalúa 10 veces y se reporta un resultado modal
+  con porcentaje de estabilidad.
 - **Anclas verificables**: patrones de texto concretos a buscar (códigos CPO, convenios, regex de
   indicadores ODS, etc.).
 - **Filtro DEDICADO vs MARCO selectivo**: se aplica solo donde la rúbrica del criterio lo invoca,
@@ -144,33 +145,36 @@ def render(client: Any) -> None:
     st.info(f"📌 {len(df_filtered)} criterios seleccionados para evaluación.")
 
     # ---- Run ----
-    if st.button("▶️ Evaluar con v3", key="v3_run", type="primary"):
+    if st.button("▶️ Evaluar con v3 (10 corridas por criterio)", key="v3_run", type="primary"):
         if df_filtered.empty:
             st.warning("No hay criterios para evaluar con los filtros actuales.")
             return
 
         progress = st.progress(0.0)
         status = st.empty()
-        results: list[dict[str, Any]] = []
-        total = len(df_filtered)
+        total_calls = len(df_filtered) * STABILITY_REPEATS
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-            futures = {
-                ex.submit(evaluate_criterion, client, row, text): row["ID"]
-                for _, row in df_filtered.iterrows()
-            }
-            done = 0
-            for fut in as_completed(futures):
-                results.append(fut.result())
-                done += 1
-                progress.progress(done / total)
-                status.text(f"Evaluado {done}/{total} criterios")
+        def update_progress(done: int, total: int) -> None:
+            progress.progress(done / total)
+            status.text(
+                f"Corridas completadas {done}/{total} "
+                f"({STABILITY_REPEATS} por criterio)"
+            )
 
-        results.sort(key=lambda r: _id_sort_key(r["ID"]))
+        results = v3_core.evaluate_criteria(
+            client,
+            df_filtered,
+            text,
+            max_workers=MAX_WORKERS,
+            progress_callback=update_progress,
+        )
         st.session_state["v3_results"] = results
         progress.empty()
         status.empty()
-        st.success(f"✅ Evaluación v3 completa: {len(results)} criterios.")
+        st.success(
+            f"✅ Evaluación v3 completa: {len(results)} criterios, "
+            f"{total_calls} corridas."
+        )
 
     # ---- Results ----
     if "v3_results" not in st.session_state:
@@ -191,6 +195,17 @@ def render(client: Any) -> None:
         "Not Found / N/A / Error",
         int(df_res["Respuesta"].isin(["Not Found", "N/A", "Error"]).sum()),
     )
+
+    if "Estabilidad (%)" in df_res.columns:
+        avg_stability = (
+            float(df_res["Estabilidad (%)"].mean()) if not df_res.empty else 0.0
+        )
+        stable_count = int((df_res["Estabilidad (%)"] >= STABILITY_THRESHOLD_PCT).sum())
+        unstable_count = int((df_res["Estabilidad (%)"] < STABILITY_THRESHOLD_PCT).sum())
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Estabilidad media", f"{avg_stability:.1f}%")
+        s2.metric(f"Estables (≥{STABILITY_THRESHOLD_PCT:.0f}%)", stable_count)
+        s3.metric(f"Inestables (<{STABILITY_THRESHOLD_PCT:.0f}%)", unstable_count)
 
     # Distribution by subjectivity (helpful to see where v3 may be unstable)
     if "Subjetividad" in df_res.columns:
@@ -257,10 +272,33 @@ toca el tema.
             """
         )
 
-        # --- 2. Tipos de criterio ---
+        # --- 2. Estabilidad ---
+        st.markdown(
+            f"""
+### 2. ¿Qué significa la columna "Estabilidad (%)"?
+
+Cada criterio se evalúa **{STABILITY_REPEATS} veces de forma independiente**. La tabla muestra
+un solo resultado: el resultado que apareció más veces. La columna **Estabilidad (%)** indica
+qué porcentaje de las {STABILITY_REPEATS} corridas coincidió con ese resultado modal.
+
+| Ejemplo | Lectura |
+|---|---|
+| **Yes**, Estabilidad 100% | Las {STABILITY_REPEATS} corridas dieron Yes. Resultado muy estable. |
+| **Yes**, Estabilidad 80% | 8 de {STABILITY_REPEATS} corridas dieron Yes. Cumple el umbral de estabilidad. |
+| **Yes**, Estabilidad 60%, Deriva principal: Partial (3/4 restantes) | El resultado modal es Yes, pero es inestable; cuando cambia, tiende a Partial. |
+
+Se considera **estable** un resultado con **≥{STABILITY_THRESHOLD_PCT:.0f}%** de estabilidad.
+Los resultados por debajo de ese umbral deben revisarse manualmente aunque la etiqueta modal
+parezca favorable.
+
+---
+            """
+        )
+
+        # --- 3. Tipos de criterio ---
         st.markdown(
             """
-### 2. ¿Qué significa cada tipo de criterio?
+### 3. ¿Qué significa cada tipo de criterio?
 
 La columna **Tipo** te dice qué clase de juicio hace la rúbrica. Hay 6 tipos base y
 algunos criterios combinan varios (p.ej. "Lista transversal SMART"). Saber el tipo
@@ -272,7 +310,7 @@ te ayuda a entender por qué el razonamiento luce como luce.
 | **Lista de verificación** | Múltiples elementos atómicos (A, B, C…). | Regla por cantidad: cumple X de N elementos. | El análisis del problema requiere descripción + fuentes + cuantificación + delimitación. |
 | **Calidad narrativa** | Coherencia, claridad o convicción de un argumento. | Tests más interpretativos. Subjetividad usualmente Media o Alta. | "¿La teoría del cambio es plausible para no especialistas?" |
 | **Condicional** | Solo aplica si una condición previa se cumple. | Primero verifica condición; si no se cumple → N/A. | Plantilla DCOMM exigida solo si presupuesto > 5M USD. |
-| **Transversal** | Tema transversal (género, discapacidad, NIT, EAS, indígenas, ambiente). | Aplica el filtro DEDICADO vs MARCO (sección 6). | Inclusión de personas con discapacidad. |
+| **Transversal** | Tema transversal (género, discapacidad, NIT, EAS, indígenas, ambiente). | Aplica el filtro DEDICADO vs MARCO (sección 7). | Inclusión de personas con discapacidad. |
 | **Calibración** | Compara contra un benchmark externo (etiqueta CPO, marcador de género, % de presupuesto). | Pregunta: "¿el nivel del documento coincide con el benchmark?" | El nivel de ambición sobre discapacidad está a la par con la etiqueta del CPO. |
 
 #### Tipos compuestos
@@ -297,10 +335,10 @@ Subjetividad Media o Alta.
             """
         )
 
-        # --- 3. Razonamiento ---
+        # --- 4. Razonamiento ---
         st.markdown(
             """
-### 3. ¿Cómo está estructurado el "Razonamiento"?
+### 4. ¿Cómo está estructurado el "Razonamiento"?
 
 El razonamiento técnico te muestra **exactamente por qué el modelo llegó a ese resultado**.
 En la descarga aparece en la hoja **Auditoria tecnica** y sigue este formato:
@@ -338,10 +376,10 @@ una etiqueta final.
         )
         st.markdown("---")
 
-        # --- 4. Evidencia ---
+        # --- 5. Evidencia ---
         st.markdown(
             """
-### 4. ¿Cómo está estructurada la "Evidencia"?
+### 5. ¿Cómo está estructurada la "Evidencia"?
 
 Son citas textuales del PRODOC que respaldan el resultado. Hay dos tipos válidos:
             """
@@ -364,10 +402,10 @@ Son citas textuales del PRODOC que respaldan el resultado. Hay dos tipos válido
         )
         st.markdown("---")
 
-        # --- 5. Subjetividad ---
+        # --- 6. Subjetividad ---
         st.markdown(
             """
-### 5. ¿Qué es la columna "Subjetividad"?
+### 6. ¿Qué es la columna "Subjetividad"?
 
 Algunos criterios son **fáciles de verificar mecánicamente** (¿aparece un código ODS
 como 8.5.2? Sí o no). Otros requieren **juicio cualitativo** (¿la teoría del cambio es
@@ -376,7 +414,7 @@ después de aplicar la rúbrica:
 
 | Nivel | # criterios | Qué tan reproducible es | Qué hacer |
 |---|---|---|---|
-| 🟢 **Baja** | 27 | Muy reproducible — dos corridas del mismo PRODOC darían el mismo resultado. | Confiar. Auditar ~10% al azar. |
+| 🟢 **Baja** | 27 | Muy reproducible — sus 10 corridas suelen devolver el mismo resultado. | Confiar. Auditar ~10% al azar. |
 | 🟡 **Media** | 37 | Reproducible en general; algunos casos en el borde pueden variar. | Confiar; verificar manualmente los *Partial* y *Not Found*. |
 | 🟠 **Alta** | 12 | Juicio cualitativo irreducible — puede variar entre corridas. | Tratar como hipótesis. Leer razonamiento y evidencia manualmente. |
 
@@ -387,10 +425,10 @@ criterios de Subjetividad Alta**. Para esos, el modelo es tu asistente, no tu ju
             """
         )
 
-        # --- 6. DEDICADO vs MARCO ---
+        # --- 7. DEDICADO vs MARCO ---
         st.markdown(
             """
-### 6. El filtro DEDICADO vs MARCO — el concepto más importante
+### 7. El filtro DEDICADO vs MARCO — el concepto más importante
 
 Este filtro aplica a los criterios que evalúan **temas transversales**: género,
 discapacidad, pueblos indígenas, normas laborales, medio ambiente, explotación y abuso
@@ -464,6 +502,7 @@ naturaleza del proyecto lo justifica.
         "📌 La columna **Pregunta orientadora** es el enunciado general de la "
         "subsección del cuestionario OIT (1.1, 1.2, …). Aparece como contexto y "
         "**no es evaluada**. Solo la columna **Criterio** dispara los TESTS de la rúbrica. "
+        "La columna **Estabilidad (%)** resume las 10 corridas independientes por criterio. "
         "Los criterios largos se mantienen completos en la tabla y en la descarga."
     )
     st.dataframe(df_public, use_container_width=True, height=500)
