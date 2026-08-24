@@ -18,7 +18,9 @@ All three share **one** deployed API. You do not need three servers — each GPT
   -> stability.py: modal result + stability percentage, returned in XLSX
 ```
 
-Do not publish these GPTs publicly. PRODOCs may contain sensitive project material. Share them only inside the relevant ILO ChatGPT workspace or with named ILO users/groups.
+**Sharing model (as deployed, August 2026).** All three GPTs are set to **"Anyone with a link"**. They are not listed in the public GPT directory, but the link is a bearer credential: anyone holding it, with any ChatGPT account, can open the assistant and run evaluations against the shared backend and the shared `OPENAI_API_KEY`. There is no authorised-user list and no per-user attribution of spend.
+
+PRODOCs may contain sensitive project material, so treat link distribution as the access control it actually is. If tighter control is needed, move the GPTs into an ILO ChatGPT workspace and share them with named users or groups instead — that is identity-based, revocable per person, and does not leak by forwarding. Revoking a link-shared GPT requires changing its sharing setting or republishing it to mint a new URL.
 
 ## Files Added
 

@@ -128,7 +128,7 @@ meta_table = doc.add_table(rows=7, cols=2)
 meta_table.style = "Table Grid"
 meta_table.alignment = WD_TABLE_ALIGNMENT.CENTER
 meta_data = [
-    ("Organización", "Oficina Internacional del Trabajo (OIT) – Oficina Regional para América Latina y el Caribe"),
+    ("Organización", "Organización Internacional del Trabajo (OIT) – Oficina Regional para América Latina y el Caribe"),
     ("Orden de Compra", "40551829 / 0"),
     ("Consultor", "Ahmed Guillermo Eid Valdiviezo"),
     ("Período de ejecución", "25 de mayo de 2026 – 8 de junio de 2026"),
@@ -175,7 +175,7 @@ add_body(doc, "Los entregables principales son:", space_after=2)
 for item in [
     ("Rúbrica v3 mecanizada (Tab 1):", " Evaluación automatizada de 76 criterios de calidad de PRODOCs con motor de razonamiento adaptativo y salida XLSX estructurada."),
     ("Aplicación Streamlit modularizada:", " Separación del código fuente en dos módulos independientes: valoración de calidad de proyectos (oli_v6_deploy_core.py) y clasificación de recomendaciones (oli_v6_deploy_recommendations.py)."),
-    ("Tres GPTs publicados:", " GPT de valoración preliminar de calidad (Tab 1 v3), GPT de diagnóstico de sostenibilidad (Tab 3) y GPT de clasificación de recomendaciones, todos con backend FastAPI desplegado en Render."),
+    ("Tres GPTs publicados:", " GPT de valoración preliminar de calidad (Tab 1 v3), GPT de diagnóstico de sostenibilidad (Tab 3) y GPT de diagnóstico de atributos específicos (Tab 2), todos con backend FastAPI desplegado en Render."),
     ("Documentación técnica:", " Guías de configuración, transferencia y uso para cada módulo y GPT."),
 ]:
     add_bullet(doc, item[1], bold_prefix=item[0])
@@ -402,12 +402,15 @@ doc.add_paragraph()
 add_heading(doc, "5.1 GPT de Valoración Preliminar de Calidad (Tab 1 v3)", level=2)
 
 for item in [
-    ("Nombre:", " ILO PRODOC Quality Appraisal v3"),
+    ("Nombre:", " ILO PRODOC Quality Appraisal"),
+    ("Enlace:", " https://chatgpt.com/g/g-6a2643b11e708191adc1c03e64260a25-ilo-prodoc-quality-appraisal"),
     ("Endpoint:", " POST /v3/jobs → GET /v3/jobs/{id} → GET /v3/jobs/{id}/result"),
     ("Motor:", " tab1_v3_core.py + Rubrica_Tab1_Detallada_Full_v3.xlsx"),
     ("Criterios:", " 76 criterios distribuidos en 5 secciones; evaluación completa o filtrada por sección/subsección"),
+    ("Escala:", " Yes / Partial / No / Not Found / N/A por criterio"),
+    ("Estabilidad:", " 10 corridas por criterio (STABILITY_REPEATS) consolidadas por moda, umbral de 80%; del orden de 760 llamadas al modelo en una valoración completa"),
     ("Modelo:", " gpt-5-mini con razonamiento adaptativo (effort medium/minimal según subjetividad del criterio)"),
-    ("Estado:", " Publicado, acceso por enlace, backend operativo en https://ilo-prodoc-appraisal-v3.onrender.com"),
+    ("Estado:", " Publicado con visibilidad \"Anyone with a link\"; backend operativo en https://ilo-prodoc-appraisal-v3.onrender.com"),
 ]:
     add_bullet(doc, item[1], bold_prefix=item[0])
 
@@ -416,25 +419,30 @@ doc.add_paragraph()
 add_heading(doc, "5.2 GPT de Diagnóstico de Sostenibilidad (Tab 3)", level=2)
 
 for item in [
-    ("Nombre:", " ILO PRODOC Sustainability Diagnosis"),
+    ("Nombre:", " OIT - Diagnóstico de Sostenibilidad del Proyecto"),
+    ("Enlace:", " https://chatgpt.com/g/g-6a43d24307b88191bb362632f133c0f3-oit-diagnostico-de-sostenibilidad-del-proyecto"),
     ("Endpoint:", " POST /sustainability/jobs → GET /sustainability/jobs/{id} → GET /sustainability/jobs/{id}/result"),
     ("Motor:", " sustainability_core.py + Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx"),
-    ("Escala:", " 0–3 por indicador, con dimensiones Diseño, Implementación y Evaluación"),
+    ("Escala:", " 0–3 por indicador, con dimensiones Diseño, Implementación y Pre-Cierre"),
+    ("Estabilidad:", " Esquema de 5 corridas por indicador consolidadas por moda, con porcentaje de estabilidad reportado en el XLSX"),
     ("Salida XLSX:", " Dos hojas: 'Lectura amigable' para gestores y 'Auditoría técnica' para revisores"),
-    ("Estado:", " Publicado, acceso por enlace, mismo backend compartido"),
+    ("Estado:", " Publicado con visibilidad \"Anyone with a link\"; mismo backend compartido"),
 ]:
     add_bullet(doc, item[1], bold_prefix=item[0])
 
 doc.add_paragraph()
 
-add_heading(doc, "5.3 GPT de Clasificación de Recomendaciones", level=2)
+add_heading(doc, "5.3 GPT de Diagnóstico de Atributos Específicos (Tab 2)", level=2)
 
 for item in [
-    ("Nombre:", " ILO Recommendations Classifier"),
-    ("Funcionalidad:", " Clasifica, prioriza y analiza recomendaciones de evaluaciones externas e internas"),
-    ("Idiomas:", " Español e inglés (tabs independientes)"),
-    ("Salida:", " XLSX enriquecida con clasificación, prioridad sugerida y síntesis por área temática"),
-    ("Estado:", " Publicado, acceso por enlace, integrado al mismo backend compartido"),
+    ("Nombre:", " OIT - Diagnóstico de Atributos Específicos"),
+    ("Enlace:", " https://chatgpt.com/g/g-6a43cc82d4d08191bf6e60357453e336-oit-diagnostico-de-atributos-especificos"),
+    ("Endpoint:", " POST /attributes/jobs → GET /attributes/jobs/{id} → GET /attributes/jobs/{id}/result"),
+    ("Motor:", " tab2_core.py + Rubricas_6ago2025.xlsx"),
+    ("Rúbricas seleccionables:", " métodos participativos, género o transición justa (una o varias por evaluación)"),
+    ("Escala:", " Puntuación 1–5 por criterio, con esquema de estabilidad de 5 corridas para reducir variabilidad del modelo"),
+    ("Modelo:", " gpt-5-mini; hasta 8 llamadas paralelas por corrida"),
+    ("Estado:", " Publicado con visibilidad \"Anyone with a link\"; integrado al mismo backend compartido"),
 ]:
     add_bullet(doc, item[1], bold_prefix=item[0])
 
@@ -565,7 +573,7 @@ comp_data = [
      "documentation/ (6 docs), docs/ (2 guías Markdown)",
      "✅ Completado",
      "Incluye guías de despliegue, configuración y uso de GPTs"),
-    ("GPT Actions (valoración v3, sostenibilidad, recomendaciones) [valor añadido]",
+    ("GPT Actions (valoración v3, sostenibilidad, atributos específicos) [valor añadido]",
      "gpt_action_api.py, openapi_*.yaml, render.yaml",
      "✅ Publicado",
      "Tres GPTs en ChatGPT; backend FastAPI operativo en Render"),
@@ -591,9 +599,9 @@ add_table_header_row(acc_table, ["Aplicación", "Tipo de acceso", "Nota"])
 acc_data = [
     ("Streamlit (módulo Core)", "URL de Streamlit Cloud + contraseña de entorno", "Requiere OPENAI_API_KEY configurada"),
     ("Streamlit (módulo Recomendaciones)", "URL de Streamlit Cloud + contraseña de entorno", "Requiere OPENAI_API_KEY configurada"),
-    ("GPT Valoración v3", "Enlace privado ChatGPT (solo personas con enlace)", "Requiere cuenta ChatGPT"),
-    ("GPT Sostenibilidad", "Enlace privado ChatGPT (solo personas con enlace)", "Requiere cuenta ChatGPT"),
-    ("GPT Recomendaciones", "Enlace privado ChatGPT (solo personas con enlace)", "Requiere cuenta ChatGPT"),
+    ("GPT Valoración v3", "https://chatgpt.com/g/g-6a2643b11e708191adc1c03e64260a25-ilo-prodoc-quality-appraisal", "Anyone with a link; requiere cuenta ChatGPT"),
+    ("GPT Sostenibilidad", "https://chatgpt.com/g/g-6a43d24307b88191bb362632f133c0f3-oit-diagnostico-de-sostenibilidad-del-proyecto", "Anyone with a link; requiere cuenta ChatGPT"),
+    ("GPT Atributos Específicos", "https://chatgpt.com/g/g-6a43cc82d4d08191bf6e60357453e336-oit-diagnostico-de-atributos-especificos", "Anyone with a link; requiere cuenta ChatGPT"),
     ("Backend API (Render)", "URL + ILO_GPT_ACTION_API_KEY", "Proporcionados por canal seguro"),
 ]
 for i, row_data in enumerate(acc_data):

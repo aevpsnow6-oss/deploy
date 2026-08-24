@@ -1,0 +1,615 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{default}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{lmodern}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{colortbl}
+\usetikzlibrary{arrows.meta,positioning}
+
+% ── ILO palette: white / blue / red + shades ─────────────────────────────
+\definecolor{iloBlue}{RGB}{0,63,126}     % dark navy blue
+\definecolor{iloBlueMid}{RGB}{0,114,188}  % ILO logo blue
+\definecolor{iloBlueLt}{RGB}{224,236,246}  % pale blue fill
+\definecolor{iloRed}{RGB}{214,0,28}       % accent red
+\definecolor{iloGray}{RGB}{74,74,74}
+\definecolor{iloGrayLt}{RGB}{240,244,248}
+
+% ── Theme wiring ─────────────────────────────────────────────────────────
+\setbeamercolor{title}{fg=iloBlue}
+\setbeamercolor{frametitle}{fg=white,bg=iloBlue}
+\setbeamercolor{structure}{fg=iloBlueMid}
+\setbeamercolor{normal text}{fg=iloGray}
+\setbeamercolor{itemize item}{fg=iloBlueMid}
+\setbeamercolor{itemize subitem}{fg=iloRed}
+\setbeamercolor{block title}{fg=white,bg=iloBlueMid}
+\setbeamercolor{block body}{bg=iloGrayLt,fg=iloGray}
+\setbeamercolor{alerted text}{fg=iloRed}
+\setbeamerfont{frametitle}{series=\bfseries}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize items}[circle]
+
+% frametitle bar with a red underline
+\setbeamertemplate{frametitle}{%
+  \nointerlineskip
+  \begin{beamercolorbox}[wd=\paperwidth,ht=2.6ex,dp=1.1ex,leftskip=0.4cm]{frametitle}
+    \bfseries\insertframetitle
+  \end{beamercolorbox}%
+  \nointerlineskip
+  \begin{beamercolorbox}[wd=\paperwidth,ht=0.5ex,dp=0ex]{}%
+    \color{iloRed}\rule{\paperwidth}{0.9pt}
+  \end{beamercolorbox}
+}
+
+% footer removed
+\setbeamertemplate{footline}{}
+
+\newcommand{\redlead}[1]{\textbf{\color{iloRed}#1}}
+\newcommand{\bluelead}[1]{\textbf{\color{iloBlue}#1}}
+
+\title{Asistentes GPT para la Valoración de Documentos de Proyecto}
+\subtitle{Guía para equipos de evaluación, diseño de PRODOCs y procuración de fondos}
+\author{Organización Internacional del Trabajo (OIT)}
+\date{Junio 2026}
+
+\begin{document}
+
+% ── Title ────────────────────────────────────────────────────────────────
+{\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+  \vspace{0.6cm}
+  \begin{beamercolorbox}[wd=\paperwidth,ht=1.1ex,dp=0ex]{}\color{iloRed}\rule{\paperwidth}{2pt}\end{beamercolorbox}
+  \vspace{0.8cm}
+  {\color{iloBlue}\Large\bfseries Asistentes GPT para la Valoración\\[2pt] de Documentos de Proyecto\par}
+  \vspace{0.3cm}
+  {\color{iloBlueMid}\normalsize Guía para equipos de evaluación, diseño de PRODOCs\\ y procuración de fondos\par}
+  \vspace{1.0cm}
+  {\color{iloGray}\small Organización Internacional del Trabajo (OIT)\\ Oficina Regional para América Latina y el Caribe\hfill Junio 2026\par}
+  \vspace{0.4cm}
+  \begin{beamercolorbox}[wd=\paperwidth,ht=1.1ex,dp=0ex]{}\color{iloBlue}\rule{\paperwidth}{2pt}\end{beamercolorbox}
+\end{frame}}
+
+% ── Agenda ───────────────────────────────────────────────────────────────
+\begin{frame}{Contenido}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{enumerate}
+        \item ¿Qué son y qué no son estos asistentes?
+        \item Las tres herramientas de un vistazo
+        \item Las rúbricas y su contenido
+        \item Cómo realizan la evaluación
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{enumerate}
+        \setcounter{enumi}{4}
+        \item Cómo leer los resultados
+        \item Cómo acceder: cuenta y enlaces
+        \item Cómo usarlos paso a paso
+        \item Interactuar con el chat · Buenas prácticas
+      \end{enumerate}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ── 1. Qué son ───────────────────────────────────────────────────────────
+\section{Qué son}
+\begin{frame}{¿Qué son estos asistentes?}
+  \begin{block}{En una frase}
+    Son \bluelead{tres asistentes conversacionales} (GPTs personalizados dentro de ChatGPT) que revisan un documento de proyecto y lo valoran contra una \bluelead{rúbrica institucional de la OIT}, devolviendo un informe en Excel.
+  \end{block}
+  \vspace{0.2cm}
+  \begin{itemize}
+    \item Usted sube un documento (\texttt{.docx}); el asistente lo evalúa \redlead{criterio por criterio}.
+    \item La rúbrica ya está \bluelead{cargada en el sistema}: no hay que subirla ni configurarla.
+    \item El resultado es un \bluelead{libro Excel descargable} con la valoración, la evidencia y las áreas que requieren revisión humana.
+    \item Pensado para su flujo de trabajo: \redlead{no requiere conocimientos técnicos de IA}.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Qué NO son (para fijar expectativas)}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \bluelead{Sí es}
+      \begin{itemize}
+        \item Una \textbf{ayuda de valoración} rápida y consistente.
+        \item Un primer filtro estructurado, apoyado en evidencia citada del documento.
+        \item Un punto de partida para la revisión experta.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \redlead{No es}
+      \begin{itemize}
+        \item Una \textbf{determinación oficial} de la OIT.
+        \item Un sustituto del juicio del evaluador.
+        \item Infalible: los criterios más subjetivos \textbf{siempre} requieren validación humana.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{0.3cm}
+  \begin{beamercolorbox}[wd=\textwidth,sep=6pt]{block body}
+    \centering\small Regla de oro: el resultado es \redlead{asistido por IA} y debe ser \bluelead{validado por especialistas} antes de usarse en una decisión.
+  \end{beamercolorbox}
+\end{frame}
+
+% ── 2. Las tres herramientas ─────────────────────────────────────────────
+\section{Las tres herramientas}
+\begin{frame}{Las tres herramientas de un vistazo}
+  \small
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{@{}p{3.0cm}p{3.9cm}p{1.9cm}p{2.9cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Asistente} & \color{white}\textbf{Qué valora} & \color{white}\textbf{Escala} & \color{white}\textbf{Documento típico}\\
+    \midrule
+    \bluelead{Valoración Preliminar de Calidad} & Calidad global del diseño del PRODOC (76 criterios) & Sí / Parcial / No & PRODOC / documento de diseño\\
+    \rowcolor{iloGrayLt}\bluelead{Atributos Específicos} & Género, métodos participativos o Transición Justa & 1 a 5 & PRODOC o documento de proyecto\\
+    \bluelead{Sostenibilidad} & Sostenibilidad del proyecto en 3 dimensiones & 0 a 3 & PRODOC, informe de avance o de evaluación\\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.15cm}
+  \begin{itemize}
+    \item[\textcolor{iloRed}{\textbullet}] Los tres comparten la \bluelead{misma mecánica}: subir documento $\rightarrow$ esperar $\rightarrow$ descargar Excel.
+    \item[\textcolor{iloRed}{\textbullet}] Elija el asistente según \bluelead{la pregunta que quiere responder}, no según el tipo de archivo.
+  \end{itemize}
+\end{frame}
+
+% ── 3. Rúbricas ──────────────────────────────────────────────────────────
+\section{Las rúbricas}
+\begin{frame}{Rúbrica 1 · Valoración Preliminar de Calidad}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.54\textwidth}
+      \textbf{76 criterios} · \textbf{22 subsecciones} en \bluelead{cinco secciones}:
+      \renewcommand{\arraystretch}{1.25}
+      \begin{tabular}{@{}p{4.0cm}cc@{}}
+        \toprule
+        \rowcolor{iloBlue}\color{white}\textbf{Sección} & \color{white}\textbf{Crit.} & \color{white}\textbf{Subs.}\\
+        \midrule
+        1. Pertinencia & 20 & 5\\
+        \rowcolor{iloGrayLt}2. Validez del diseño & 13 & 4\\
+        3. Marco de resultados / R\&M & 27 & 7\\
+        \rowcolor{iloGrayLt}4. Implementación & 14 & 4\\
+        5. Presentación & 2 & 2\\
+        \bottomrule
+      \end{tabular}
+      \vspace{0.15cm}\par
+      {\footnotesize Cubre pertinencia, calidad del diseño, marco de resultados y R\&M, implementación y presentación del PRODOC.}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \textbf{Cómo se valora cada criterio}
+      \begin{itemize}
+        \item \bluelead{Sí} — el diseño cumple el criterio.
+        \item \textbf{Parcial} — cumple de forma incompleta.
+        \item \redlead{No} — no cumple / ausente.
+        \item \textit{N/A} — no aplica al tipo de proyecto.
+      \end{itemize}
+      \vspace{0.2cm}
+      Cada criterio trae una \bluelead{pregunta orientadora} de contexto (no se puntúa) y una lista de \textbf{elementos a verificar}.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Rúbrica 2 · Atributos Específicos}
+  \small
+  Un mismo asistente, \bluelead{tres rúbricas seleccionables}. Usted elige cuál aplicar:
+  \vspace{0.15cm}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{@{}p{3.3cm}p{5.6cm}p{2.6cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Rúbrica} & \color{white}\textbf{Qué examina} & \color{white}\textbf{Tamaño}\\
+    \midrule
+    \bluelead{Metodologías participativas} & Uso de enfoques participativos en el diseño y la gestión del proyecto. & 1 criterio\newline 5 indicadores\\
+    \rowcolor{iloGrayLt}\bluelead{Integración de género} & Cómo el proyecto incorpora el enfoque de género de forma transversal. & 21 criterios\newline 21 indicadores\\
+    \bluelead{Transición Justa} & Alineación con el enfoque moderno de Transición Justa. & 5 criterios\newline 48 indicadores\\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.2cm}
+  \begin{itemize}
+    \item[\textcolor{iloRed}{\textbullet}] Escala de \bluelead{1 a 5} por indicador, con análisis y evidencia citada.
+    \item[\textcolor{iloRed}{\textbullet}] Cada indicador se evalúa \redlead{cinco veces} y se consolida, para reducir la variabilidad y dar una puntuación más estable.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Rúbrica 3 · Sostenibilidad}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{6 criterios} transversales · \textbf{28 indicadores}, evaluados en \bluelead{tres dimensiones}:
+      \renewcommand{\arraystretch}{1.3}
+      \begin{tabular}{@{}p{3.6cm}c@{}}
+        \toprule
+        \rowcolor{iloBlue}\color{white}\textbf{Dimensión} & \color{white}\textbf{Indicadores}\\
+        \midrule
+        Diseño & 6\\
+        \rowcolor{iloGrayLt}Implementación & 10\\
+        Pre-Cierre & 12\\
+        \bottomrule
+      \end{tabular}
+      \vspace{0.15cm}\par
+      {\footnotesize Criterios: participación y riesgos, sostenibilidad política, de género, institucional, financiera y transición justa.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Escala de 0 a 3} por indicador:
+      \begin{itemize}
+        \item \redlead{Nivel 0} — ausente / no abordado.
+        \item \textbf{Nivel 1} — incipiente.
+        \item \textbf{Nivel 2} — parcial / en desarrollo.
+        \item \bluelead{Nivel 3} — sólido / plenamente abordado.
+      \end{itemize}
+      \vspace{0.15cm}
+      \textit{Ojo:} usa escala \redlead{0--3}, distinta de las otras dos rúbricas.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ── 4. Cómo evalúan ──────────────────────────────────────────────────────
+\section{Cómo evalúan}
+\begin{frame}{Cómo realiza la evaluación}
+  \centering
+  \small
+  \begin{tikzpicture}[node distance=0.35cm,
+    stepbox/.style={draw=iloBlue, fill=iloBlueLt, thick, rounded corners, text width=2.3cm, align=center, minimum height=1.5cm, font=\footnotesize},
+    arr/.style={-{Latex[length=2.5mm]}, iloRed, very thick}]
+    \node[stepbox] (a) {Usted sube el \textbf{documento} (.docx)};
+    \node[stepbox, right=of a] (b) {El sistema \textbf{extrae el texto} del documento};
+    \node[stepbox, right=of b] (c) {Evalúa \textbf{cada criterio} de la rúbrica por separado};
+    \node[stepbox, right=of c] (d) {Consolida veredicto + \textbf{evidencia citada}};
+    \node[stepbox, right=of d] (e) {Genera el \textbf{Excel} y lo entrega en el chat};
+    \draw[arr] (a)--(b); \draw[arr] (b)--(c); \draw[arr] (c)--(d); \draw[arr] (d)--(e);
+  \end{tikzpicture}
+  \vspace{0.4cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{itemize}
+        \item Cada criterio se compara \bluelead{solo contra la rúbrica}, no contra otros proyectos.
+        \item La \redlead{evidencia} se toma de citas textuales del documento.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{itemize}
+        \item En criterios más subjetivos el sistema \bluelead{analiza con más profundidad}.
+        \item El proceso tarda \textbf{unos minutos} según el tamaño del documento.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ── 4b. Cómo se evalúa cada criterio ─────────────────────────────────────
+\begin{frame}{Cómo se evalúa cada criterio}
+  \small
+  Cada criterio no es una pregunta abierta: la rúbrica lo descompone en \bluelead{tests atómicos} (T1, T2, T3\dots) y una \bluelead{regla lógica} de decisión. El asistente evalúa cada test como verdadero/falso contra el documento y aplica la regla.
+  \vspace{0.15cm}
+  \begin{beamercolorbox}[wd=\textwidth,sep=6pt]{block body}
+    \footnotesize
+    \textbf{Ejemplo (simplificado):} T1 = ¿existe marco de resultados? \quad T2 = ¿los indicadores son SMART? \quad T3 = ¿faltan las metas?\\
+    \textbf{Decisión:} \texttt{T1 $\wedge$ T2 $\wedge$ $\neg$T3} $\Rightarrow$ \bluelead{Sí} \quad·\quad cumple parcial $\Rightarrow$ \textbf{Parcial} \quad·\quad si no $\Rightarrow$ \redlead{No}
+  \end{beamercolorbox}
+  \vspace{0.1cm}
+  \textbf{Tipos de criterio y cómo se resuelve cada uno:}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{@{}p{3.2cm}p{9.0cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Tipo} & \color{white}\textbf{Lógica de evaluación}\\
+    \midrule
+    \bluelead{Binario / presencia} & Un test: ¿está presente el elemento? (a veces + ¿con calidad suficiente?).\\
+    \rowcolor{iloGrayLt}\bluelead{Lista de verificación} & Cuenta cuántos elementos atómicos se cumplen: todos $\to$ Sí, algunos $\to$ Parcial, ninguno $\to$ No.\\
+    \bluelead{Calidad narrativa} & Juicio cualitativo contra descriptores definidos en la rúbrica.\\
+    \rowcolor{iloGrayLt}\bluelead{Condicional} & Primero verifica si el criterio aplica; si no, resultado = N/A.\\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% ── 4b-bis. Ejemplos reales ──────────────────────────────────────────────
+\begin{frame}{Ejemplos reales de tests de la rúbrica}
+  \scriptsize
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \bluelead{Ejemplo binario · criterio 1.4.2}\\[1pt]
+      \textit{``Se destaca la presencia de la OIT en el país y la cartera de proyectos pasados y en curso.''}
+      \vspace{0.15cm}
+      \begin{beamercolorbox}[wd=\textwidth,sep=5pt]{block body}
+        \textbf{T1}: ¿Describe la presencia de la OIT (oficina, equipo)?\\
+        \textbf{T2}: ¿Enumera $\geq$2 proyectos con título o código?\\[3pt]
+        \bluelead{Sí}: \texttt{T1 $\wedge$ T2}\\
+        \textbf{Parcial}: \texttt{T1 $\vee$ T2} (solo uno)\\
+        \redlead{No}: \texttt{$\neg$T1 $\wedge$ $\neg$T2}
+      \end{beamercolorbox}
+      \vspace{0.1cm}
+      {\color{iloGray}Lógica booleana pura: cada test es sí/no.}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \bluelead{Ejemplo lista / conteo · criterio 1.2.1}\\[1pt]
+      \textit{``La propuesta explica cómo el proyecto encaja en los marcos de desarrollo del país.''}
+      \vspace{0.15cm}
+      \begin{beamercolorbox}[wd=\textwidth,sep=5pt]{block body}
+        \textbf{T1}: ¿Nombra el plan nacional de desarrollo por título?\\
+        \textbf{T2}: ¿Nombra el UNSDCF / MANUD vigente?\\
+        \textbf{T3}: ¿Articula el encaje del proyecto con T1 o T2?\\[3pt]
+        \bluelead{Sí}: \texttt{(T1 $\vee$ T2) $\wedge$ T3}\\
+        \textbf{Parcial}: \texttt{(T1 $\vee$ T2) $\wedge$ $\neg$T3}\\
+        \redlead{No}: \texttt{$\neg$T1 $\wedge$ $\neg$T2}
+      \end{beamercolorbox}
+      \vspace{0.1cm}
+      {\color{iloGray}Cuenta cuántos elementos se cumplen y combina.}
+    \end{column}
+  \end{columns}
+  \vspace{0.15cm}
+  \centering\footnotesize Los tests (T1, T2\dots) y las reglas de decisión están \bluelead{predefinidos en la rúbrica}, no los improvisa el modelo.
+\end{frame}
+
+% ── 4c. Evidencia ────────────────────────────────────────────────────────
+\begin{frame}{Cómo localiza y valora la evidencia}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \bluelead{Cómo se localiza}
+      \begin{itemize}
+        \item El asistente recibe el \textbf{documento completo}, no fragmentos: lee todo el PRODOC para cada criterio.
+        \item Se guía por \bluelead{anclas verificables} de la rúbrica: códigos, nombres y patrones de texto concretos a buscar.
+        \item No es una búsqueda por palabras clave: localiza la sección pertinente y la interpreta en contexto.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \bluelead{Cómo se valora}
+      \begin{itemize}
+        \item La evidencia se cita \redlead{textualmente} entre comillas.
+        \item La \textbf{ausencia} también es evidencia: ``no se encontró la sección X''.
+        \item En criterios transversales (género, discapacidad\dots) solo cuenta la mención \bluelead{dedicada} (sub-objetivo, indicador desagregado, actividad, presupuesto o meta), no la mención de \textbf{encuadre} en una lista.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{0.15cm}
+  \begin{beamercolorbox}[wd=\textwidth,sep=5pt]{block body}
+    \centering\footnotesize El razonamiento devuelto \bluelead{enumera cada test} (T1, T2\dots), la decisión lógica aplicada y el resultado: la valoración es \textbf{auditable}, no una caja negra.
+  \end{beamercolorbox}
+\end{frame}
+
+% ── 4d. Consistencia ─────────────────────────────────────────────────────
+\begin{frame}{Consistencia: evaluación repetida}
+  \small
+  Un modelo de lenguaje puede dar respuestas algo distintas en corridas sucesivas. Para dar un resultado \bluelead{estable y confiable}, cada criterio no se evalúa una sola vez:
+  \vspace{0.2cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{itemize}
+        \item Cada criterio se evalúa \redlead{varias veces} de forma independiente.
+        \item Se toma el \bluelead{veredicto modal} (el más frecuente entre las corridas).
+        \item Se reporta la \bluelead{Estabilidad (\%)}: cuántas corridas coincidieron con ese veredicto.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{itemize}
+        \item Estabilidad alta ($\geq$80\%) $\to$ resultado sólido.
+        \item Estabilidad baja $\to$ se marca y se indica la \redlead{deriva principal} (el veredicto alternativo).
+        \item Los criterios inestables son justamente los que conviene \bluelead{revisar a mano} primero.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{0.15cm}
+  \begin{beamercolorbox}[wd=\textwidth,sep=5pt]{block body}
+    \centering\footnotesize Además, los criterios \textbf{más subjetivos} se evalúan con un nivel de razonamiento más profundo que los criterios de simple presencia.
+  \end{beamercolorbox}
+\end{frame}
+
+% ── 5. Resultados ────────────────────────────────────────────────────────
+\section{Resultados}
+\begin{frame}{Cómo leer los resultados}
+  \small
+  El asistente entrega un \bluelead{resumen en el chat} y un \bluelead{Excel descargable} con dos niveles de lectura:
+  \vspace{0.2cm}
+  \renewcommand{\arraystretch}{1.35}
+  \begin{tabular}{@{}p{3.4cm}p{4.0cm}p{4.3cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Hoja} & \color{white}\textbf{Para quién} & \color{white}\textbf{Qué contiene}\\
+    \midrule
+    \bluelead{Lectura amigable} & Evaluadores y gestores & Resultado, lectura rápida, principal oportunidad de mejora, evidencia clave\\
+    \rowcolor{iloGrayLt}\bluelead{Auditoría técnica} & Revisores que necesitan la traza & Razonamiento completo, evidencia extendida, estado de cada criterio\\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.25cm}
+  \begin{itemize}
+    \item[\textcolor{iloRed}{\textbullet}] Una columna marca los criterios con \redlead{revisión humana recomendada} (alta subjetividad): priorícelos.
+    \item[\textcolor{iloRed}{\textbullet}] El resumen del chat da los \bluelead{conteos por veredicto} para ubicar rápido las brechas.
+  \end{itemize}
+\end{frame}
+
+% ── 5b. XLSX hoja amigable ───────────────────────────────────────────────
+\begin{frame}{El archivo de resultados · hoja «Lectura amigable»}
+  \small
+  La hoja que abre un evaluador: \bluelead{una fila por criterio}. Ejemplo, el criterio \bluelead{1.2.1}:
+  \vspace{0.15cm}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{@{}p{3.6cm}p{4.0cm}p{4.2cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Columna} & \color{white}\textbf{Qué muestra} & \color{white}\textbf{Ejemplo}\\
+    \midrule
+    \bluelead{Resultado de valoración} & El veredicto del criterio & Parcial\\
+    \rowcolor{iloGrayLt}\bluelead{Estabilidad (\%)} & Coincidencia entre corridas & 90,0\\
+    \bluelead{Lectura rápida} & Interpretación en lenguaje llano & «Cumple parcialmente.»\\
+    \rowcolor{iloGrayLt}\bluelead{Principal oport. de mejora} & Qué ajustar en el PRODOC & «Completar lo faltante.»\\
+    \bluelead{Evidencia clave} & Cita textual del documento & «…alineación con el Plan Nacional…»\\
+    \rowcolor{iloGrayLt}\bluelead{Revisión humana recom.} & Prioridad de revisión manual & Sí — requiere revisión\\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.2cm}\par
+  {\footnotesize Las columnas \textbf{ID · Subsección · Criterio} ubican cada fila. La hoja trae \bluelead{filtros y fila de encabezado fija} para ordenar por sección o por veredicto.}
+\end{frame}
+
+% ── 5c. XLSX hoja técnica ────────────────────────────────────────────────
+\begin{frame}{El archivo de resultados · hoja «Auditoría técnica»}
+  \small
+  La \bluelead{misma fila} (criterio \bluelead{1.2.1}), con la traza completa para quien audita:
+  \vspace{0.12cm}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{@{}p{4.3cm}p{7.9cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Columna} & \color{white}\textbf{Ejemplo / contenido}\\
+    \midrule
+    \bluelead{Respuesta} & Parcial (veredicto modal)\\
+    \rowcolor{iloGrayLt}\bluelead{N corridas · Conteo modal · Estable} & 10 · 9 · Sí ($\geq$80\%)\\
+    \bluelead{Distribución de respuestas} & Parcial=9, No=1\\
+    \bluelead{Razonamiento} & «T1 (¿nombra el Plan Nacional por título?): \textbf{verdadero} — cita el ``Plan Nacional 2021–2025''. \newline T2 (¿nombra el UNSDCF/MANUD?): \textbf{falso}. \newline T3 (¿articula el encaje con T1/T2?): \textbf{falso}. \newline DECISIÓN: (T1$\vee$T2)$\wedge\neg$T3 $\to$ Parcial»\\
+    \rowcolor{iloGrayLt}\bluelead{Evidencia} & Citas textuales completas del PRODOC\\
+    \bluelead{Status} & Success (o Error si falló la corrida)\\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.12cm}\par
+  {\footnotesize Cada fila corresponde a la de «Lectura amigable» por su \textbf{ID}: la amigable \bluelead{resume}, la técnica \bluelead{justifica}.}
+\end{frame}
+
+% ── 6. Acceso ────────────────────────────────────────────────────────────
+\section{Acceso}
+\begin{frame}{Cómo acceder: cuenta y enlaces}
+  \small
+  \begin{block}{¿Qué cuenta necesito?}
+    Una \bluelead{cuenta de ChatGPT}. Los asistentes se comparten como \bluelead{enlace privado} (solo quien recibe el enlace puede usarlos): no aparecen en búsquedas públicas.
+  \end{block}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \textbf{Lo que usted necesita}
+      \begin{itemize}
+        \item Cuenta ChatGPT y el \bluelead{enlace} del asistente.
+        \item \redlead{Ninguna clave ni configuración}: todo va incorporado.
+        \item El documento a evaluar en formato \texttt{.docx}.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Lo que NO necesita}
+      \begin{itemize}
+        \item No instala nada.
+        \item No sube ni edita la rúbrica.
+        \item No maneja claves de API (las administra la OIT del lado del servidor).
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{0.15cm}
+  \centering\footnotesize\color{iloGray}Los enlaces y accesos se distribuyen por canal interno de la OIT.
+\end{frame}
+
+% ── 7. Uso paso a paso ───────────────────────────────────────────────────
+\section{Uso}
+\begin{frame}{Cómo usarlo, paso a paso}
+  \small
+  \begin{enumerate}
+    \item Abra el \bluelead{enlace} del asistente en ChatGPT.
+    \item \textbf{Suba un documento} \texttt{.docx} en el chat (uno por evaluación).
+    \item Indique el alcance cuando el asistente lo pregunte:
+      \begin{itemize}
+        \item \emph{Calidad}: evaluación completa o secciones/subsecciones concretas.
+        \item \emph{Atributos}: qué rúbrica (género, participación o Transición Justa).
+        \item \emph{Sostenibilidad}: qué dimensión o la rúbrica completa.
+      \end{itemize}
+    \item La primera vez, ChatGPT pedirá \bluelead{autorizar la acción}: confirme.
+    \item Espere a que termine y \redlead{descargue el Excel} de resultados.
+  \end{enumerate}
+  \vspace{0.1cm}
+  \begin{beamercolorbox}[wd=\textwidth,sep=5pt]{block body}
+    \footnotesize \textbf{Sugerencia:} si la primera respuesta tarda, es porque el servicio estaba en reposo. Pida \emph{``revisa el estado y entrégame el resultado''} y continuará.
+  \end{beamercolorbox}
+\end{frame}
+
+% ── 8. Chat + buenas prácticas ───────────────────────────────────────────
+\begin{frame}{¿Puedo conversar con los resultados?}
+  \small
+  \redlead{Sí.} Una vez que tiene el resultado, puede seguir preguntando en el mismo chat:
+  \begin{itemize}
+    \item \emph{``Resume las tres principales brechas.''}
+    \item \emph{``Explícame por qué el criterio 3.2 quedó en Parcial.''}
+    \item \emph{``Redacta un párrafo de recomendaciones para la sección de Pertinencia.''}
+  \end{itemize}
+  \vspace{0.2cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \bluelead{Preguntas de seguimiento}
+      \begin{itemize}
+        \item Usan el \textbf{modelo de chat} que usted elija.
+        \item No vuelven a correr la rúbrica.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \redlead{Volver a evaluar}
+      \begin{itemize}
+        \item Pedir ``evalúa este otro documento'' \textbf{sí} lanza una nueva evaluación.
+        \item El modelo y el rigor de la evaluación \textbf{no} los cambia el usuario: están fijados para garantizar consistencia.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Buenas prácticas y límites}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \bluelead{Buenas prácticas}
+      \begin{itemize}
+        \item Suba \textbf{un documento por evaluación}.
+        \item Empiece por la evaluación completa y luego profundice por sección.
+        \item Contraste siempre la \textbf{evidencia citada} con el documento.
+        \item Priorice los criterios marcados para \redlead{revisión humana}.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \redlead{Límites a recordar}
+      \begin{itemize}
+        \item Resultado \textbf{asistido por IA}, no determinación oficial.
+        \item Los documentos pueden ser sensibles: use solo los enlaces internos.
+        \item En criterios subjetivos, la última palabra es del \bluelead{evaluador}.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ── Privacidad y seguridad (1/2) ─────────────────────────────────────────
+\begin{frame}{Privacidad y seguridad de los datos · preguntas frecuentes}
+  \small
+  El documento pasa por OpenAI en \bluelead{dos momentos} —al subirlo al chat y al evaluarlo con el motor (API)—; las protecciones dependen del \bluelead{tipo de cuenta}.
+  \vspace{0.15cm}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{@{}p{4.8cm}p{7.4cm}@{}}
+    \toprule
+    \rowcolor{iloBlue}\color{white}\textbf{Pregunta} & \color{white}\textbf{Respuesta}\\
+    \midrule
+    \bluelead{¿Los documentos quedan en servidores de OpenAI?} & Temporalmente. Vía API (el motor), se retienen hasta $\sim$30 días para monitoreo de abuso y luego se eliminan; en el chat depende del tipo de cuenta.\\
+    \rowcolor{iloGrayLt}\bluelead{¿Se usan para entrenar los modelos?} & Vía API y en cuentas \textbf{Team/Enterprise}: no, por defecto. En ChatGPT \textbf{personal}: sí, salvo que se desactive.\\
+    \bluelead{¿Cómo se desactiva el entrenamiento?} & ChatGPT personal $\to$ Configuración $\to$ Controles de datos. La API y las cuentas de negocio ya vienen sin entrenamiento.\\
+    \rowcolor{iloGrayLt}\bluelead{¿El Excel de resultados se usa para entrenar?} & No: lo genera el servidor de la OIT, no OpenAI.\\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% ── Privacidad y seguridad (2/2) ─────────────────────────────────────────
+\begin{frame}{Privacidad y seguridad · cuentas y documentos confidenciales}
+  \small
+  \textbf{Con una cuenta Enterprise, ¿puedo subir documentos confidenciales?}
+  \vspace{0.15cm}
+  \begin{itemize}
+    \item[\textcolor{iloRed}{\textbullet}] \textbf{Team/Enterprise} añade sobre la cuenta personal: sin entrenamiento con datos de negocio, \bluelead{cifrado}, inicio de sesión corporativo (SSO), controles de administrador, retención configurable y un \bluelead{acuerdo de tratamiento de datos (DPA)}.
+    \item[\textcolor{iloRed}{\textbullet}] Aun así, autorizar la subida de cada documento es una decisión de \bluelead{seguridad de la información y legal de la OIT}, no una respuesta técnica: \textbf{clasifique el documento primero}.
+    \item[\textcolor{iloRed}{\textbullet}] Máxima protección: que la OIT \bluelead{administre la cuenta y la clave de API} bajo su propio acuerdo (con retención cero si está disponible).
+  \end{itemize}
+  \vspace{0.15cm}\par
+  \begin{beamercolorbox}[wd=\textwidth,sep=6pt]{block body}
+    \footnotesize \redlead{Orientativo, no asesoría legal.} Las políticas de OpenAI cambian: verifique los términos vigentes y consulte a TI/seguridad y legal de la OIT antes de subir material sensible.
+  \end{beamercolorbox}
+\end{frame}
+
+% ── Cierre ───────────────────────────────────────────────────────────────
+{\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+  \vspace{1.2cm}
+  \begin{beamercolorbox}[wd=\paperwidth,ht=1.1ex,dp=0ex]{}\color{iloRed}\rule{\paperwidth}{2pt}\end{beamercolorbox}
+  \vspace{0.9cm}
+  {\color{iloBlue}\Large\bfseries Gracias\par}
+  \vspace{0.4cm}
+  {\color{iloGray}\small Tres asistentes, una misma mecánica: \bluelead{subir · esperar · descargar}.\\
+  Una ayuda para valorar mejor y más rápido — siempre con \redlead{validación experta}.\par}
+  \vspace{1.0cm}
+  {\color{iloGray}\footnotesize Organización Internacional del Trabajo (OIT) · Junio 2026\par}
+  \vspace{0.5cm}
+  \begin{beamercolorbox}[wd=\paperwidth,ht=1.1ex,dp=0ex]{}\color{iloBlue}\rule{\paperwidth}{2pt}\end{beamercolorbox}
+\end{frame}}
+
+\end{document}
