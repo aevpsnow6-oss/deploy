@@ -602,8 +602,11 @@ _TEST_LABEL = r"(T\d+|[SMART])"
 # Definición en la rúbrica:  "T1: ¿Distingue...? (sí/no)"
 _TEST_DEF_RE = re.compile(rf"^\s*{_TEST_LABEL}\s*(?:\([^)]*\))?\s*[:—-]\s*(.+?)\s*$", re.M)
 # Veredicto del modelo:      "T1: verdadero — justificación"
+# Tolerante a viñetas, negritas markdown y separadores ":" / "—" / "-",
+# porque el modelo no siempre respeta el formato al pie de la letra.
 _TEST_OBS_RE = re.compile(
-    rf"^\s*{_TEST_LABEL}\s*:\s*(verdadero|falso|s[íi]|no|n/?a|no aplica)\b[\s.—:-]*(.*)$",
+    rf"^\s*(?:[-*•]\s+)?\*{{0,2}}_{{0,2}}{_TEST_LABEL}_{{0,2}}\*{{0,2}}\s*[:—–-]\s*"
+    rf"(verdadero|falso|s[íi]|no|n/?a|no aplica)\b[\s.,;—–:-]*(.*)$",
     re.M | re.I,
 )
 _DECISION_RE = re.compile(r"DECISI[ÓO]N\s*:\s*(.+)")
