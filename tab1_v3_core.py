@@ -35,7 +35,6 @@ RESULT_COLUMNS = [
     "Subsección",
     "Pregunta orientadora (no evaluada)",
     "Criterio",
-    "Tipo",
     "Subjetividad",
     "Transversales",
     "Respuesta",
@@ -43,24 +42,29 @@ RESULT_COLUMNS = [
     "Conteo modal",
     "Estabilidad (%)",
     "Estable (>=80%)",
-    "Deriva principal (si inestable)",
+    "Resultado Alternativo",
     "Distribución de respuestas",
     "Corridas con error",
     "Razonamiento",
     "Evidencia",
     "Status",
+    "Revisión humana recomendada",
 ]
+
+SHEET_RESULT = "Resultado Diagnostico"
+
+# Clave interna que produce stability/aggregation, renombrada en la salida.
+DRIFT_SOURCE_COLUMN = "Deriva principal (si inestable)"
 
 PUBLIC_RESULT_COLUMNS = [
     "ID",
     "Subsección",
     "Criterio",
-    "Tipo",
     "Subjetividad",
     "Transversales",
     "Resultado de valoración",
     "Estabilidad (%)",
-    "Deriva principal (si inestable)",
+    "Resultado Alternativo",
     "Lectura rápida",
     "Principal oportunidad de mejora",
     "Evidencia clave",
@@ -503,7 +507,7 @@ def aggregate_repeated_criterion_results(
     if not stable:
         reasoning_prefix += f" Resultado inestable (<{_format_pct(stability_threshold_pct)})."
         if drift:
-            reasoning_prefix += f" Deriva principal: {drift}."
+            reasoning_prefix += f" Resultado alternativo: {drift}."
 
     return {
         **representative,
@@ -590,6 +594,9 @@ def results_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
     if not results:
         return pd.DataFrame(columns=RESULT_COLUMNS)
     df = pd.DataFrame(results)
+    if DRIFT_SOURCE_COLUMN in df.columns:
+        df = df.rename(columns={DRIFT_SOURCE_COLUMN: "Resultado Alternativo"})
+    df["Revisión humana recomendada"] = df.apply(_review_flag, axis=1)
     available = [c for c in RESULT_COLUMNS if c in df.columns]
     df_sorted = (
         df.assign(_sk=df["ID"].map(_id_sort_key))
@@ -678,23 +685,20 @@ def results_to_public_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
     public["Lectura rápida"] = public["Respuesta"].map(_quick_reading)
     public["Principal oportunidad de mejora"] = public["Respuesta"].map(_improvement_hint)
     public["Evidencia clave"] = public["Evidencia"].map(_compact_text)
-    public["Revisión humana recomendada"] = public.apply(_review_flag, axis=1)
     available = [c for c in PUBLIC_RESULT_COLUMNS if c in public.columns]
     return public[available]
 
 
 def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
-    """Serialize v3 results to a two-level XLSX workbook.
+    """Serialize v3 results to a single-sheet XLSX workbook.
 
-    The first sheet is a readable summary for ordinary users. The second sheet
-    keeps the stability distribution and representative TEST audit trail.
+    One sheet, "Resultado Diagnostico": one row per criterion with the
+    verdict, the stability figures, the TEST audit trail and the evidence.
     """
-    public_df = results_to_public_dataframe(results)
-    technical_df = results_to_dataframe(results)
+    df = results_to_dataframe(results)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        public_df.to_excel(writer, index=False, sheet_name="Lectura amigable")
-        technical_df.to_excel(writer, index=False, sheet_name="Auditoria tecnica")
+        df.to_excel(writer, index=False, sheet_name=SHEET_RESULT)
 
         workbook = writer.book
         header_fmt = workbook.add_format(
@@ -702,48 +706,27 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
         )
         wrap_fmt = workbook.add_format({"text_wrap": True, "valign": "top"})
 
-        sheet_specs = {
-            "Lectura amigable": (
-                public_df,
-                {
-                    "A:A": 10,
-                    "B:B": 12,
-                    "C:C": 58,
-                    "D:F": 18,
-                    "G:H": 18,
-                    "I:I": 34,
-                    "J:L": 42,
-                    "M:M": 32,
-                },
-            ),
-            "Auditoria tecnica": (
-                technical_df,
-                {
-                    "A:B": 10,
-                    "C:D": 52,
-                    "E:G": 18,
-                    "H:L": 16,
-                    "M:N": 34,
-                    "O:O": 14,
-                    "P:Q": 60,
-                    "R:R": 14,
-                },
-            ),
+        widths = {
+            "A:B": 10,    # ID, Subseccion
+            "C:D": 52,    # Pregunta orientadora, Criterio
+            "E:F": 18,    # Subjetividad, Transversales
+            "G:G": 16,    # Respuesta
+            "H:I": 14,    # N corridas, Conteo modal
+            "J:K": 16,    # Estabilidad (%), Estable (>=80%)
+            "L:L": 20,    # Resultado Alternativo
+            "M:N": 26,    # Distribucion de respuestas, Corridas con error
+            "O:P": 60,    # Razonamiento, Evidencia
+            "Q:Q": 14,    # Status
+            "R:R": 34,    # Revision humana recomendada
         }
-        for sheet_name, (df_sheet, widths) in sheet_specs.items():
-            worksheet = writer.sheets[sheet_name]
-            worksheet.freeze_panes(1, 0)
-            worksheet.autofilter(0, 0, max(len(df_sheet), 1), max(len(df_sheet.columns) - 1, 0))
-            for col_num, value in enumerate(df_sheet.columns):
-                worksheet.write(0, col_num, value, header_fmt)
-            for col_range, width in widths.items():
-                worksheet.set_column(col_range, width, wrap_fmt)
-            if "Estabilidad (%)" in df_sheet.columns:
-                col_idx = df_sheet.columns.get_loc("Estabilidad (%)")
-                number_fmt = workbook.add_format({"num_format": "0.0", "valign": "top"})
-                worksheet.set_column(col_idx, col_idx, 18, number_fmt)
+        worksheet = writer.sheets[SHEET_RESULT]
+        worksheet.freeze_panes(1, 0)
+        worksheet.autofilter(0, 0, max(len(df), 1), max(len(df.columns) - 1, 0))
+        for col_num, value in enumerate(df.columns):
+            worksheet.write(0, col_num, value, header_fmt)
+        for col_range, width in widths.items():
+            worksheet.set_column(col_range, width, wrap_fmt)
     return buf.getvalue()
-
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Create a compact deterministic summary for GPT responses."""

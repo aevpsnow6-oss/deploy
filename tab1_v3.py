@@ -285,7 +285,7 @@ qué porcentaje de las {STABILITY_REPEATS} corridas coincidió con ese resultado
 |---|---|
 | **Yes**, Estabilidad 100% | Las {STABILITY_REPEATS} corridas dieron Yes. Resultado muy estable. |
 | **Yes**, Estabilidad 80% | 8 de {STABILITY_REPEATS} corridas dieron Yes. Cumple el umbral de estabilidad. |
-| **Yes**, Estabilidad 60%, Deriva principal: Partial (3/4 restantes) | El resultado modal es Yes, pero es inestable; cuando cambia, tiende a Partial. |
+| **Yes**, Estabilidad 60%, Resultado Alternativo: Partial (3/4 restantes) | El resultado modal es Yes, pero es inestable; cuando cambia, tiende a Partial. |
 
 Se considera **estable** un resultado con **≥{STABILITY_THRESHOLD_PCT:.0f}%** de estabilidad.
 Los resultados por debajo de ese umbral deben revisarse manualmente aunque la etiqueta modal
@@ -341,7 +341,7 @@ Subjetividad Media o Alta.
 ### 4. ¿Cómo está estructurado el "Razonamiento"?
 
 El razonamiento técnico te muestra **exactamente por qué el modelo llegó a ese resultado**.
-En la descarga aparece en la hoja **Auditoria tecnica** y sigue este formato:
+En la descarga aparece en la hoja **Resultado Diagnostico** y sigue este formato:
             """
         )
         st.code(
