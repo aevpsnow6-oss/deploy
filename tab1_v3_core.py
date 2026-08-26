@@ -582,11 +582,141 @@ def evaluate_criteria(
                 progress_callback(done, total_calls)
 
     results = [
-        aggregate_repeated_criterion_results(repeated_by_id[crit_id])
-        for crit_id, _ in rows
+        _with_readable_reasoning(
+            aggregate_repeated_criterion_results(repeated_by_id[crit_id]), row
+        )
+        for crit_id, row in rows
     ]
     results.sort(key=lambda r: _id_sort_key(r["ID"]))
     return results
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Lectura del Razonamiento: sustituye las etiquetas T1/T2/... por el texto
+# del chequeo que representan. No cambia la lógica ni la rúbrica: sólo el
+# formato de salida. Si el modelo se aparta del formato esperado, se
+# devuelve el razonamiento original sin tocar.
+# ════════════════════════════════════════════════════════════════════════
+
+_TEST_LABEL = r"(T\d+|[SMART])"
+# Definición en la rúbrica:  "T1: ¿Distingue...? (sí/no)"
+_TEST_DEF_RE = re.compile(rf"^\s*{_TEST_LABEL}\s*(?:\([^)]*\))?\s*[:—-]\s*(.+?)\s*$", re.M)
+# Veredicto del modelo:      "T1: verdadero — justificación"
+_TEST_OBS_RE = re.compile(
+    rf"^\s*{_TEST_LABEL}\s*:\s*(verdadero|falso|s[íi]|no|n/?a|no aplica)\b[\s.—:-]*(.*)$",
+    re.M | re.I,
+)
+_DECISION_RE = re.compile(r"DECISI[ÓO]N\s*:\s*(.+)")
+_TRUE_WORDS = {"verdadero", "sí", "si"}
+_NA_WORDS = {"n/a", "na", "no aplica"}
+
+
+def _clean_test_text(text: str) -> str:
+    """Trim the rubric's answer-format hints from a test statement."""
+    text = re.sub(r"\s*\((?:s[íi]\s*/\s*no|verdadero\s*/\s*falso)[^)]*\)\s*$", "", text, flags=re.I)
+    return text.strip().rstrip(".").strip()
+
+
+def _as_statement(text: str) -> str:
+    """Drop the interrogative wrapper so the text reads inside a sentence."""
+    return text.strip().lstrip("¿").rstrip("?").strip()
+
+
+def parse_rubric_tests(rubrica_si: str) -> dict[str, str]:
+    """Map each test label to its statement, as written in the rubric."""
+    tests: dict[str, str] = {}
+    body = rubrica_si.split("DECISI")[0]
+    for label, text in _TEST_DEF_RE.findall(body):
+        cleaned = _clean_test_text(text)
+        if cleaned and label not in tests:
+            tests[label] = cleaned
+    return tests
+
+
+def parse_observed_tests(reasoning: str) -> list[tuple[str, str | None, str]]:
+    """Extract (label, verdict, justification) from the model's reasoning."""
+    observed: list[tuple[str, str | None, str]] = []
+    seen: set[str] = set()
+    for label, verdict, justification in _TEST_OBS_RE.findall(reasoning):
+        if label in seen:
+            continue
+        seen.add(label)
+        v = verdict.strip().lower()
+        state = None if v in _NA_WORDS else (v in _TRUE_WORDS)
+        observed.append((label, state, justification.strip()))
+    return observed
+
+
+def _rule_summary(decision: str, n_ok: int, n_total: int) -> str:
+    """One plain-language line describing what the rule required."""
+    d = decision.strip()
+    counting = re.search(r"#\s*verdaderos[^≥>]*[≥>]=?\s*(\d+)", d, re.I)
+    if counting:
+        return f"se requieren al menos {counting.group(1)} de {n_total} chequeos"
+    if "∨" not in d and "#" not in d and d.count("∧") == max(n_total - 1, 0) and n_total > 1:
+        return f"se requieren los {n_total} chequeos"
+    return f"regla compuesta; cumplidos {n_ok} de {n_total}"
+
+
+def render_reasoning(result: dict[str, Any], rubrica_si: str) -> str:
+    """Rewrite the reasoning so every check reads on its own, without T-labels."""
+    raw = str(result.get("Razonamiento", "")).strip()
+    tests = parse_rubric_tests(rubrica_si)
+    observed = parse_observed_tests(raw)
+    if not tests or not observed:
+        return raw  # formato inesperado: no tocar
+
+    answer = str(result.get("Respuesta", "")).strip()
+    n_total = len(observed)
+    n_ok = sum(1 for _, state, _ in observed if state is True)
+    faltan = [
+        _as_statement(tests.get(label, label))
+        for label, state, _ in observed
+        if state is False
+    ]
+
+    lineas: list[str] = []
+    cabecera = f"POR QUÉ {answer.upper()}" if answer else "POR QUÉ ESTE RESULTADO"
+    resumen = f"Se cumplen {n_ok} de {n_total} chequeos."
+    if faltan and answer != "Yes":
+        falta_txt = "; ".join(faltan[:3])
+        if len(faltan) > 3:
+            falta_txt += f"; y {len(faltan) - 3} más"
+        resumen += f" Falta: {falta_txt}."
+    lineas.append(f"{cabecera} · {resumen}")
+    lineas.append("")
+    lineas.append("VERIFICACIÓN")
+    for label, state, justification in observed:
+        marca = "✓" if state is True else ("✗" if state is False else "–")
+        enunciado = tests.get(label, f"(chequeo {label})")
+        lineas.append(f" {marca} {enunciado}")
+        if justification:
+            lineas.append(f"     {justification}")
+
+    n_corridas = result.get("N corridas")
+    n_modal = result.get("Conteo modal")
+    if n_corridas and n_modal:
+        est = f"ESTABILIDAD · {n_modal} de {n_corridas} corridas coincidieron"
+        drift = str(result.get(DRIFT_SOURCE_COLUMN, "") or "").strip()
+        est += f". Resultado alternativo: {drift}." if drift else "."
+        lineas.append("")
+        lineas.append(est)
+
+    decision = _DECISION_RE.search(rubrica_si)
+    if decision:
+        regla = decision.group(1).strip().splitlines()[0].strip()
+        lineas.append(f"REGLA · {_rule_summary(regla, n_ok, n_total)}  ({regla})")
+
+    return "\n".join(lineas)
+
+
+def _with_readable_reasoning(result: dict[str, Any], row: pd.Series) -> dict[str, Any]:
+    """Apply render_reasoning, falling back to the original text on any error."""
+    try:
+        rendered = render_reasoning(result, str(row.get("Rúbrica — Sí", "")))
+    except Exception:
+        return result
+    return {**result, "Razonamiento": rendered} if rendered else result
 
 
 def results_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
@@ -786,3 +916,52 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "repeat_error_count": repeat_error_count,
         "criteria_with_repeat_errors": criteria_with_repeat_errors,
     }
+
+
+def _demo() -> None:
+    """Self-check for the reasoning renderer. Run: python tab1_v3_core.py"""
+    rubrica = (
+        "TESTS:\n"
+        "T1: ¿Distingue tipo de enfoque? (sí/no)\n"
+        "T2: ¿Articula cómo cuestiona normas de poder? (sí/no)\n"
+        "T3: ¿Acciones dedicadas a transformar relaciones? (sí/no)\n\n"
+        "DECISIÓN: T1 ∧ T2 ∧ T3"
+    )
+    result = {
+        "Respuesta": "Partial",
+        "N corridas": 10,
+        "Conteo modal": 6,
+        DRIFT_SOURCE_COLUMN: "No",
+        "Razonamiento": (
+            "T1: verdadero — la sección 3.2 los distingue.\n"
+            "T2: falso — no se explica el mecanismo.\n"
+            "T3: verdadero — actividad 2.4 con presupuesto.\n"
+            "DECISIÓN: T1 ∧ T2 ∧ T3 = falso → Parcial"
+        ),
+    }
+    out = render_reasoning(result, rubrica)
+    # el lector nunca ve una etiqueta suelta...
+    assert "T1: verdadero" not in out
+    # ...pero cada chequeo aparece con su enunciado y su marca
+    assert "✓ ¿Distingue tipo de enfoque?" in out
+    assert "✗ ¿Articula cómo cuestiona normas de poder?" in out
+    # abre por el motivo, y nombra lo que falta
+    assert out.startswith("POR QUÉ PARTIAL")
+    assert "Se cumplen 2 de 3" in out
+    assert "Falta: Articula cómo cuestiona normas de poder." in out
+    # la regla formal sigue disponible para auditoría
+    assert "REGLA · se requieren los 3 chequeos  (T1 ∧ T2 ∧ T3)" in out
+    # estabilidad renderizada desde los campos del resultado
+    assert "ESTABILIDAD · 6 de 10 corridas coincidieron. Resultado alternativo: No." in out
+
+    # formato inesperado -> se devuelve intacto, nunca se mutila
+    suelto = "El documento no articula un enfoque transformador."
+    assert render_reasoning({"Respuesta": "No", "Razonamiento": suelto}, rubrica) == suelto
+    # rúbrica ilegible -> también intacto
+    assert render_reasoning(result, "sin estructura") == result["Razonamiento"]
+
+    print("tab1_v3_core._demo OK")
+
+
+if __name__ == "__main__":
+    _demo()
