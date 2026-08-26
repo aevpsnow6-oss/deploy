@@ -8,6 +8,7 @@ the generated XLSX to the user.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import re
@@ -156,6 +157,54 @@ def _get_job(job_id: str) -> dict[str, Any]:
         if not job:
             raise HTTPException(status_code=404, detail="Job not found.")
         return dict(job)
+
+
+# Long-poll: el GPT no puede esperar por su cuenta, así que la propia consulta
+# de estado aguarda a que el trabajo termine (o a que venza el plazo) antes de
+# responder. Así cada llamada devuelve algo nuevo y el bucle se autorregula.
+POLL_MAX_WAIT_SECONDS = 25.0
+POLL_DEFAULT_WAIT_SECONDS = 20.0
+_TERMINAL_STATUSES = {"succeeded", "failed"}
+
+
+async def _await_job(job_id: str, wait_seconds: float) -> dict[str, Any]:
+    """Return as soon as the job reaches a terminal state, or when time runs out."""
+    job = _get_job(job_id)
+    budget = min(max(wait_seconds, 0.0), POLL_MAX_WAIT_SECONDS)
+    deadline = time.monotonic() + budget
+    while job.get("status") not in _TERMINAL_STATUSES and time.monotonic() < deadline:
+        await asyncio.sleep(1.0)
+        job = _get_job(job_id)
+    return job
+
+
+def _job_status_payload(job_id: str, job: dict[str, Any]) -> dict[str, Any]:
+    """Status plus the numbers the GPT needs to narrate progress in one line."""
+    completed = int(job.get("completed") or 0)
+    total = int(job.get("total") or 0)
+    percent = round(100.0 * completed / total, 1) if total else None
+
+    eta_seconds = None
+    started = job.get("created_at")
+    if started and completed and total and completed < total:
+        elapsed = max(_now() - float(started), 0.001)
+        rate = completed / elapsed
+        if rate > 0:
+            eta_seconds = int(round((total - completed) / rate))
+
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "message": job.get("message"),
+        "completed": completed,
+        "total": total,
+        "percent_complete": percent,
+        "eta_seconds": eta_seconds,
+        "document_name": job.get("document_name"),
+        "document_word_count": job.get("document_word_count"),
+        "summary": job.get("summary"),
+        "error": job.get("error"),
+    }
 
 
 def _is_docx(ref: OpenAIFileRef) -> bool:
@@ -472,19 +521,9 @@ def start_v3_appraisal_job(request: EvaluationJobRequest) -> JobCreated:
 
 
 @app.get("/v3/jobs/{job_id}", dependencies=[Depends(require_api_key)])
-def get_v3_appraisal_job(job_id: str) -> dict[str, Any]:
-    job = _get_job(job_id)
-    return {
-        "job_id": job_id,
-        "status": job.get("status"),
-        "message": job.get("message"),
-        "completed": job.get("completed", 0),
-        "total": job.get("total", 0),
-        "document_name": job.get("document_name"),
-        "document_word_count": job.get("document_word_count"),
-        "summary": job.get("summary"),
-        "error": job.get("error"),
-    }
+async def get_v3_appraisal_job(job_id: str, wait_seconds: float = POLL_DEFAULT_WAIT_SECONDS) -> dict[str, Any]:
+    job = await _await_job(job_id, wait_seconds)
+    return _job_status_payload(job_id, job)
 
 
 @app.get("/v3/jobs/{job_id}/result", dependencies=[Depends(require_api_key)])
@@ -535,19 +574,9 @@ def start_sustainability_diagnosis_job(request: SustainabilityJobRequest) -> Job
 
 
 @app.get("/sustainability/jobs/{job_id}", dependencies=[Depends(require_api_key)])
-def get_sustainability_diagnosis_job(job_id: str) -> dict[str, Any]:
-    job = _get_job(job_id)
-    return {
-        "job_id": job_id,
-        "status": job.get("status"),
-        "message": job.get("message"),
-        "completed": job.get("completed", 0),
-        "total": job.get("total", 0),
-        "document_name": job.get("document_name"),
-        "document_word_count": job.get("document_word_count"),
-        "summary": job.get("summary"),
-        "error": job.get("error"),
-    }
+async def get_sustainability_diagnosis_job(job_id: str, wait_seconds: float = POLL_DEFAULT_WAIT_SECONDS) -> dict[str, Any]:
+    job = await _await_job(job_id, wait_seconds)
+    return _job_status_payload(job_id, job)
 
 
 @app.get("/sustainability/jobs/{job_id}/result", dependencies=[Depends(require_api_key)])
@@ -598,19 +627,9 @@ def start_attributes_diagnosis_job(request: AttributesJobRequest) -> JobCreated:
 
 
 @app.get("/attributes/jobs/{job_id}", dependencies=[Depends(require_api_key)])
-def get_attributes_diagnosis_job(job_id: str) -> dict[str, Any]:
-    job = _get_job(job_id)
-    return {
-        "job_id": job_id,
-        "status": job.get("status"),
-        "message": job.get("message"),
-        "completed": job.get("completed", 0),
-        "total": job.get("total", 0),
-        "document_name": job.get("document_name"),
-        "document_word_count": job.get("document_word_count"),
-        "summary": job.get("summary"),
-        "error": job.get("error"),
-    }
+async def get_attributes_diagnosis_job(job_id: str, wait_seconds: float = POLL_DEFAULT_WAIT_SECONDS) -> dict[str, Any]:
+    job = await _await_job(job_id, wait_seconds)
+    return _job_status_payload(job_id, job)
 
 
 @app.get("/attributes/jobs/{job_id}/result", dependencies=[Depends(require_api_key)])
