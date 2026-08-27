@@ -323,7 +323,7 @@ def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
             progress_callback=progress,
         )
         summary = v3_core.summarize_results(results)
-        xlsx_bytes = v3_core.results_to_xlsx_bytes(results)
+        xlsx_bytes = v3_core.results_to_xlsx_bytes(results, criteria)
         xlsx_name = f"valoracion_v3_{_safe_filename_stem(filename)}.xlsx"
 
         _set_job(

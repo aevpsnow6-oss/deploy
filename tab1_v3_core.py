@@ -52,6 +52,26 @@ RESULT_COLUMNS = [
 ]
 
 SHEET_RESULT = "Resultado Diagnostico"
+SHEET_RUBRIC = "Rubrica aplicada"
+
+# Definición del criterio que acompaña a cada veredicto, para que el Excel
+# sea autocontenido: quien audita ve la regla junto al resultado.
+RUBRIC_SHEET_COLUMNS = [
+    "ID",
+    "Sección",
+    "Subsección",
+    "Criterio a evaluar",
+    "Tipo de criterio",
+    "Aplicabilidad",
+    "Aspectos transversales",
+    "Elementos a verificar",
+    "Rúbrica — Sí",
+    "Rúbrica — Parcial",
+    "Rúbrica — No",
+    "Rúbrica — No aplica",
+    "Anclas verificables (v3)",
+    "Subjetividad residual (v3)",
+]
 
 # Clave interna que produce stability/aggregation, renombrada en la salida.
 DRIFT_SOURCE_COLUMN = "Deriva principal (si inestable)"
@@ -839,11 +859,33 @@ def results_to_public_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
     return public[available]
 
 
-def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
-    """Serialize v3 results to a single-sheet XLSX workbook.
+def rubric_to_dataframe(criteria: pd.DataFrame, results: list[dict[str, Any]]) -> pd.DataFrame:
+    """Rubric rows for the criteria actually evaluated, in result order."""
+    if criteria is None or criteria.empty:
+        return pd.DataFrame(columns=RUBRIC_SHEET_COLUMNS)
+    evaluated = [str(r.get("ID", "")) for r in results]
+    df = criteria.copy()
+    df["ID"] = df["ID"].astype(str)
+    df = df[df["ID"].isin(evaluated)]
+    available = [c for c in RUBRIC_SHEET_COLUMNS if c in df.columns]
+    return (
+        df.assign(_sk=df["ID"].map(_id_sort_key))
+        .sort_values("_sk")
+        .drop(columns="_sk")
+        .reset_index(drop=True)[available]
+    )
 
-    One sheet, "Resultado Diagnostico": one row per criterion with the
-    verdict, the stability figures, the TEST audit trail and the evidence.
+
+def results_to_xlsx_bytes(
+    results: list[dict[str, Any]],
+    criteria: pd.DataFrame | None = None,
+) -> bytes:
+    """Serialize v3 results to an XLSX workbook.
+
+    Sheet 1, "Resultado Diagnostico": one row per criterion with the verdict,
+    the stability figures, the check-by-check audit trail and the evidence.
+    Sheet 2, "Rubrica aplicada" (when `criteria` is given): the definition of
+    each criterion evaluated, so the file can be audited on its own.
     """
     df = results_to_dataframe(results)
     buf = io.BytesIO()
@@ -876,6 +918,20 @@ def results_to_xlsx_bytes(results: list[dict[str, Any]]) -> bytes:
             worksheet.write(0, col_num, value, header_fmt)
         for col_range, width in widths.items():
             worksheet.set_column(col_range, width, wrap_fmt)
+
+        rubric_df = rubric_to_dataframe(criteria, results)
+        if not rubric_df.empty:
+            rubric_df.to_excel(writer, index=False, sheet_name=SHEET_RUBRIC)
+            ws2 = writer.sheets[SHEET_RUBRIC]
+            ws2.freeze_panes(1, 0)
+            ws2.autofilter(0, 0, max(len(rubric_df), 1), max(len(rubric_df.columns) - 1, 0))
+            for col_num, value in enumerate(rubric_df.columns):
+                ws2.write(0, col_num, value, header_fmt)
+            for col_range, width in {
+                "A:A": 10, "B:C": 16, "D:D": 54, "E:G": 18,
+                "H:H": 46, "I:L": 52, "M:M": 34, "N:N": 16,
+            }.items():
+                ws2.set_column(col_range, width, wrap_fmt)
     return buf.getvalue()
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
