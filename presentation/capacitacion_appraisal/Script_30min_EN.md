@@ -214,7 +214,9 @@ Band: "You no longer have to ask whether it finished: the Agent reports progress
 may be slower to start, because the service suspends when idle."
 
 **[Sl. 22 · The Excel] — 1:30**
-"One sheet, one row per criterion. Five column groups." — walk them.
+"Two sheets. The first, «Resultado Diagnostico»: one row per criterion, five column
+groups." — walk them. "The second, «Rubrica aplicada»: the definition of each criterion
+assessed, so the file can be audited on its own."
 "The headers are in Spanish, because that is what the file produces."
 Band: "**'Not Found' is not 'No'.** 'No' says the criterion is not met. 'Not Found' says the
 document does not let you tell. What follows is different: one is redesign, the other is

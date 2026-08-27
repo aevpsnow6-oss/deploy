@@ -10,6 +10,10 @@ from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.oxml.ns import qn
+from pptx.oxml import parse_xml
+from lxml.etree import SubElement
+from pptx.oxml.xmlchemy import OxmlElement
 
 BLUE   = RGBColor(0x00, 0x3E, 0x7E)
 BLUEMD = RGBColor(0x00, 0x72, 0xBC)
@@ -17,6 +21,39 @@ BLUELT = RGBColor(0xE0, 0xEC, 0xF6)
 RED    = RGBColor(0xD6, 0x00, 0x1C)
 GRAY   = RGBColor(0x4A, 0x4A, 0x4A)
 GRAYLT = RGBColor(0xF0, 0xF4, 0xF8)
+INK    = RGBColor(0x1A, 0x1A, 0x1A)   # texto principal, casi negro
+MUTED  = RGBColor(0x6B, 0x72, 0x80)   # texto secundario
+HAIR   = RGBColor(0xD6, 0xDC, 0xE3)   # filete fino
+TINT   = RGBColor(0xF7, 0xF9, 0xFB)   # fondo apenas perceptible
+
+# "classic" = barra azul llena; "sober" = tipografía y filetes, sin bloques.
+STYLE = "classic"
+
+
+def set_style(name):
+    global STYLE
+    STYLE = name
+
+
+def _sober():
+    return STYLE == "sober"
+
+
+def _cell_border(cell, edge, color, pts=1.0):
+    """Filete en un borde de celda (python-pptx no lo expone)."""
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tag = f"a:ln{edge}"
+    for old in tc_pr.findall(qn(tag)):
+        tc_pr.remove(old)
+    ln = OxmlElement(tag)
+    ln.set("w", str(int(pts * 12700)))
+    ln.set("cap", "flat")
+    fill = OxmlElement("a:solidFill")
+    clr = OxmlElement("a:srgbClr")
+    clr.set("val", f"{color:02X}" if isinstance(color, int) else str(color))
+    fill.append(clr)
+    ln.append(fill)
+    tc_pr.append(ln)
 WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
 
 EMU_W, EMU_H = Inches(13.333), Inches(7.5)
@@ -82,11 +119,37 @@ def set_runs(para, segments, size=20):
 
 def slide_new(title):
     s = prs.slides.add_slide(BLANK)
-    rect(s, 0, 0, EMU_W, Inches(0.92), BLUE)
-    rect(s, 0, Inches(0.92), EMU_W, Inches(0.055), RED)
-    tb, tf = textbox(s, Inches(0.45), 0, Inches(12.4), Inches(0.92), MSO_ANCHOR.MIDDLE)
-    r = tf.paragraphs[0].add_run(); r.text = title
-    r.font.size = Pt(30); r.font.bold = True; r.font.color.rgb = WHITE
+    if _sober():
+        tb, tf = textbox(s, CL, Inches(0.46), Inches(12.2), Inches(0.72), MSO_ANCHOR.MIDDLE)
+        r = tf.paragraphs[0].add_run(); r.text = title
+        r.font.size = Pt(29); r.font.bold = True; r.font.color.rgb = BLUE
+        rect(s, CL, Inches(1.17), Inches(1.5), Inches(0.045), RED)   # filete corto
+        rect(s, CL, Inches(1.19), EMU_W - CL * 2, Inches(0.008), HAIR)
+    else:
+        rect(s, 0, 0, EMU_W, Inches(0.92), BLUE)
+        rect(s, 0, Inches(0.92), EMU_W, Inches(0.055), RED)
+        tb, tf = textbox(s, Inches(0.45), 0, Inches(12.4), Inches(0.92), MSO_ANCHOR.MIDDLE)
+        r = tf.paragraphs[0].add_run(); r.text = title
+        r.font.size = Pt(30); r.font.bold = True; r.font.color.rgb = WHITE
+    return s
+
+
+def divider(numero, titulo, subtitulo=""):
+    """Separador de sección. No cuenta como diapositiva de contenido."""
+    s = prs.slides.add_slide(BLANK)
+    rect(s, 0, 0, Inches(0.16), EMU_H, BLUE)
+    tb, tf = textbox(s, Inches(1.5), Inches(2.7), Inches(10.5), Inches(2.1))
+    p0 = tf.paragraphs[0]
+    r0 = p0.add_run(); r0.text = numero
+    r0.font.size = Pt(15); r0.font.bold = True; r0.font.color.rgb = RED
+    p1 = tf.add_paragraph(); p1.space_before = Pt(6)
+    r1 = p1.add_run(); r1.text = titulo
+    r1.font.size = Pt(40); r1.font.bold = True; r1.font.color.rgb = BLUE
+    if subtitulo:
+        p2 = tf.add_paragraph(); p2.space_before = Pt(10)
+        r2 = p2.add_run(); r2.text = subtitulo
+        r2.font.size = Pt(19); r2.font.color.rgb = MUTED
+    rect(s, Inches(1.5), Inches(4.95), Inches(1.5), Inches(0.045), RED)
     return s
 
 
@@ -118,14 +181,25 @@ def table(slide, headers, rows, l, t, w, col_ratios, fsize=16, header_fs=16, fil
     for i, r in enumerate(col_ratios):
         gt.columns[i].width = Emu(int(w * r / total))
     for j, htext in enumerate(headers):
-        c = gt.cell(0, j); c.fill.solid(); c.fill.fore_color.rgb = BLUE
-        c.margin_top = Pt(3); c.margin_bottom = Pt(3)
+        c = gt.cell(0, j)
+        c.fill.solid()
+        c.fill.fore_color.rgb = WHITE if _sober() else BLUE
+        c.margin_top = Pt(3); c.margin_bottom = Pt(5)
         run = c.text_frame.paragraphs[0].add_run(); run.text = htext
-        run.font.bold = True; run.font.color.rgb = WHITE; run.font.size = Pt(header_fs)
+        run.font.bold = True
+        run.font.color.rgb = BLUE if _sober() else WHITE
+        run.font.size = Pt(header_fs)
+        if _sober():
+            _cell_border(c, "B", "003E7E", 1.2)
     for i, row in enumerate(rows, start=1):
-        shade = GRAYLT if i % 2 == 1 else WHITE
+        if _sober():
+            shade = TINT if i % 2 == 1 else WHITE
+        else:
+            shade = GRAYLT if i % 2 == 1 else WHITE
         for j, val in enumerate(row):
             c = gt.cell(i, j); c.fill.solid(); c.fill.fore_color.rgb = shade
+            if _sober():
+                _cell_border(c, "B", "D6DCE3", 0.6)
             c.margin_top = Pt(2); c.margin_bottom = Pt(2)
             p = c.text_frame.paragraphs[0]
             if isinstance(val, tuple):
@@ -140,6 +214,11 @@ def table(slide, headers, rows, l, t, w, col_ratios, fsize=16, header_fs=16, fil
 
 
 def band(slide, segments, l=CL, t=Inches(6.35), w=CW, size=17, bg=BLUELT):
+    if _sober():
+        rect(slide, l, t, w, Inches(0.022), HAIR)
+        tb, tf = textbox(slide, l, t + Inches(0.12), w, Inches(0.62), MSO_ANCHOR.TOP)
+        set_runs(tf.paragraphs[0], segments, size)
+        return tb
     box = rect(slide, l, t, w, Inches(0.72), bg)
     box.text_frame.word_wrap = True
     p = box.text_frame.paragraphs[0]
@@ -165,13 +244,18 @@ def steps(slide, items, t=CT, size=19, bottom=Inches(6.22)):
     top = t
     group = []
     for n, tit, det in items:
-        rect(slide, CL, top, Inches(0.86), h, BLUE)
+        if _sober():
+            rect(slide, CL, top + h - Inches(0.012), CW, Inches(0.012), HAIR)
+        else:
+            rect(slide, CL, top, Inches(0.86), h, BLUE)
         tb, tf = textbox(slide, CL, top, Inches(0.86), h, MSO_ANCHOR.MIDDLE)
         group.append(None)  # number box: fixed size, excluded from group fit
         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
         r = p.add_run(); r.text = str(n)
-        r.font.size = Pt(30); r.font.bold = True; r.font.color.rgb = WHITE
-        rect(slide, CL + Inches(0.86), top, CW - Inches(0.86), h, GRAYLT)
+        r.font.size = Pt(30); r.font.bold = True
+        r.font.color.rgb = BLUE if _sober() else WHITE
+        if not _sober():
+            rect(slide, CL + Inches(0.86), top, CW - Inches(0.86), h, GRAYLT)
         tb2, tf2 = textbox(slide, CL + Inches(1.08), top, CW - Inches(1.35), h, MSO_ANCHOR.MIDDLE)
         p2 = tf2.paragraphs[0]
         set_runs(p2, [B(tit + "  "), N(det)], size)

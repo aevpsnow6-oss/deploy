@@ -306,18 +306,19 @@ steps(s, [
 band(s, [B("No need to ask «is it done yet?»:  "), N("the Agent reports progress on its own — «180/760 (24%), about 3 minutes left» — until it delivers the file.")])
 
 # ═══ 21 · THE EXCEL ════════════════════════════════════════════════════
-s = slide_new("Step 4 · The Excel: sheet «Resultado Diagnostico»")
+s = slide_new("Step 4 · The results Excel")
 bullets(s, [
-    ([B("A single sheet"), N(", one row per criterion assessed. It is the auditable record: keep it.")], 0, None),
-], t=CT, h=Inches(0.75), size=21, gap=5)
+    ([B("Sheet 1 · «Resultado Diagnostico»"), N("  — one row per criterion assessed. It is the auditable record: keep it.")], 0, None),
+    ([B("Sheet 2 · «Rubrica aplicada»"), N("  — the definition of each criterion assessed: its checks and its decision rules.")], 0, None),
+], t=CT, h=Inches(1.15), size=20, gap=6)
 table(s, ["Column group", "What it holds", "What it is for"],
       [[("Identification", BLUE, True), "ID · Subsección · Criterio · Transversales", "Locate the criterion in the Checklist"],
        [("Result", BLUE, True), "Respuesta (Yes / Partial / No / Not Found / N/A)", "The diagnosis for that criterion"],
        [("Confidence", BLUE, True), "Estabilidad (%) · Estable (≥80%) · Resultado Alternativo", "How far the 10 runs agreed"],
        [("Support", BLUE, True), "Razonamiento (check by check) · Evidencia", "Verify why it reached that result"],
        [("Priority", BLUE, True), ("Revisión humana recomendada", RED, True), "Your work queue"]],
-      CL, Inches(2.05), CW, [2.0, 3.7, 2.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
-band(s, [B("Column headers are in Spanish, as the file produces them.  "), R("«Not Found» is not «No»: "), N("«No» says the criterion is not met; «Not Found» says the document does not let you tell.")])
+      CL, Inches(2.42), CW, [2.0, 3.7, 2.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
+band(s, [B("Sheet 2 makes the file self-contained:  "), N("an auditor sees the rule next to the verdict, without opening the rubric separately. Column headers are in Spanish, as the file produces them.")])
 
 # ═══ 22 · READING A ROW ════════════════════════════════════════════════
 s = slide_new("How to read a row, in order")
@@ -328,7 +329,7 @@ steps(s, [
     ("4", "Read the Razonamiento", "which check failed, and on what grounds"),
     ("5", "Decide", "design gap, documentation gap, or Agent error?"),
 ], size=21)
-band(s, [R("Never accept an answer without opening the evidence. "), N("The evidence is what turns an automated result into a defensible diagnosis.")])
+band(s, [R("«Not Found» is not «No»:  "), N("«No» says the criterion is not met; «Not Found» says the document does not let you tell. And never accept an answer without opening the evidence.")])
 
 # ═══ 23 · ANATOMY OF THE REASONING ═════════════════════════════════════
 s = slide_new("What the «Razonamiento» column contains")

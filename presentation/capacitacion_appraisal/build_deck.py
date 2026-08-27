@@ -8,6 +8,7 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from ilo_deck import *  # noqa: F403 - motor de maquetación compartido
 import ilo_deck
 
+ilo_deck.set_style("sober")
 prs = new_deck()
 
 # ═══ 1 · PORTADA ═══════════════════════════════════════════════════════
@@ -40,6 +41,8 @@ steps(s, [
 ], size=21)
 band(s, [R("Las preguntas se integran a este bloque: "), N("interrúmpanme en cualquier momento.")])
 
+divider("Parte 1", "De dónde viene y qué es", "De la aplicación Streamlit al Agente GPT · qué es realmente un modelo de lenguaje")
+
 # ═══ 3 · DE STREAMLIT AL GPT ═══════════════════════════════════════════
 s = slide_new("De dónde viene: de Streamlit al Agente GPT")
 table(s, ["", "Aplicación Streamlit", "Agente GPT"],
@@ -51,6 +54,21 @@ table(s, ["", "Aplicación Streamlit", "Agente GPT"],
        [("Salida", BLUE, True), "Excel descargable", "Excel descargable (igual)"]],
       CL, CT, CW, [1.5, 3.2, 3.2], fsize=18, header_fs=18, fill_to=Inches(6.22))
 band(s, [B("El motor no cambió. "), N("Cambió la puerta de entrada: el Agente elimina la barrera de instalación y de interfaz.")])
+
+# ═══ 3b · LA APP STREAMLIT ═════════════════════════════════════════════
+s = slide_new("Qué era la aplicación Streamlit")
+bullets(s, [
+    ([B("Por qué se construyó."), N("  El Appraisal Checklist se aplicaba a mano, criterio por criterio. "
+      "Revisar un PRODOC completo consumía horas de especialista y la cobertura de evaluación era limitada.")], 0, None),
+], t=CT, h=Inches(1.05), size=19, gap=6)
+table(s, ["Pestaña", "Qué hacía", "Sigue disponible"],
+      [[("1", BLUE, True), "Valoración preliminar de calidad de PRODOCs (Appraisal Checklist)", "Sí, ahora también como Agente"],
+       [("2", BLUE, True), "Diagnóstico de atributos específicos: género, participación, transición justa", "Sí, como Agente propio"],
+       [("3", BLUE, True), "Diagnóstico de sostenibilidad del proyecto", "Sí, como Agente propio"],
+       [("4", BLUE, True), "Pregúntale a tus documentos: chat sobre uno o varios archivos", ("Solo en Streamlit", MUTED, False)],
+       [("5 y 6", BLUE, True), "Clasificación de recomendaciones de evaluación (ES / EN)", ("Solo en Streamlit", MUTED, False)]],
+      CL, Inches(2.42), CW, [1.1, 5.4, 2.4], fsize=17, header_fs=17, fill_to=Inches(6.22))
+band(s, [B("Los tres primeros flujos son los que se convirtieron en Agentes.  "), N("El chat documental y la clasificación de recomendaciones siguen viviendo en la aplicación.")])
 
 # ═══ 4 · QUÉ ES UN LLM ═════════════════════════════════════════════════
 s = slide_new("Qué es un GPT, en términos sencillos")
@@ -72,6 +90,8 @@ table(s, ["No hace esto", "Por qué", "Qué implica para usted"],
        ["Dar siempre la misma respuesta", "Hay aleatoriedad inherente", "Por eso repetimos y medimos estabilidad"]],
       CL, CT, CW, [2.4, 2.9, 3.1], fsize=18, header_fs=18, fill_to=Inches(6.22))
 band(s, [B("Diseño deliberado:  "), N("preferimos un diagnóstico acotado y auditable antes que una recomendación amplia sin respaldo en el documento.")])
+
+divider("Parte 2", "Cómo está construido", "La rúbrica digitalizada, los chequeos y la búsqueda de evidencia")
 
 # ═══ 6 · CÓMO SE INCORPORÓ LA RÚBRICA ══════════════════════════════════
 s = slide_new("Cómo se incorporó el Appraisal Checklist")
@@ -97,18 +117,25 @@ band(s, [B("Se puede filtrar:  "), N("rúbrica completa, una sección («solo la
 
 # ═══ 8 · ANATOMÍA DE UN CRITERIO ═══════════════════════════════════════
 s = slide_new("De criterio a tests: cómo «entiende» un criterio")
-bullets(s, [
-    ([B("El criterio no se evalúa como una impresión general.")], 0, None),
-    ([N("Se descompone en preguntas cerradas que se responden una por una, con evidencia citada:")], 0, None),
-], t=CT, h=Inches(1.2), size=21, gap=8)
+rect(s, CL, CT, Inches(0.05), Inches(1.30), BLUEMD)
+tbc, tfc = textbox(s, CL + Inches(0.22), CT, CW - Inches(0.3), Inches(1.30))
+pc = tfc.paragraphs[0]
+set_runs(pc, [B("Criterio 1.5.6"), N("   ·   Sección 1 Pertinencia   ·   subjetividad "), R("Alta")], 15)
+pc2 = tfc.add_paragraph(); pc2.space_before = Pt(4)
+set_runs(pc2, [I("«Siempre que es posible, la propuesta promueve y destaca el uso de un enfoque "
+                 "transformador en materia de género.»")], 19)
+pc3 = tfc.add_paragraph(); pc3.space_before = Pt(6)
+set_runs(pc3, [N("Así redactado no es evaluable: se descompone en preguntas cerradas.")], 15)
 table(s, ["Test", "Pregunta cerrada", "Respuesta"],
       [[("T1", BLUE, True), "¿Distingue el tipo de enfoque (sensible / responsivo / transformador)?", ("sí / no", GRAY, True)],
        [("T2", BLUE, True), "¿Articula cómo el proyecto cuestiona normas o relaciones de poder?", ("sí / no", GRAY, True)],
        [("T3", BLUE, True), "¿Hay acciones dedicadas a transformar relaciones, no solo a incluir mujeres?", ("sí / no", GRAY, True)]],
-      CL, Inches(2.15), CW, [0.75, 6.2, 1.15], fsize=20, header_fs=19, fill_to=Inches(4.75))
-tb, tf = textbox(s, CL, Inches(5.00), CW, Inches(1.15))
+      CL, Inches(2.78), CW, [0.75, 6.2, 1.15], fsize=20, header_fs=19, fill_to=Inches(4.95))
+rect(s, CL, Inches(5.20), CW, Inches(0.78), TINT)
+rect(s, CL, Inches(5.20), Inches(0.05), Inches(0.78), BLUEMD)
+tb, tf = textbox(s, CL + Inches(0.22), Inches(5.20), CW - Inches(0.3), Inches(0.78), MSO_ANCHOR.MIDDLE)
 p = tf.paragraphs[0]
-set_runs(p, [B("DECISIÓN:   "), N("T1 ∧ T2 ∧ T3 → "), (("Yes"), RED, True), N("      ·      T1 ∨ T3 (sin cumplir los tres) → "), ("Partial", RED, True), N("      ·      ¬T1 ∧ ¬T3 → "), ("No", RED, True)], 20)
+set_runs(p, [B("DECISIÓN:   "), N("T1 ∧ T2 ∧ T3 → "), ("Yes", RED, True), N("      ·      T1 ∨ T3 (sin los tres) → "), ("Partial", RED, True), N("      ·      ¬T1 ∧ ¬T3 → "), ("No", RED, True)], 17)
 band(s, [B("Esto es lo que hace auditable el resultado:  "), N("usted puede revisar test por test dónde y por qué el Agente llegó a esa conclusión.")])
 
 # ═══ 9 · CÓMO BUSCA EVIDENCIA ══════════════════════════════════════════
@@ -183,6 +210,8 @@ register_group(grupo)
 
 band(s, [B("DECISIÓN:  "), N("se requieren T1 ∧ T2 ∧ T3. Se cumplen T1 y T3, falta T2  →  "), R("PARTIAL"), N("   ·   extracto ilustrativo, no es un PRODOC real.")])
 
+divider("Parte 3", "Por qué repite", "Aleatoriedad, diez corridas y qué significa la estabilidad")
+
 # ═══ 10 · POR QUÉ REPITE ═══════════════════════════════════════════════
 s = slide_new("Por qué cada criterio se evalúa 10 veces")
 bullets(s, [
@@ -227,6 +256,8 @@ bullets(s, [
 ], size=22, gap=18)
 band(s, [R("Úsela como cola de trabajo:  "), N("empiece por los criterios marcados. Ahí es donde su juicio profesional aporta más valor.")])
 
+divider("Parte 4", "Límites y comparación", "Qué cuesta, qué no hace, y en qué se diferencia del GPT Empresarial")
+
 # ═══ 14 · VENTAJAS Y DESVENTAJAS ═══════════════════════════════════════
 s = slide_new("Ventajas y desventajas de esta tecnología")
 table(s, ["", "Ventaja", "Desventaja / costo"],
@@ -259,16 +290,8 @@ steps(s, [
 ], t=Inches(1.9), size=21)
 band(s, [R("Ninguna salida constituye una determinación oficial de la OIT. "), N("Es una valoración asistida que requiere validación experta.")])
 
-# ═══ 17 · PARTE 2 · PORTADILLA ═════════════════════════════════════════
-s = blank_slide()
-rect(s, 0, 0, EMU_W, EMU_H, BLUE)
-rect(s, Inches(1.2), Inches(2.75), Inches(3.4), Inches(0.09), RED)
-tb, tf = textbox(s, Inches(1.2), Inches(3.0), Inches(11.0), Inches(2.2))
-p = tf.paragraphs[0]
-r = p.add_run(); r.text = "Parte 2 · La herramienta en uso"
-r.font.size = Pt(48); r.font.bold = True; r.font.color.rgb = WHITE
-p2 = tf.add_paragraph(); p2.space_before = Pt(16)
-set_runs(p2, [W("Cargar  →  seleccionar  →  ejecutar  →  descargar  →  interpretar")], 26)
+# ═══ PORTADILLA · LA HERRAMIENTA EN USO ═══════════════════════════════
+divider("Parte 5", "La herramienta en uso", "Cargar · acotar · ejecutar · descargar · interpretar")
 
 # ═══ 18 · EL FLUJO ═════════════════════════════════════════════════════
 s = slide_new("El flujo completo, en cinco pasos")
@@ -305,18 +328,19 @@ steps(s, [
 band(s, [B("No hay que preguntar «¿ya terminó?»:  "), N("el Agente informa el avance solo — «180/760 (24%), quedan unos 3 minutos» — hasta entregar el archivo.")])
 
 # ═══ 21 · EL EXCEL ═════════════════════════════════════════════════════
-s = slide_new("Paso 4 · El Excel: hoja «Resultado Diagnostico»")
+s = slide_new("Paso 4 · El Excel de resultados")
 bullets(s, [
-    ([B("Una sola hoja"), N(", con una fila por criterio evaluado. Es el registro auditable: consérvelo.")], 0, None),
-], t=CT, h=Inches(0.75), size=21, gap=5)
+    ([B("Hoja 1 · «Resultado Diagnostico»"), N("  — una fila por criterio evaluado. Es el registro auditable: consérvelo.")], 0, None),
+    ([B("Hoja 2 · «Rubrica aplicada»"), N("  — la definición de cada criterio evaluado: sus chequeos y sus reglas de decisión.")], 0, None),
+], t=CT, h=Inches(1.15), size=20, gap=6)
 table(s, ["Grupo de columnas", "Qué contiene", "Para qué sirve"],
       [[("Identificación", BLUE, True), "ID · Subsección · Criterio · Transversales", "Ubicar el criterio en el Checklist"],
        [("Resultado", BLUE, True), "Respuesta (Yes / Partial / No / Not Found / N/A)", "El diagnóstico del criterio"],
        [("Confianza", BLUE, True), "Estabilidad (%) · Estable (≥80%) · Resultado Alternativo", "Cuánto coincidieron las 10 corridas"],
        [("Sustento", BLUE, True), "Razonamiento (chequeo por chequeo) · Evidencia citada", "Verificar por qué llegó a ese resultado"],
        [("Prioridad", BLUE, True), ("Revisión humana recomendada", RED, True), "Su cola de trabajo"]],
-      CL, Inches(2.05), CW, [2.0, 3.7, 2.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
-band(s, [B("«Not Found» no es «No».  "), N("«No» afirma que el criterio no se cumple; «Not Found» afirma que el documento no permite determinarlo. La acción es distinta.")])
+      CL, Inches(2.42), CW, [2.0, 3.7, 2.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
+band(s, [B("La hoja 2 hace el archivo autocontenido:  "), N("quien audite ve la regla junto al veredicto, sin abrir la rúbrica por separado. Sólo incluye los criterios evaluados.")])
 
 # ═══ 22 · ANATOMÍA DE UNA FILA ═════════════════════════════════════════
 s = slide_new("Cómo leer una fila, en orden")
@@ -327,7 +351,7 @@ steps(s, [
     ("4", "Lea el Razonamiento", "qué chequeo falló y con qué justificación"),
     ("5", "Decida", "¿brecha de diseño, brecha documental, o error del Agente?"),
 ], size=21)
-band(s, [R("Nunca acepte una respuesta sin abrir la evidencia. "), N("La evidencia es lo que convierte un resultado automático en un diagnóstico defendible.")])
+band(s, [R("«Not Found» no es «No»:  "), N("«No» afirma que el criterio no se cumple; «Not Found», que el documento no permite determinarlo. Nunca acepte una respuesta sin abrir la evidencia.")])
 
 # ═══ 22b · ANATOMÍA DEL RAZONAMIENTO ═══════════════════════════════════
 s = slide_new("Qué contiene la columna Razonamiento")
@@ -415,6 +439,8 @@ table(s, ["Pregunta", "Respuesta breve"],
        ["¿Cuánto cuesta evaluar un PRODOC?", "Depende del tamaño del documento y de cuántos criterios se evalúen. Filtrar reduce el costo."],
        ["¿Puedo evaluar otros documentos?", "Para género, participación, transición justa y sostenibilidad existen agentes específicos."]],
       CL, CT, CW, [3.4, 6.0], fsize=17, header_fs=17, fill_to=Inches(7.05))
+
+divider("Cierre", "Qué recordar", "")
 
 # ═══ 26 · CIERRE ═══════════════════════════════════════════════════════
 s = slide_new("Qué recordar de este bloque")
