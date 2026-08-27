@@ -52,7 +52,24 @@ RESULT_COLUMNS = [
 ]
 
 SHEET_RESULT = "Resultado Diagnostico"
+SHEET_PRIORITY = "Revisión prioritaria"
 SHEET_RUBRIC = "Rubrica aplicada"
+
+# Revisión obligatoria: inestables (la repetición no convergió) y "No"
+# (incumplimiento declarado). La subjetividad alta queda a criterio del usuario.
+PRIORITY_COLUMNS = [
+    "ID",
+    "Subsección",
+    "Criterio",
+    "Motivo de prioridad",
+    "Respuesta",
+    "Estabilidad (%)",
+    "Resultado Alternativo",
+    "Distribución de respuestas",
+    "Subjetividad",
+    "Razonamiento",
+    "Evidencia",
+]
 
 # Definición del criterio que acompaña a cada veredicto, para que el Excel
 # sea autocontenido: quien audita ve la regla junto al resultado.
@@ -859,6 +876,49 @@ def results_to_public_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
     return public[available]
 
 
+def _is_unstable(row: pd.Series) -> bool:
+    stability = row.get("Estabilidad (%)")
+    if stability is None or pd.isna(stability):
+        return False
+    try:
+        return float(stability) < STABILITY_THRESHOLD_PCT
+    except (TypeError, ValueError):
+        return False
+
+
+def _priority_reason(row: pd.Series) -> str:
+    """Why this criterion must be reviewed. Empty string = not priority."""
+    motivos = []
+    if _is_unstable(row):
+        motivos.append(
+            f"Inestable ({_format_pct(float(row['Estabilidad (%)']))} "
+            f"< {_format_pct(STABILITY_THRESHOLD_PCT)})"
+        )
+    if str(row.get("Respuesta", "")).strip() == "No":
+        motivos.append("Resultado No")
+    return " + ".join(motivos)
+
+
+def priority_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
+    """Criteria requiring mandatory human review: unstable and/or answered No."""
+    df = results_to_dataframe(results)
+    if df.empty:
+        return pd.DataFrame(columns=PRIORITY_COLUMNS)
+    df = df.copy()
+    df["Motivo de prioridad"] = df.apply(_priority_reason, axis=1)
+    df = df[df["Motivo de prioridad"] != ""]
+    if df.empty:
+        return pd.DataFrame(columns=PRIORITY_COLUMNS)
+    # Los dos motivos juntos primero, luego inestables, luego "No".
+    orden = {2: 0, 1: 1}
+    df = df.assign(
+        _rank=df["Motivo de prioridad"].map(lambda m: orden[m.count("+") + 1]),
+        _sk=df["ID"].map(_id_sort_key),
+    ).sort_values(["_rank", "_sk"]).drop(columns=["_rank", "_sk"]).reset_index(drop=True)
+    available = [c for c in PRIORITY_COLUMNS if c in df.columns]
+    return df[available]
+
+
 def rubric_to_dataframe(criteria: pd.DataFrame, results: list[dict[str, Any]]) -> pd.DataFrame:
     """Rubric rows for the criteria actually evaluated, in result order."""
     if criteria is None or criteria.empty:
@@ -884,21 +944,31 @@ def results_to_xlsx_bytes(
 
     Sheet 1, "Resultado Diagnostico": one row per criterion with the verdict,
     the stability figures, the check-by-check audit trail and the evidence.
-    Sheet 2, "Rubrica aplicada" (when `criteria` is given): the definition of
+    Sheet 2, "Revisión prioritaria": the subset that must be reviewed by a
+    person — unstable results and every "No".
+    Sheet 3, "Rubrica aplicada" (when `criteria` is given): the definition of
     each criterion evaluated, so the file can be audited on its own.
     """
     df = results_to_dataframe(results)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name=SHEET_RESULT)
-
         workbook = writer.book
         header_fmt = workbook.add_format(
             {"bold": True, "text_wrap": True, "valign": "top", "fg_color": "#D9EAF7", "border": 1}
         )
         wrap_fmt = workbook.add_format({"text_wrap": True, "valign": "top"})
 
-        widths = {
+        def write_sheet(frame: pd.DataFrame, name: str, widths: dict[str, int]) -> None:
+            frame.to_excel(writer, index=False, sheet_name=name)
+            ws = writer.sheets[name]
+            ws.freeze_panes(1, 0)
+            ws.autofilter(0, 0, max(len(frame), 1), max(len(frame.columns) - 1, 0))
+            for col_num, value in enumerate(frame.columns):
+                ws.write(0, col_num, value, header_fmt)
+            for col_range, width in widths.items():
+                ws.set_column(col_range, width, wrap_fmt)
+
+        write_sheet(df, SHEET_RESULT, {
             "A:B": 10,    # ID, Subseccion
             "C:D": 52,    # Pregunta orientadora, Criterio
             "E:F": 18,    # Subjetividad, Transversales
@@ -910,29 +980,29 @@ def results_to_xlsx_bytes(
             "O:P": 60,    # Razonamiento, Evidencia
             "Q:Q": 14,    # Status
             "R:R": 34,    # Revision humana recomendada
-        }
-        worksheet = writer.sheets[SHEET_RESULT]
-        worksheet.freeze_panes(1, 0)
-        worksheet.autofilter(0, 0, max(len(df), 1), max(len(df.columns) - 1, 0))
-        for col_num, value in enumerate(df.columns):
-            worksheet.write(0, col_num, value, header_fmt)
-        for col_range, width in widths.items():
-            worksheet.set_column(col_range, width, wrap_fmt)
+        })
+
+        priority_df = priority_to_dataframe(results)
+        if not priority_df.empty:
+            write_sheet(priority_df, SHEET_PRIORITY, {
+                "A:B": 10,    # ID, Subseccion
+                "C:C": 52,    # Criterio
+                "D:D": 30,    # Motivo de prioridad
+                "E:E": 16,    # Respuesta
+                "F:G": 18,    # Estabilidad (%), Resultado Alternativo
+                "H:H": 26,    # Distribucion de respuestas
+                "I:I": 16,    # Subjetividad
+                "J:K": 60,    # Razonamiento, Evidencia
+            })
 
         rubric_df = rubric_to_dataframe(criteria, results)
         if not rubric_df.empty:
-            rubric_df.to_excel(writer, index=False, sheet_name=SHEET_RUBRIC)
-            ws2 = writer.sheets[SHEET_RUBRIC]
-            ws2.freeze_panes(1, 0)
-            ws2.autofilter(0, 0, max(len(rubric_df), 1), max(len(rubric_df.columns) - 1, 0))
-            for col_num, value in enumerate(rubric_df.columns):
-                ws2.write(0, col_num, value, header_fmt)
-            for col_range, width in {
+            write_sheet(rubric_df, SHEET_RUBRIC, {
                 "A:A": 10, "B:C": 16, "D:D": 54, "E:G": 18,
                 "H:H": 46, "I:L": 52, "M:M": 34, "N:N": 16,
-            }.items():
-                ws2.set_column(col_range, width, wrap_fmt)
+            })
     return buf.getvalue()
+
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Create a compact deterministic summary for GPT responses."""
@@ -968,6 +1038,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         if repeat_errors:
             criteria_with_repeat_errors.append(result.get("ID"))
 
+    priority_ids = sorted(
+        {str(r.get("ID")) for r in unstable_results}
+        | {str(r.get("ID")) for r in results if str(r.get("Respuesta", "")).strip() == "No"},
+        key=_id_sort_key,
+    )
+
     return {
         "total_criteria": len(results),
         "answers": dict(answer_counts),
@@ -991,6 +1067,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "repeat_error_count": repeat_error_count,
         "criteria_with_repeat_errors": criteria_with_repeat_errors,
+        # Hoja "Revisión prioritaria": inestables ∪ "No". Revisión obligatoria.
+        "priority_review_count": len(priority_ids),
+        "priority_review_ids": priority_ids,
     }
 
 
@@ -1036,7 +1115,43 @@ def _demo() -> None:
     # rúbrica ilegible -> también intacto
     assert render_reasoning(result, "sin estructura") == result["Razonamiento"]
 
+    _demo_priority()
     print("tab1_v3_core._demo OK")
+
+
+def _demo_priority() -> None:
+    """Self-check for the mandatory-review sheet."""
+    rows = [
+        # estable y conforme -> fuera
+        {"ID": "1.1.1", "Respuesta": "Yes", "Estabilidad (%)": 100.0, "Subjetividad": "Baja"},
+        # inestable aunque el veredicto sea favorable -> entra
+        {"ID": "1.2.1", "Respuesta": "Yes", "Estabilidad (%)": 60.0, "Subjetividad": "Baja"},
+        # incumplimiento estable -> entra
+        {"ID": "1.3.1", "Respuesta": "No", "Estabilidad (%)": 100.0, "Subjetividad": "Baja"},
+        # los dos motivos -> entra y encabeza
+        {"ID": "1.4.1", "Respuesta": "No", "Estabilidad (%)": 50.0, "Subjetividad": "Alta"},
+        # subjetividad alta sola no basta: queda a criterio del usuario
+        {"ID": "1.5.1", "Respuesta": "Partial", "Estabilidad (%)": 90.0, "Subjetividad": "Alta"},
+    ]
+    df = priority_to_dataframe(rows)
+    assert list(df["ID"]) == ["1.4.1", "1.2.1", "1.3.1"], list(df["ID"])
+    assert df.iloc[0]["Motivo de prioridad"] == "Inestable (50% < 80%) + Resultado No"
+    assert df.iloc[1]["Motivo de prioridad"] == "Inestable (60% < 80%)"
+    assert df.iloc[2]["Motivo de prioridad"] == "Resultado No"
+    # sin resultados prioritarios la hoja no se escribe
+    assert priority_to_dataframe([rows[0]]).empty
+    assert priority_to_dataframe([]).empty
+    # el resumen y la hoja no pueden divergir
+    resumen = summarize_results(rows)
+    assert resumen["priority_review_count"] == 3
+    assert sorted(resumen["priority_review_ids"]) == sorted(df["ID"])
+    # el libro gana la hoja, y la omite cuando no hace falta
+    import openpyxl
+    book = openpyxl.load_workbook(io.BytesIO(results_to_xlsx_bytes(rows)))
+    assert SHEET_PRIORITY in book.sheetnames, book.sheetnames
+    assert book[SHEET_PRIORITY].max_row == 4  # cabecera + 3
+    limpio = openpyxl.load_workbook(io.BytesIO(results_to_xlsx_bytes([rows[0]])))
+    assert SHEET_PRIORITY not in limpio.sheetnames
 
 
 if __name__ == "__main__":
