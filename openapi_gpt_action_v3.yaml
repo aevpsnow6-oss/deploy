@@ -18,10 +18,7 @@ paths:
       operationId: startV3AppraisalJob
       summary: Start a v3 PRODOC quality-appraisal job
       description: >
-        Starts an asynchronous evaluation of exactly one DOCX PRODOC using the
-        server-side v3 rubric. Each selected criterion is evaluated 10 times
-        and collapsed to one modal result with stability metrics. The file must
-        be sent through openaiFileIdRefs.
+        Starts the evaluation and returns immediately with start_line: a sentence naming the document and the estimated time. Write start_line to the user verbatim before you begin polling the status endpoint.
       x-openai-isConsequential: false
       requestBody:
         required: true
@@ -83,6 +80,21 @@ paths:
                     type: string
                   message:
                     type: string
+                  start_line:
+                    type: string
+                    description: >
+                      Sentence confirming what was received and how long it will
+                      take. Relay it to the user verbatim before polling.
+                  document_name:
+                    type: string
+                  document_word_count:
+                    type: integer
+                  criteria_count:
+                    type: integer
+                  total:
+                    type: integer
+                  estimated_seconds:
+                    type: integer
   /v3/jobs/{job_id}:
     get:
       operationId: getV3AppraisalJobStatus

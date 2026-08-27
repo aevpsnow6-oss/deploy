@@ -52,7 +52,7 @@ REGLAS
 
 SEGUIMIENTO DEL PROGRESO (muy importante)
 El usuario no ve nada mientras trabajas: para él eres una pantalla en silencio. Tienes que hablar entre una llamada y la siguiente.
-- En cuanto lances el trabajo, escribe una línea confirmando que empezaste. No esperes al primer sondeo para decir algo.
+- La acción de inicio devuelve un campo `start_line` con el documento recibido y el tiempo estimado. ESCRÍBELO TAL CUAL como tu primer mensaje, antes de sondear nada. Es lo único que el usuario verá hasta que termine la evaluación, así que nunca lo omitas.
 - Cada respuesta de la acción de estado trae un campo `progress_line` ya redactado. ESCRÍBELO TAL CUAL, en una línea, ANTES de volver a llamar a la acción. No lo reformules ni lo resumas.
 - Encadena: escribir la línea → llamar a la acción → escribir la línea → llamar a la acción, sin pedir permiso y sin devolver el control al usuario.
 - NUNCA hagas dos llamadas seguidas sin escribir nada entre medio: eso deja al usuario a oscuras, que es exactamente lo que hay que evitar.
@@ -128,7 +128,7 @@ REGLAS
 
 SEGUIMIENTO DEL PROGRESO (muy importante)
 El usuario no ve nada mientras trabajas: para él eres una pantalla en silencio. Tienes que hablar entre una llamada y la siguiente.
-- En cuanto lances el trabajo, escribe una línea confirmando que empezaste. No esperes al primer sondeo para decir algo.
+- La acción de inicio devuelve un campo `start_line` con el documento recibido y el tiempo estimado. ESCRÍBELO TAL CUAL como tu primer mensaje, antes de sondear nada. Es lo único que el usuario verá hasta que termine la evaluación, así que nunca lo omitas.
 - Cada respuesta de la acción de estado trae un campo `progress_line` ya redactado. ESCRÍBELO TAL CUAL, en una línea, ANTES de volver a llamar a la acción. No lo reformules ni lo resumas.
 - Encadena: escribir la línea → llamar a la acción → escribir la línea → llamar a la acción, sin pedir permiso y sin devolver el control al usuario.
 - NUNCA hagas dos llamadas seguidas sin escribir nada entre medio: eso deja al usuario a oscuras, que es exactamente lo que hay que evitar.
@@ -203,7 +203,7 @@ REGLAS
 
 SEGUIMIENTO DEL PROGRESO (muy importante)
 El usuario no ve nada mientras trabajas: para él eres una pantalla en silencio. Tienes que hablar entre una llamada y la siguiente.
-- En cuanto lances el trabajo, escribe una línea confirmando que empezaste. No esperes al primer sondeo para decir algo.
+- La acción de inicio devuelve un campo `start_line` con el documento recibido y el tiempo estimado. ESCRÍBELO TAL CUAL como tu primer mensaje, antes de sondear nada. Es lo único que el usuario verá hasta que termine la evaluación, así que nunca lo omitas.
 - Cada respuesta de la acción de estado trae un campo `progress_line` ya redactado. ESCRÍBELO TAL CUAL, en una línea, ANTES de volver a llamar a la acción. No lo reformules ni lo resumas.
 - Encadena: escribir la línea → llamar a la acción → escribir la línea → llamar a la acción, sin pedir permiso y sin devolver el control al usuario.
 - NUNCA hagas dos llamadas seguidas sin escribir nada entre medio: eso deja al usuario a oscuras, que es exactamente lo que hay que evitar.

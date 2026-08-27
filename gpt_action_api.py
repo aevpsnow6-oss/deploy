@@ -131,6 +131,14 @@ class JobCreated(BaseModel):
     job_id: str
     status: str
     message: str
+    # El POST prepara el documento de forma síncrona para que el GPT pueda
+    # confirmar la recepción de inmediato, antes de empezar a sondear.
+    start_line: str | None = None
+    document_name: str | None = None
+    document_word_count: int | None = None
+    criteria_count: int | None = None
+    total: int | None = None
+    estimated_seconds: int | None = None
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -275,20 +283,47 @@ def _safe_filename_stem(filename: str) -> str:
     return stem or "prodoc"
 
 
-def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
+# Ritmo observado en producción: ~48 llamadas en paralelo, ~1.6 s por llamada.
+SECONDS_PER_CALL = 0.30
+
+
+def _estimate_seconds(total_calls: int) -> int:
+    return max(15, int(round(total_calls * SECONDS_PER_CALL)))
+
+
+def _prepare_v3_job(request: EvaluationJobRequest) -> dict[str, Any]:
+    """Download, extract and filter before the POST returns.
+
+    Doing this synchronously costs a few seconds on the POST but lets the GPT
+    tell the user what it received and how long it will take, instead of going
+    silent while a background thread works.
+    """
+    filename, docx_bytes = _download_docx_file(request.openaiFileIdRefs)
+    document_text = v3_core.extract_docx_text_from_bytes(docx_bytes)
+    word_count = len(document_text.split())
+    rubric = v3_core.load_rubrica_v3()
+    criteria = v3_core.filter_rubric(rubric, request.sections, request.subsections)
+    if criteria.empty:
+        raise ValueError("No v3 rubric criteria matched the selected filters.")
+    total_calls = len(criteria) * v3_core.STABILITY_REPEATS
+    return {
+        "filename": filename,
+        "document_text": document_text,
+        "word_count": word_count,
+        "criteria": criteria,
+        "total_calls": total_calls,
+        "estimated_seconds": _estimate_seconds(total_calls),
+    }
+
+
+def _run_evaluation_job(
+    job_id: str, request: EvaluationJobRequest, prepared: dict[str, Any]
+) -> None:
     try:
-        _set_job(job_id, status="running", message="Downloading DOCX from ChatGPT.")
-        filename, docx_bytes = _download_docx_file(request.openaiFileIdRefs)
-
-        _set_job(job_id, message="Extracting DOCX text.")
-        document_text = v3_core.extract_docx_text_from_bytes(docx_bytes)
-        word_count = len(document_text.split())
-
-        _set_job(job_id, message="Loading and filtering v3 rubric.")
-        rubric = v3_core.load_rubrica_v3()
-        criteria = v3_core.filter_rubric(rubric, request.sections, request.subsections)
-        if criteria.empty:
-            raise ValueError("No v3 rubric criteria matched the selected filters.")
+        filename = prepared["filename"]
+        document_text = prepared["document_text"]
+        word_count = prepared["word_count"]
+        criteria = prepared["criteria"]
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
@@ -303,9 +338,10 @@ def _run_evaluation_job(job_id: str, request: EvaluationJobRequest) -> None:
                 message=f"Completed {done}/{total} repeated criterion calls.",
             )
 
-        total_calls = len(criteria) * v3_core.STABILITY_REPEATS
+        total_calls = prepared["total_calls"]
         _set_job(
             job_id,
+            status="running",
             message=(
                 "Evaluating criteria with OpenAI "
                 f"({v3_core.STABILITY_REPEATS} independent runs per criterion)."
@@ -540,21 +576,44 @@ def privacy() -> str:
 
 @app.post("/v3/jobs", response_model=JobCreated, dependencies=[Depends(require_api_key)])
 def start_v3_appraisal_job(request: EvaluationJobRequest) -> JobCreated:
+    try:
+        prepared = _prepare_v3_job(request)
+    except Exception as exc:  # el GPT recibe el fallo de inmediato, no como job fallido
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     job_id = str(uuid.uuid4())
+    minutos = max(1, round(prepared["estimated_seconds"] / 60))
+    start_line = (
+        f"Documento recibido: {prepared['filename']} "
+        f"({prepared['word_count']:,} palabras).".replace(",", ".")
+        + f" Evaluando {len(prepared['criteria'])} criterios "
+        f"({prepared['total_calls']} consultas al modelo). "
+        f"Tiempo estimado: {minutos} minuto{'s' if minutos != 1 else ''}."
+    )
     _set_job(
         job_id,
-        status="queued",
-        message="Job queued.",
+        status="running",
+        message="Evaluation started.",
         created_at=_now(),
         completed=0,
-        total=0,
+        total=prepared["total_calls"],
+        document_name=prepared["filename"],
+        document_word_count=prepared["word_count"],
     )
-    thread = threading.Thread(target=_run_evaluation_job, args=(job_id, request), daemon=True)
+    thread = threading.Thread(
+        target=_run_evaluation_job, args=(job_id, request, prepared), daemon=True
+    )
     thread.start()
     return JobCreated(
         job_id=job_id,
-        status="queued",
-        message="Evaluation job started. Poll /v3/jobs/{job_id} until status is succeeded or failed.",
+        status="running",
+        message="Evaluation started. Relay start_line to the user, then poll until succeeded or failed.",
+        start_line=start_line,
+        document_name=prepared["filename"],
+        document_word_count=prepared["word_count"],
+        criteria_count=len(prepared["criteria"]),
+        total=prepared["total_calls"],
+        estimated_seconds=prepared["estimated_seconds"],
     )
 
 
