@@ -18,7 +18,10 @@ paths:
       operationId: startV3AppraisalJob
       summary: Start a v3 PRODOC quality-appraisal job
       description: >
-        Starts the evaluation and returns immediately with start_line: a sentence naming the document and the estimated time. Write start_line to the user verbatim before you begin polling the status endpoint.
+        Starts the evaluation and returns immediately with start_line. Relay
+        start_line verbatim, tell the user to write "estado" to check progress,
+        and end the assistant turn. Do not call the status endpoint in the same
+        turn as this operation.
       x-openai-isConsequential: false
       requestBody:
         required: true
@@ -84,7 +87,8 @@ paths:
                     type: string
                     description: >
                       Sentence confirming what was received and how long it will
-                      take. Relay it to the user verbatim before polling.
+                      take. Relay it verbatim, ask the user to write "estado",
+                      and end the turn without polling.
                   document_name:
                     type: string
                   document_word_count:
@@ -100,7 +104,12 @@ paths:
       operationId: getV3AppraisalJobStatus
       summary: Get v3 appraisal job status
       description: >
-        Poll until status is succeeded or failed. After each call, write the returned progress_line to the user verbatim before calling again. Never make two calls in a row without writing something in between: the user sees nothing while you work.
+        Call this operation at most once per user message requesting "estado",
+        progress, or equivalent. If status is queued or running, relay
+        progress_line verbatim, tell the user to write "estado" to check again,
+        and end the turn. Do not poll again in the same turn. If status is
+        succeeded, call getV3AppraisalResult immediately. If status is failed,
+        report the error and end the turn.
       x-openai-isConsequential: false
       parameters:
         - in: path
@@ -131,7 +140,8 @@ paths:
                     type: string
                     description: >
                       A ready-to-use sentence describing current progress.
-                      Relay it to the user verbatim; do not rewrite it.
+                      Relay it verbatim; do not rewrite it or make another
+                      status call in the same turn while the job is running.
                   percent_complete:
                     type: number
                   eta_seconds:

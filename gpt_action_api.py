@@ -132,7 +132,7 @@ class JobCreated(BaseModel):
     status: str
     message: str
     # El POST prepara el documento de forma síncrona para que el GPT pueda
-    # confirmar la recepción de inmediato, antes de empezar a sondear.
+    # confirmar la recepción antes de terminar el turno inicial.
     start_line: str | None = None
     document_name: str | None = None
     document_word_count: int | None = None
@@ -167,12 +167,9 @@ def _get_job(job_id: str) -> dict[str, Any]:
         return dict(job)
 
 
-# Long-poll: el GPT no puede esperar por su cuenta, así que la propia consulta
-# de estado aguarda a que el trabajo termine (o a que venza el plazo) antes de
-# responder. Así cada llamada devuelve algo nuevo y el bucle se autorregula.
+# Cada mensaje de estado hace una única consulta. La espera corta permite que esa
+# consulta capture avances recientes sin mantener el turno del usuario bloqueado.
 POLL_MAX_WAIT_SECONDS = 25.0
-# Corto a propósito: ChatGPT sólo puede escribir texto ENTRE llamadas a la
-# acción. Una espera larga silencia al modelo justo cuando debería informar.
 POLL_DEFAULT_WAIT_SECONDS = 3.0
 _TERMINAL_STATUSES = {"succeeded", "failed"}
 
@@ -607,7 +604,10 @@ def start_v3_appraisal_job(request: EvaluationJobRequest) -> JobCreated:
     return JobCreated(
         job_id=job_id,
         status="running",
-        message="Evaluation started. Relay start_line to the user, then poll until succeeded or failed.",
+        message=(
+            "Evaluation started. Relay start_line verbatim, ask the user to write "
+            "'estado' to check progress, and end this turn. Do not poll now."
+        ),
         start_line=start_line,
         document_name=prepared["filename"],
         document_word_count=prepared["word_count"],

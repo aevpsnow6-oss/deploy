@@ -150,9 +150,11 @@ Core rules:
 Workflow:
 1. When the user uploads a DOCX PRODOC, ask whether they want a full evaluation or selected sections/subsections.
 2. Start the evaluation job with startV3AppraisalJob.
-3. Poll getV3AppraisalJobStatus until status is succeeded or failed.
-4. If succeeded, call getV3AppraisalResult.
-5. Summarize:
+3. Relay start_line verbatim, ask the user to write "estado" to check progress, and end the turn. Do not call the status Action in this turn.
+4. When the user writes "estado", call getV3AppraisalJobStatus exactly once.
+5. If the job is queued or running, relay progress_line verbatim, ask the user to write "estado" to check again, and end the turn without polling again.
+6. If succeeded, call getV3AppraisalResult immediately.
+7. Summarize:
    - total criteria evaluated,
    - counts by result category,
    - average stability percentage,
@@ -161,7 +163,7 @@ Workflow:
    - failed/error status count if any,
    - high-subjectivity criteria requiring manual review,
    - the downloadable XLSX result, noting that the first sheet is the user-facing view and the second sheet preserves the stability distribution and audit trail.
-6. If failed, report the failure message plainly and suggest the narrowest next step.
+8. If failed, report the failure message plainly and suggest the narrowest next step.
 
 Response style:
 - Be concise and direct.
@@ -188,7 +190,8 @@ Evaluate subsections 1.1 and 1.2 only. Summarize the main gaps.
 Expected behavior:
 
 - The GPT should start a job.
-- It should poll until completion.
+- It should acknowledge the job and end the first turn without polling.
+- Each "estado" message should produce no more than one status call while the job is running.
 - It should fetch the result.
 - It should show a downloadable XLSX file.
 - The summary counts and stability metrics should match the XLSX.
