@@ -96,7 +96,8 @@ paths:
     get:
       operationId: getSustainabilityDiagnosisJobStatus
       summary: Get sustainability diagnosis job status
-      description: Poll this endpoint until status is succeeded or failed.
+      description: >
+        Poll until status is succeeded or failed. After each call, write the returned progress_line to the user verbatim before calling again. Never make two calls in a row without writing something in between: the user sees nothing while you work.
       x-openai-isConsequential: false
       parameters:
         - in: path
@@ -123,6 +124,15 @@ paths:
                       - failed
                   message:
                     type: string
+                  progress_line:
+                    type: string
+                    description: >
+                      A ready-to-use sentence describing current progress.
+                      Relay it to the user verbatim; do not rewrite it.
+                  percent_complete:
+                    type: number
+                  eta_seconds:
+                    type: integer
                   completed:
                     type: integer
                   total:
