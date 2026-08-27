@@ -2,18 +2,18 @@
 **Ahmed Eid · Día 1, jueves 27 ago 2026 · 9:30–10:30 (Lima) · 30 min + preguntas integradas**
 
 > **Reparto del tiempo.** 30 min de exposición + 13 min de preguntas que la agenda integra
-> a este bloque = **43 min reales**. El guion abajo suma **28 min**, dejando 2 min de holgura
-> y los 13 de preguntas. Si va retrasado, los recortes seguros están marcados con ✂.
+> a este bloque = **43 min reales**. El guion abajo suma **30:30**: pasarse un poco está
+> previsto y aceptado. Los ✂ quedan por si el bloque anterior se alarga.
 
 | Parte | Diapositivas | Tiempo | Acumulado |
 |---|---|---|---|
 | Apertura | 1–2 | 1:30 | 1:30 |
 | A · De dónde viene y qué es | 3–5 | 4:00 | 5:30 |
-| B · Cómo está construido | 6–9 | 6:00 | 11:30 |
-| C · Por qué repite | 10–13 | 5:30 | 17:00 |
-| D · Límites y comparación | 14–16 | 3:30 | 20:30 |
-| E · Demostración | 17–23 | 6:30 | 27:00 |
-| Cierre | 24–27 | 1:00 | 28:00 |
+| B · Cómo está construido | 6–10 | 7:15 | 12:45 |
+| C · Por qué repite | 11–14 | 5:30 | 18:15 |
+| D · Límites y comparación | 15–17 | 3:30 | 21:45 |
+| E · Demostración | 18–25 | 7:45 | 29:30 |
+| Cierre | 26–29 | 1:00 | 30:30 |
 
 ---
 
@@ -101,11 +101,28 @@ presupuestaria."
 Banda roja: "Si toda la evidencia es marco, el resultado **debe** ser No, sin importar
 cuántas veces aparezca la palabra."
 
+**[Dp. 10 · Un caso completo] — 1:15** ← *la diapositiva que ancla todo lo anterior*
+"Hasta aquí les he explicado el mecanismo. Veámoslo funcionando sobre un texto."
+
+Izquierda: "Tres extractos de un PRODOC. Ilustrativos, no es un documento real."
+
+Derecha, uno por uno: "El primer chequeo se cumple: la sección 2.3 nombra y distingue los tres
+enfoques. El segundo no: declara el enfoque pero nunca explica el mecanismo. El tercero sí: la
+actividad 2.4 revisa las reglas de acceso al crédito, y tiene presupuesto propio."
+
+Señalar la cuarta tarjeta — **es el punto que más se discute**:
+"Fíjense en la sección 3.1: menciona explícitamente a cuatro grupos, incluidas las mujeres.
+Y aun así **no cuenta como evidencia**, porque es una lista sin seguimiento. Eso es marco, no
+dedicado. Aquí es donde muchos dirán «pero si sí lo mencionamos»."
+
+Cerrar: "Se requieren los tres. Se cumplen dos. Resultado: Partial. Y todo el camino desde el
+texto hasta el veredicto es verificable."
+
 ---
 
 ## Parte C · Por qué repite · diapositivas 10–13 · 5:30
 
-**[Dp. 10 · Por qué 10 veces] — 1:30**
+**[Dp. 11 · Por qué 10 veces] — 1:30**
 "Aquí está la respuesta a '¿por qué puede cambiar una respuesta?'."
 
 "Un modelo de lenguaje **no es determinista**. La misma pregunta sobre el mismo documento
@@ -118,11 +135,11 @@ frecuente."
 Banda: "76 criterios por 10 corridas son unas **760 consultas** al modelo. Por eso tarda
 minutos y no segundos, y por eso insisto en filtrar."
 
-**[Dp. 11 · De dónde viene la aleatoriedad] — 1:00** ✂ *(recortable a 30 s: leer solo la
+**[Dp. 12 · De dónde viene la aleatoriedad] — 1:00** ✂ *(recortable a 30 s: leer solo la
 primera fila y la banda)*
 "Cuatro fuentes. La primera es inherente al modelo; las otras tres las mitigamos con diseño."
 
-**[Dp. 12 · Estabilidad] — 2:00** ← *el concepto que más van a usar*
+**[Dp. 13 · Estabilidad] — 2:00** ← *el concepto que más van a usar*
 "De esas 10 corridas, ¿cuántas coincidieron? Ese porcentaje es la **estabilidad**, y va en
 el Excel, criterio por criterio."
 
@@ -135,7 +152,7 @@ Cerrar con la banda — **decirlo despacio**:
 "La estabilidad **no mide si el Agente acertó**. Mide cuánta confianza interna tuvo. Un 100%
 equivocado es perfectamente posible. Por eso siempre, siempre, se verifica la evidencia."
 
-**[Dp. 13 · Subjetividad] — 1:00**
+**[Dp. 14 · Subjetividad] — 1:00**
 "Además de la estabilidad, cada criterio trae una etiqueta de subjetividad."
 
 "Alta subjetividad significa que el juicio depende del contexto institucional, no solo del
@@ -149,13 +166,13 @@ PRODOC tiene un marco lógico es verificable."
 
 ## Parte D · Límites y comparación · diapositivas 14–16 · 3:30
 
-**[Dp. 14 · Ventajas y desventajas] — 1:15**
+**[Dp. 15 · Ventajas y desventajas] — 1:15**
 Leer en pares: "Cobertura: revisa los 76 sin cansarse — pero revisa lo escrito, no lo sabido."
 
 Banda: "El costo depende del tamaño del documento y de cuántos criterios evalúen. **Filtrar
 por sección es la palanca directa de ahorro.**"
 
-**[Dp. 15 · GPT Empresarial] — 1:15** ← *pregunta garantizada del público*
+**[Dp. 16 · GPT Empresarial] — 1:15** ← *pregunta garantizada del público*
 "Alguien va a preguntar: '¿y si uso el GPT empresarial de la OIT y le subo la rúbrica?'"
 
 Recorrer la tabla rápido. Detenerse en dos filas: repetición y estabilidad.
@@ -166,7 +183,7 @@ Fila roja: "Y hoy, además, no hay acceso a este Agente desde el entorno empresa
 Banda: "El valor agregado no es 'usar IA'. Es la rúbrica institucional aplicada criterio por
 criterio, repetida y medida."
 
-**[Dp. 16 · Tres límites] — 1:00**
+**[Dp. 17 · Tres límites] — 1:00**
 Leer los tres, sin adornos. Cerrar: "Ninguna salida es una determinación oficial de la OIT."
 
 ---
@@ -177,31 +194,47 @@ Leer los tres, sin adornos. Cerrar: "Ninguna salida es una determinación oficia
 > abierto**. Si hace una corrida en vivo, lance **una sola subsección** y siga hablando
 > mientras corre. Nunca deje la sala mirando una barra de progreso.
 
-**[Dp. 17 · portadilla] — 0:15** "Vamos a verlo."
+**[Dp. 18 · portadilla] — 0:15** "Vamos a verlo."
 
-**[Dp. 18 · El flujo] — 0:45** Recorrer los cinco pasos.
+**[Dp. 19 · El flujo] — 0:45** Recorrer los cinco pasos.
 Banda: "Digan el alcance en el mismo mensaje en que suben el archivo."
 
-**[Dp. 19 · Pasos 1–2] — 1:00**
+**[Dp. 20 · Pasos 1–2] — 1:00**
 "Si abren el Agente y le dicen 'hola', se presenta solo y les explica qué puede filtrar.
 Eso no consume una evaluación." — leer los tres ejemplos de instrucción.
 
-**[Dp. 20 · Paso 3] — 0:45**
+**[Dp. 21 · Paso 3] — 0:45**
 "Mientras esperan, esto es lo que ocurre." — recorrer.
-Banda: "Si es la primera del día puede tardar más en arrancar: el servicio se suspende por
-inactividad. Es esperado, no es una falla."
+Banda: "Ya no hay que preguntar si terminó: el Agente informa el avance solo —«180 de 760, 24%, quedan unos 3 minutos»— hasta entregar el archivo. Eso sí, la primera evaluación del día puede tardar más en arrancar, porque el servicio se suspende por inactividad."
 
-**[Dp. 21 · El Excel] — 1:30**
+**[Dp. 22 · El Excel] — 1:30**
 "Una sola hoja, una fila por criterio. Cinco grupos de columnas." — recorrer.
 Banda: "**'Not Found' no es 'No'.** 'No' dice que el criterio no se cumple. 'Not Found' dice
 que el documento no permite determinarlo. La acción que sigue es distinta: uno es rediseño,
 el otro es documentación."
 
-**[Dp. 22 · Cómo leer una fila] — 1:15**
+**[Dp. 23 · Cómo leer una fila] — 1:15**
 "En este orden, siempre." — recorrer los cinco pasos.
 Banda: "Nunca acepten una respuesta sin abrir la evidencia."
 
-**[Dp. 23 · Localizar evidencia] — 1:00**
+**[Dp. 24 · Qué contiene el Razonamiento] — 1:15** ← *la diapositiva que más preguntas evita*
+"Esta es la celda que más miedo daba, y la hemos reescrito entera."
+
+Recorrer las cuatro partes señalando el bloque de la izquierda:
+"Arriba, **POR QUÉ**: el motivo en una línea. Si van con prisa, lean solo eso — «se cumplen
+2 de 3 chequeos; falta articular cómo cuestiona normas de poder»."
+
+"Debajo, **VERIFICACIÓN**: cada chequeo escrito completo, con su marca y su justificación.
+Fíjense en que ya no dice «T2: falso» — dice la pregunta entera. No hay que ir a buscar qué
+era T2."
+
+"Después **ESTABILIDAD**, que ya conocen, y al final **REGLA**: la regla formal del Checklist,
+para quien necesite trazar el resultado hasta la rúbrica."
+
+Cerrar: "El análisis es exactamente el mismo de antes: los mismos chequeos, la misma evidencia,
+la misma regla. Lo único que cambió es que ahora se lee sin descifrar nada."
+
+**[Dp. 25 · Localizar evidencia] — 1:00**
 "La cita textual está en el Excel. Cópienla y búsquenla en el PRODOC con Ctrl+F."
 
 Los tres desenlaces — **es el puente al bloque del día 2**:
@@ -214,17 +247,17 @@ Banda: "¿Existe? ¿Es suficiente? ¿Está documentado?"
 
 ## Cierre · diapositivas 24–27 · 1:00
 
-**[Dp. 24 · Vinculación] — 0:30** ✂ *(recortable si va justo de tiempo)*
+**[Dp. 26 · Vinculación] — 0:30** ✂ *(recortable si va justo de tiempo)*
 "El Excel no es el final. Pueden seguir conversando con el Agente sobre el resultado, y hay
 agentes específicos para género, participación, transición justa y sostenibilidad."
 
-**[Dp. 26 · Qué recordar] — 0:30**
+**[Dp. 28 · Qué recordar] — 0:30**
 "Cuatro cosas." — leerlas.
 Cerrar: "El valor de la herramienta depende de la calidad de la revisión humana posterior.
 La herramienta les ahorra la lectura mecánica para que ustedes gasten su tiempo donde
 aporta: decidiendo."
 
-**[Dp. 27]** "Preguntas."
+**[Dp. 29]** "Preguntas."
 
 ---
 

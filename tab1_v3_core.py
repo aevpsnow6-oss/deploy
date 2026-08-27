@@ -615,9 +615,25 @@ _NA_WORDS = {"n/a", "na", "no aplica"}
 
 
 def _clean_test_text(text: str) -> str:
-    """Trim the rubric's answer-format hints from a test statement."""
+    """Trim answer-format hints and resolve T-references inside a statement.
+
+    A few rubric statements refer to sibling checks by label ("vincula la
+    intervención a T1/T2/T3"). Left as-is they reintroduce exactly the lookup
+    the rendering removes, so they are turned into plain back-references. The
+    rubric itself is untouched: the model still sees the labels in the prompt.
+    """
     text = re.sub(r"\s*\((?:s[íi]\s*/\s*no|verdadero\s*/\s*falso)[^)]*\)\s*$", "", text, flags=re.I)
+    text = re.sub(r"\bT\d(?:\s*/\s*T\d)+\b", "los chequeos anteriores", text)
+    text = re.sub(r"\bT(\d)\b", r"el chequeo \1", text)
+    text = re.sub(r"\bde el chequeo\b", "del chequeo", text)
+    text = re.sub(r"\ba el chequeo\b", "al chequeo", text)
     return text.strip().rstrip(".").strip()
+
+
+def _tidy_quote(text: str) -> str:
+    """Collapse escaped newlines the model emits inside quoted document text."""
+    text = text.replace("\\n", " ").replace("\r", " ")
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
 def _as_statement(text: str) -> str:
@@ -693,6 +709,7 @@ def render_reasoning(result: dict[str, Any], rubrica_si: str) -> str:
         marca = "✓" if state is True else ("✗" if state is False else "–")
         enunciado = tests.get(label, f"(chequeo {label})")
         lineas.append(f" {marca} {enunciado}")
+        justification = _tidy_quote(justification)
         if justification:
             lineas.append(f"     {justification}")
 

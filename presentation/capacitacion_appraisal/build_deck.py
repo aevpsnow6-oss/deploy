@@ -1,167 +1,17 @@
-"""Deck for the 30-min ILO training block: GPT PRODOC Quality Appraisal (Ahmed).
+"""Spanish deck for the 30-min ILO training block (Ahmed).
 
-Assumes the single-sheet Excel ("Resultado Diagnóstico"), i.e. the four agreed
-changes are already applied. Palette and layout helpers mirror the house deck in
-presentation/gpts_oit_guia/build_pptx.py.
+Layout and palette live in ilo_deck.py, shared with build_deck_en.py.
 """
 
-import math
-from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
-from pptx.dml.color import RGBColor
+from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-from pptx.enum.shapes import MSO_SHAPE
+from ilo_deck import *  # noqa: F403 - motor de maquetación compartido
+import ilo_deck
 
-BLUE   = RGBColor(0x00, 0x3E, 0x7E)
-BLUEMD = RGBColor(0x00, 0x72, 0xBC)
-BLUELT = RGBColor(0xE0, 0xEC, 0xF6)
-RED    = RGBColor(0xD6, 0x00, 0x1C)
-GRAY   = RGBColor(0x4A, 0x4A, 0x4A)
-GRAYLT = RGBColor(0xF0, 0xF4, 0xF8)
-WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
-
-EMU_W, EMU_H = Inches(13.333), Inches(7.5)
-EMU_IN = Inches(1)
-
-prs = Presentation()
-prs.slide_width, prs.slide_height = EMU_W, EMU_H
-BLANK = prs.slide_layouts[6]
-
-# content area
-CL, CT = Inches(0.55), Inches(1.28)
-CW, CH = Inches(12.23), Inches(5.85)
-
-
-def _fill(shape, color):
-    shape.fill.solid(); shape.fill.fore_color.rgb = color
-    shape.line.fill.background()
-
-
-def rect(slide, l, t, w, h, color):
-    sp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, l, t, w, h)
-    _fill(sp, color); sp.shadow.inherit = False
-    return sp
-
-
-def textbox(slide, l, t, w, h, anchor=MSO_ANCHOR.TOP):
-    tb = slide.shapes.add_textbox(l, t, w, h)
-    tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = anchor
-    return tb, tf
-
-
-def set_runs(para, segments, size=20):
-    for seg in segments:
-        text, color, bold, italic = (list(seg) + [None, False, False])[:4]
-        r = para.add_run(); r.text = text
-        r.font.size = Pt(size); r.font.bold = bold; r.font.italic = italic
-        r.font.color.rgb = color if color else GRAY
-
-
-def slide_new(title):
-    s = prs.slides.add_slide(BLANK)
-    rect(s, 0, 0, EMU_W, Inches(0.92), BLUE)
-    rect(s, 0, Inches(0.92), EMU_W, Inches(0.055), RED)
-    tb, tf = textbox(s, Inches(0.45), 0, Inches(12.4), Inches(0.92), MSO_ANCHOR.MIDDLE)
-    r = tf.paragraphs[0].add_run(); r.text = title
-    r.font.size = Pt(30); r.font.bold = True; r.font.color.rgb = WHITE
-    return s
-
-
-def bullets(slide, items, l=CL, t=CT, w=CW, h=CH, size=20, gap=11):
-    tb, tf = textbox(slide, l, t, w, h)
-    first = True
-    for segs, level, bcol in items:
-        p = tf.paragraphs[0] if first else tf.add_paragraph()
-        first = False
-        p.level = level; p.space_after = Pt(gap)
-        if bcol is not None:
-            b = p.add_run(); b.text = "▪  "
-            b.font.size = Pt(size); b.font.color.rgb = bcol
-        set_runs(p, segs, size)
-    return tb
-
-
-def table(slide, headers, rows, l, t, w, col_ratios, fsize=16, header_fs=16, fill_to=None):
-    n_rows = len(rows) + 1
-    total_h = Inches(0.4) if fill_to is None else max(int(fill_to - t), Inches(0.4))
-    gt = slide.shapes.add_table(n_rows, len(headers), l, t, w, total_h).table
-    if fill_to is not None:
-        hdr_h = int(total_h / n_rows * 0.72)
-        body_h = int((total_h - hdr_h) / (n_rows - 1))
-        gt.rows[0].height = hdr_h
-        for i in range(1, n_rows):
-            gt.rows[i].height = body_h
-    total = sum(col_ratios)
-    for i, r in enumerate(col_ratios):
-        gt.columns[i].width = Emu(int(w * r / total))
-    for j, htext in enumerate(headers):
-        c = gt.cell(0, j); c.fill.solid(); c.fill.fore_color.rgb = BLUE
-        c.margin_top = Pt(3); c.margin_bottom = Pt(3)
-        run = c.text_frame.paragraphs[0].add_run(); run.text = htext
-        run.font.bold = True; run.font.color.rgb = WHITE; run.font.size = Pt(header_fs)
-    for i, row in enumerate(rows, start=1):
-        shade = GRAYLT if i % 2 == 1 else WHITE
-        for j, val in enumerate(row):
-            c = gt.cell(i, j); c.fill.solid(); c.fill.fore_color.rgb = shade
-            c.margin_top = Pt(2); c.margin_bottom = Pt(2)
-            p = c.text_frame.paragraphs[0]
-            if isinstance(val, tuple):
-                run = p.add_run(); run.text = val[0]
-                run.font.size = Pt(fsize)
-                run.font.color.rgb = val[1] if len(val) > 1 else GRAY
-                run.font.bold = val[2] if len(val) > 2 else False
-            else:
-                run = p.add_run(); run.text = str(val)
-                run.font.size = Pt(fsize); run.font.color.rgb = GRAY
-    return gt
-
-
-def band(slide, segments, l=CL, t=Inches(6.35), w=CW, size=17, bg=BLUELT):
-    box = rect(slide, l, t, w, Inches(0.72), bg)
-    box.text_frame.word_wrap = True
-    p = box.text_frame.paragraphs[0]
-    set_runs(p, segments, size)
-    box.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-    box.text_frame.margin_left = Pt(12); box.text_frame.margin_right = Pt(12)
-    return box
-
-
-def B(t): return (t, BLUE, True)
-def R(t): return (t, RED, True)
-def N(t): return (t, GRAY, False)
-def W(t): return (t, WHITE, False)
-def WB(t): return (t, WHITE, True)
-def I(t): return (t, GRAY, False, True)
-
-
-STEP_GROUPS = []
-
-
-def steps(slide, items, t=CT, size=19, bottom=Inches(6.22)):
-    """Numbered row stack: list of (n, titulo, detalle). Fills t..bottom."""
-    n_items = len(items)
-    gap = Inches(0.10)
-    h = int((bottom - t - gap * (n_items - 1)) / n_items)
-    top = t
-    group = []
-    for n, tit, det in items:
-        rect(slide, CL, top, Inches(0.86), h, BLUE)
-        tb, tf = textbox(slide, CL, top, Inches(0.86), h, MSO_ANCHOR.MIDDLE)
-        group.append(None)  # number box: fixed size, excluded from group fit
-        p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-        r = p.add_run(); r.text = str(n)
-        r.font.size = Pt(30); r.font.bold = True; r.font.color.rgb = WHITE
-        rect(slide, CL + Inches(0.86), top, CW - Inches(0.86), h, GRAYLT)
-        tb2, tf2 = textbox(slide, CL + Inches(1.08), top, CW - Inches(1.35), h, MSO_ANCHOR.MIDDLE)
-        p2 = tf2.paragraphs[0]
-        set_runs(p2, [B(tit + "  "), N(det)], size)
-        group.append(tb2)
-        top = top + h + gap
-    STEP_GROUPS.append(group)
-
+prs = new_deck()
 
 # ═══ 1 · PORTADA ═══════════════════════════════════════════════════════
-s = prs.slides.add_slide(BLANK)
+s = blank_slide()
 rect(s, 0, 0, Inches(0.42), EMU_H, BLUE)
 rect(s, Inches(0.42), 0, Inches(0.09), EMU_H, RED)
 tb, tf = textbox(s, Inches(1.25), Inches(1.65), Inches(11.3), Inches(2.4))
@@ -272,6 +122,67 @@ table(s, ["", "MARCO  (no cuenta)", "DEDICADO  (sí cuenta)"],
       CL, Inches(2.15), CW, [1.3, 3.3, 3.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
 band(s, [R("Regla dura:  "), N("si toda la evidencia citable es MARCO, el resultado debe ser «No» o «Not Found», sin importar cuántas veces se nombre el tema.")])
 
+# ═══ 9b · CASO COMPLETO ════════════════════════════════════════════════
+s = slide_new("Un caso completo: del texto del PRODOC al veredicto")
+
+LX, LW = CL, Inches(5.85)
+RX, RW = CL + LW + Inches(0.38), CW - LW - Inches(0.38)
+TY, PH = Inches(1.26), Inches(4.72)
+
+# ── izquierda · lo que dice el documento ──────────────────────────────
+rect(s, LX, TY, LW, Inches(0.42), BLUE)
+tbh, tfh = textbox(s, LX + Inches(0.14), TY, LW - Inches(0.2), Inches(0.42), MSO_ANCHOR.MIDDLE)
+set_runs(tfh.paragraphs[0], [WB("LO QUE DICE EL PRODOC")], 15)
+rect(s, LX, TY + Inches(0.42), LW, PH - Inches(0.42), GRAYLT)
+tbd, tfd = textbox(s, LX + Inches(0.18), TY + Inches(0.54), LW - Inches(0.36), PH - Inches(0.66))
+EXTRACTOS = [
+    [B("§ 2.3 Enfoque de género")],
+    [I("«El proyecto adopta un enfoque de género transformador, distinguiéndolo de los enfoques meramente sensibles o responsivos.»")],
+    [N("")],
+    [B("§ 3.1 Beneficiarios")],
+    [I("«Se priorizará la participación de mujeres, jóvenes, personas con discapacidad y pueblos indígenas.»")],
+    [N("")],
+    [B("§ 4.2 Actividad 2.4")],
+    [I("«Mesas de trabajo con cooperativas para revisar los criterios de acceso al crédito que excluyen a las mujeres titulares. Presupuesto: USD 18.000.»")],
+]
+first = True
+for segs in EXTRACTOS:
+    par = tfd.paragraphs[0] if first else tfd.add_paragraph()
+    first = False
+    par.space_after = Pt(3)
+    set_runs(par, segs, 14)
+
+# ── derecha · cómo lo evalúa ──────────────────────────────────────────
+rect(s, RX, TY, RW, Inches(0.42), BLUE)
+tbh2, tfh2 = textbox(s, RX + Inches(0.14), TY, RW - Inches(0.2), Inches(0.42), MSO_ANCHOR.MIDDLE)
+set_runs(tfh2.paragraphs[0], [WB("CÓMO LO EVALÚA EL AGENTE")], 15)
+
+CHEQUEOS = [
+    ("✓", BLUEMD, "T1 · Distingue el tipo de enfoque", "§ 2.3 nombra y distingue los tres enfoques."),
+    ("✗", RED, "T2 · Articula cómo cuestiona normas de poder", "declara el enfoque, pero no explica el mecanismo en ninguna sección."),
+    ("✓", BLUEMD, "T3 · Acciones dedicadas a transformar relaciones", "§ 4.2 revisa reglas de acceso al crédito, con presupuesto propio."),
+    ("–", GRAY, "§ 3.1 no cuenta como evidencia", "lista de cuatro grupos sin seguimiento: es MARCO, no DEDICADO."),
+]
+top = TY + Inches(0.52)
+alto = Inches(1.02)
+grupo = []
+for marca, color, titulo, detalle in CHEQUEOS:
+    rect(s, RX, top, RW, alto, GRAYLT if marca != "–" else WHITE)
+    rect(s, RX, top, Inches(0.05), alto, color)
+    tbm, tfm = textbox(s, RX + Inches(0.12), top, Inches(0.5), alto, MSO_ANCHOR.MIDDLE)
+    pm = tfm.paragraphs[0]; pm.alignment = PP_ALIGN.CENTER
+    set_runs(pm, [(marca, color, True)], 20)
+    tbc, tfc = textbox(s, RX + Inches(0.62), top, RW - Inches(0.78), alto, MSO_ANCHOR.MIDDLE)
+    pc = tfc.paragraphs[0]
+    set_runs(pc, [B(titulo)], 13.5)
+    pc2 = tfc.add_paragraph(); pc2.space_before = Pt(1)
+    set_runs(pc2, [N(detalle)], 12.5)
+    grupo.append(tbc)
+    top = top + alto + Inches(0.11)
+register_group(grupo)
+
+band(s, [B("DECISIÓN:  "), N("se requieren T1 ∧ T2 ∧ T3. Se cumplen T1 y T3, falta T2  →  "), R("PARTIAL"), N("   ·   extracto ilustrativo, no es un PRODOC real.")])
+
 # ═══ 10 · POR QUÉ REPITE ═══════════════════════════════════════════════
 s = slide_new("Por qué cada criterio se evalúa 10 veces")
 bullets(s, [
@@ -349,7 +260,7 @@ steps(s, [
 band(s, [R("Ninguna salida constituye una determinación oficial de la OIT. "), N("Es una valoración asistida que requiere validación experta.")])
 
 # ═══ 17 · PARTE 2 · PORTADILLA ═════════════════════════════════════════
-s = prs.slides.add_slide(BLANK)
+s = blank_slide()
 rect(s, 0, 0, EMU_W, EMU_H, BLUE)
 rect(s, Inches(1.2), Inches(2.75), Inches(3.4), Inches(0.09), RED)
 tb, tf = textbox(s, Inches(1.2), Inches(3.0), Inches(11.0), Inches(2.2))
@@ -389,12 +300,12 @@ steps(s, [
     ("2", "Carga la rúbrica del servidor", "y filtra los criterios que usted pidió"),
     ("3", "Lanza las evaluaciones en paralelo", "cada criterio, 10 veces, hasta 48 consultas simultáneas"),
     ("4", "Consolida cada criterio", "resultado modal + porcentaje de estabilidad"),
-    ("5", "Construye el Excel", "y lo entrega en la conversación"),
+    ("5", "Construye el Excel", "y lo adjunta a la conversación"),
 ], size=20)
-band(s, [B("Si es la primera evaluación del día puede tardar más en arrancar:  "), N("el servicio se suspende por inactividad y necesita unos segundos para despertar. Es esperado.")])
+band(s, [B("No hay que preguntar «¿ya terminó?»:  "), N("el Agente informa el avance solo — «180/760 (24%), quedan unos 3 minutos» — hasta entregar el archivo.")])
 
 # ═══ 21 · EL EXCEL ═════════════════════════════════════════════════════
-s = slide_new("Paso 4 · El Excel: hoja «Resultado Diagnóstico»")
+s = slide_new("Paso 4 · El Excel: hoja «Resultado Diagnostico»")
 bullets(s, [
     ([B("Una sola hoja"), N(", con una fila por criterio evaluado. Es el registro auditable: consérvelo.")], 0, None),
 ], t=CT, h=Inches(0.75), size=21, gap=5)
@@ -402,7 +313,7 @@ table(s, ["Grupo de columnas", "Qué contiene", "Para qué sirve"],
       [[("Identificación", BLUE, True), "ID · Subsección · Criterio · Transversales", "Ubicar el criterio en el Checklist"],
        [("Resultado", BLUE, True), "Respuesta (Yes / Partial / No / Not Found / N/A)", "El diagnóstico del criterio"],
        [("Confianza", BLUE, True), "Estabilidad (%) · Estable (≥80%) · Resultado Alternativo", "Cuánto coincidieron las 10 corridas"],
-       [("Sustento", BLUE, True), "Razonamiento (test por test) · Evidencia citada", "Verificar por qué llegó a ese resultado"],
+       [("Sustento", BLUE, True), "Razonamiento (chequeo por chequeo) · Evidencia citada", "Verificar por qué llegó a ese resultado"],
        [("Prioridad", BLUE, True), ("Revisión humana recomendada", RED, True), "Su cola de trabajo"]],
       CL, Inches(2.05), CW, [2.0, 3.7, 2.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
 band(s, [B("«Not Found» no es «No».  "), N("«No» afirma que el criterio no se cumple; «Not Found» afirma que el documento no permite determinarlo. La acción es distinta.")])
@@ -413,10 +324,65 @@ steps(s, [
     ("1", "Mire la Respuesta", "Yes / Partial / No / Not Found / N/A"),
     ("2", "Mire la Estabilidad", "¿coincidieron las 10 corridas o hubo desacuerdo?"),
     ("3", "Lea la Evidencia citada", "¿ese pasaje realmente sostiene el resultado?"),
-    ("4", "Lea el Razonamiento", "test por test: dónde exactamente falló el criterio"),
+    ("4", "Lea el Razonamiento", "qué chequeo falló y con qué justificación"),
     ("5", "Decida", "¿brecha de diseño, brecha documental, o error del Agente?"),
 ], size=21)
 band(s, [R("Nunca acepte una respuesta sin abrir la evidencia. "), N("La evidencia es lo que convierte un resultado automático en un diagnóstico defendible.")])
+
+# ═══ 22b · ANATOMÍA DEL RAZONAMIENTO ═══════════════════════════════════
+s = slide_new("Qué contiene la columna Razonamiento")
+
+# bloque que reproduce la celda tal como se ve en el Excel
+BX, BY, BW = CL, Inches(1.30), Inches(8.15)
+rect(s, BX, BY, BW, Inches(4.92), GRAYLT)
+rect(s, BX, BY, Inches(0.07), Inches(4.92), BLUEMD)
+tbb, tfb = textbox(s, BX + Inches(0.22), BY + Inches(0.12), BW - Inches(0.42), Inches(4.7))
+CELDA = [
+    [B("POR QUÉ PARTIAL"), N(" · Se cumplen 2 de 3 chequeos.")],
+    [N("Falta: articular cómo el proyecto cuestiona normas de poder.")],
+    [N("")],
+    [B("VERIFICACIÓN")],
+    [(("✓ "), BLUEMD, True), N("¿Distingue el tipo de enfoque?")],
+    [I("      la sección 3.2 distingue los tres enfoques.")],
+    [(("✗ "), RED, True), N("¿Articula cómo cuestiona normas de poder?")],
+    [I("      no se explica el mecanismo en ninguna sección.")],
+    [(("✓ "), BLUEMD, True), N("¿Acciones dedicadas a transformar relaciones?")],
+    [I("      actividad 2.4, con presupuesto asignado.")],
+    [N("")],
+    [B("ESTABILIDAD"), N(" · 6 de 10 corridas coincidieron. Alternativo: No.")],
+    [B("REGLA"), N(" · se requieren los 3 chequeos  (T1 ∧ T2 ∧ T3)")],
+]
+first = True
+for segs in CELDA:
+    par = tfb.paragraphs[0] if first else tfb.add_paragraph()
+    first = False
+    par.space_after = Pt(3)
+    set_runs(par, segs, 15)
+
+# lectura de las cuatro partes, a la derecha
+RX = CL + BW + Inches(0.30)
+RW = CW - BW - Inches(0.30)
+partes = [
+    ("POR QUÉ", "el motivo, en una línea. Si va con prisa, lea solo esto."),
+    ("VERIFICACIÓN", "cada chequeo enunciado completo, con ✓ / ✗ y su justificación."),
+    ("ESTABILIDAD", "cuántas de las 10 corridas coincidieron."),
+    ("REGLA", "la regla formal del Checklist, para auditoría."),
+]
+top = BY
+grupo_partes = []
+for titulo, detalle in partes:
+    rect(s, RX, top, RW, Inches(1.16), WHITE)
+    rect(s, RX, top, Inches(0.055), Inches(1.16), RED)
+    tbp, tfp = textbox(s, RX + Inches(0.18), top, RW - Inches(0.3), Inches(1.16), MSO_ANCHOR.MIDDLE)
+    pp = tfp.paragraphs[0]
+    set_runs(pp, [B(titulo)], 17)
+    pp2 = tfp.add_paragraph(); pp2.space_before = Pt(2)
+    set_runs(pp2, [N(detalle)], 14)
+    grupo_partes.append(tbp)
+    top = top + Inches(1.25)
+register_group(grupo_partes)
+
+band(s, [B("Ya no hay que descifrar «T1 ∧ T2 ∧ T3»:  "), N("cada chequeo se lee solo. La regla formal sigue abajo, para quien necesite trazar el resultado.")])
 
 # ═══ 23 · LOCALIZAR EVIDENCIA ══════════════════════════════════════════
 s = slide_new("Paso 5 · Localizar la evidencia en el PRODOC")
@@ -461,7 +427,7 @@ bullets(s, [
 band(s, [B("El valor de la herramienta depende de la calidad de la revisión humana posterior."), N("")], bg=BLUELT)
 
 # ═══ 27 · CIERRE VISUAL ════════════════════════════════════════════════
-s = prs.slides.add_slide(BLANK)
+s = blank_slide()
 rect(s, 0, 0, EMU_W, EMU_H, BLUE)
 rect(s, Inches(1.2), Inches(3.05), Inches(3.4), Inches(0.09), RED)
 tb, tf = textbox(s, Inches(1.2), Inches(3.3), Inches(11.0), Inches(1.6))
@@ -472,116 +438,5 @@ p2 = tf.add_paragraph(); p2.space_before = Pt(14)
 set_runs(p2, [W("Agente GPT · Appraisal Checklist de PRODOCs   ·   Ahmed Eid")], 22)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# AUTOFIT — grow text to fill each box, shrink only to avoid overflow
-# ════════════════════════════════════════════════════════════════════════
-CHAR_W, LINE_H = 0.50, 1.18
-MAX_F, MIN_F, STEP = 1.55, 0.62, 0.03
-SLIDE_H_IN = 7.5
 
-
-def para_info(tf):
-    out = []
-    for p in tf.paragraphs:
-        text = "".join(r.text for r in p.runs)
-        sizes = [r.font.size.pt for r in p.runs if r.font.size is not None]
-        if not sizes:
-            continue
-        sa = p.space_after.pt if p.space_after is not None else 0
-        out.append((text, max(sizes), sa, p.level or 0))
-    return out
-
-
-def est_height_in(paras, box_w_in, factor):
-    h = 0.06
-    for text, size, sa, level in paras:
-        s = size * factor
-        usable = box_w_in - 0.2 - level * 0.35
-        if usable <= 0.3:
-            return 99.0
-        cpl = max(1, int(usable / (CHAR_W * s / 72)))
-        lines = max(1, math.ceil(len(text) / cpl))
-        h += lines * LINE_H * s / 72 + sa / 72
-    return h
-
-
-def fit_factor(paras, box_w_in, box_h_in):
-    f = MAX_F
-    while f > MIN_F and est_height_in(paras, box_w_in, f) > box_h_in:
-        f = round(f - STEP, 2)
-    return max(f, MIN_F)
-
-
-def apply_factor(tf, f):
-    for p in tf.paragraphs:
-        for r in p.runs:
-            if r.font.size is not None:
-                r.font.size = Pt(max(1, round(r.font.size.pt * f)))
-        if p.space_after is not None:
-            p.space_after = Pt(p.space_after.pt * f)
-
-
-def table_est_height_in(tbl, factor):
-    h = 0.0
-    col_w = [c.width / EMU_IN for c in tbl.columns]
-    for row in tbl.rows:
-        row_h = 0.32
-        for j, cell in enumerate(row.cells):
-            paras = para_info(cell.text_frame)
-            if paras:
-                row_h = max(row_h, est_height_in(paras, col_w[j], factor) + 0.06)
-        h += row_h
-    return h
-
-
-def max_bottom_for(slide, shape):
-    top, left, right = shape.top, shape.left, shape.left + shape.width
-    limit = SLIDE_H_IN - 0.18
-    for other in slide.shapes:
-        if other is shape or other.top <= top:
-            continue
-        o_l, o_r = other.left, other.left + other.width
-        if o_r > left and o_l < right:
-            limit = min(limit, other.top / EMU_IN - 0.10)
-    return limit
-
-
-# step rows: one shared factor per group so every row reads the same size
-STEP_BOXES = set()
-for group in STEP_GROUPS:
-    boxes = [b for b in group if b is not None]
-    if not boxes:
-        continue
-    f = MAX_F
-    for b in boxes:
-        paras = para_info(b.text_frame)
-        if paras:
-            f = min(f, fit_factor(paras, b.width / EMU_IN, b.height / EMU_IN))
-    for b in boxes:
-        apply_factor(b.text_frame, f)
-        STEP_BOXES.add(b._element)
-
-for slide in prs.slides:
-    for shape in slide.shapes:
-        if shape._element in STEP_BOXES:
-            continue
-        if shape.has_table:
-            tbl = shape.table
-            avail = max_bottom_for(slide, shape) - shape.top / EMU_IN
-            f = MAX_F
-            while f > MIN_F and table_est_height_in(tbl, f) > avail:
-                f = round(f - STEP, 2)
-            for row in tbl.rows:
-                for cell in row.cells:
-                    apply_factor(cell.text_frame, max(f, MIN_F))
-        elif shape.has_text_frame:
-            paras = para_info(shape.text_frame)
-            if not paras:
-                continue
-            avail_h = max_bottom_for(slide, shape) - shape.top / EMU_IN
-            h_in = min(shape.height / EMU_IN, max(avail_h, 0.4))
-            f = fit_factor(paras, shape.width / EMU_IN, h_in)
-            apply_factor(shape.text_frame, f)
-
-prs.save("Capacitacion_Appraisal_GPT_Ahmed.pptx")
-print(f"Guardado — {len(prs.slides._sldIdLst)} diapositivas")
+ilo_deck.finalize("Capacitacion_Appraisal_GPT_Ahmed.pptx")

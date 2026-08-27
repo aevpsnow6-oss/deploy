@@ -409,7 +409,7 @@ ejemplo(doc, "cuándo usar cuál", [
 ])
 
 # ══ D · TECNOLOGÍA, ACCESO Y CONFIDENCIALIDAD ══════════════════════════
-section(doc, "D", "Tecnología, acceso y confidencialidad")
+section(doc, "D", "Tecnología y acceso")
 
 pregunta(doc, 11, "Si uso el GPT Empresarial de la OIT y le subo la rúbrica, ¿obtengo los mismos resultados?")
 decir(doc, "No, y la diferencia no es de marca sino de método. Si le suben el Appraisal Checklist al GPT "
@@ -434,30 +434,7 @@ ejemplo(doc, "la misma pregunta, dos respuestas", [
 bloque(doc, "Cuidado:", "no descalificar el GPT Empresarial en general: es útil para muchas otras tareas. "
       "La diferencia que estamos señalando es específica a esta tarea.", color=RED)
 
-pregunta(doc, 12, "¿Qué pasa con la confidencialidad del PRODOC que subo?")
-decir(doc, "Es una pregunta importante y merece una respuesta precisa, no tranquilizadora. El recorrido del "
-           "documento es este: ustedes lo suben a la conversación de ChatGPT, que lo aloja en sus "
-           "servidores; nuestro servicio lo descarga desde ahí para procesarlo; extrae el texto y lo envía "
-           "al modelo para la evaluación. Nuestro servicio no guarda el documento: lo procesa y lo "
-           "descarta, y no hay base de datos ni registro histórico. Pero la conversación sí queda en la "
-           "cuenta de ChatGPT de quien la hizo, con el archivo adjunto, y su retención depende de la "
-           "configuración de esa cuenta. Además, el Excel que descargan contiene citas textuales del "
-           "PRODOC, así que debe manejarse con la misma confidencialidad que el documento original. La "
-           "recomendación operativa es simple: no subir documentos que no estén autorizados para "
-           "procesamiento por servicios externos.")
-ejemplo(doc, "el recorrido del documento, en orden", [
-    ("1.", "Usted adjunta el .docx en la conversación de ChatGPT → queda alojado en servidores de OpenAI."),
-    ("2.", "El Agente entrega a nuestro servicio un enlace temporal de descarga."),
-    ("3.", "Nuestro servicio descarga el archivo, extrae el texto y lo descarta al terminar."),
-    ("4.", "El texto se envía al modelo en cada una de las consultas de evaluación."),
-    ("5.", "El resultado vive en memoria del servicio hasta que se reinicia; no se archiva."),
-    ("6.", "El Excel queda en su equipo. La conversación queda en su cuenta de ChatGPT."),
-])
-bloque(doc, "Cuidado:", "no afirmar que «los datos no salen de la OIT» —es falso— ni que «no se usan para "
-      "entrenar» —depende de las condiciones contractuales de la cuenta, que no corresponde afirmar desde "
-      "esta sesión—. Si presionan en ese punto, derivar a la instancia institucional competente.", color=RED)
-
-pregunta(doc, 13, "¿Se puede vincular a otros recursos o aplicaciones de la OIT?")
+pregunta(doc, 12, "¿Se puede vincular a otros recursos o aplicaciones de la OIT?")
 decir(doc, "Sí, y ahí está buena parte del potencial que todavía no hemos explotado. Lo inmediato: sobre el "
            "resultado ya generado pueden seguir conversando con el Agente, pedirle que resuma las brechas "
            "de una sección, que las ordene por prioridad, que las reformule como preguntas para el equipo. "
@@ -474,13 +451,139 @@ ejemplo(doc, "encadenar el diagnóstico con evidencia de evaluación", [
 ])
 
 # ══ E · INSTITUCIONALES ════════════════════════════════════════════════
-section(doc, "E", "Institucionales — dar el marco y derivar")
+# ══ E · PRIVACIDAD, SEGURIDAD Y DATOS ══════════════════════════════════
+section(doc, "E", "Privacidad, seguridad y datos")
+body(doc, "Es el bloque donde más importa ser exacto y menos conviene improvisar. Las respuestas de "
+          "abajo se apoyan en la política de privacidad publicada del servicio (disponible en /privacy) "
+          "y en cómo está construido el sistema. Donde la respuesta depende de la configuración "
+          "contractual de las cuentas, se dice explícitamente y se deriva.",
+     italic=True, size=9.5, color=GRAY, after=8)
+
+pregunta(doc, 13, "¿Qué pasa exactamente con el PRODOC que subo? ¿Por dónde viaja?")
+decir(doc, "Conviene responder con el recorrido completo, porque la respuesta corta siempre suena "
+           "evasiva. Ustedes adjuntan el documento en la conversación de ChatGPT, que lo aloja en "
+           "servidores de OpenAI. El Agente le entrega a nuestro servicio un enlace temporal de "
+           "descarga; nuestro servicio descarga el archivo, extrae el texto y lo evalúa. El texto se "
+           "envía a la API de OpenAI en cada una de las consultas. Nuestro servicio no guarda el "
+           "documento ni el resultado en disco: no hay base de datos, y lo que queda en memoria se "
+           "borra cuando el servicio se reinicia. Lo que sí permanece es la conversación en la cuenta "
+           "de ChatGPT de quien la hizo, con el archivo adjunto, y el Excel que ustedes descargan.")
+ejemplo(doc, "el recorrido, paso a paso", [
+    ("1.", "Usted adjunta el .docx en ChatGPT → queda alojado en servidores de OpenAI."),
+    ("2.", "El Agente entrega a nuestro servicio un enlace temporal de descarga."),
+    ("3.", "Nuestro servicio descarga el archivo y extrae el texto."),
+    ("4.", "El texto se envía a la API de OpenAI en cada consulta de evaluación."),
+    ("5.", "El resultado vive en memoria del servicio; no se guarda en disco ni en base de datos."),
+    ("6.", "Usted descarga el Excel. La conversación queda en su cuenta de ChatGPT."),
+])
+bloque(doc, "Respaldo:", "el servicio publica su política de privacidad —requisito de ChatGPT para "
+      "mantener un GPT con acción— y ahí consta por escrito: no se solicita información más allá del "
+      "documento enviado, no hay base de datos, y no se persisten ni los documentos subidos ni los "
+      "archivos de resultado.")
+
+pregunta(doc, 14, "¿OpenAI usa nuestros documentos para entrenar sus modelos?")
+decir(doc, "Hay que separar dos cosas, porque son dos superficies distintas con reglas distintas. "
+           "Primero, las llamadas que hace nuestro servicio a la API de OpenAI: bajo los términos de "
+           "uso de datos de la API, las entradas y salidas no se usan para entrenar modelos por "
+           "defecto. Eso es lo que declara nuestra política de privacidad publicada. Segundo, la "
+           "conversación de ChatGPT donde ustedes suben el archivo: ahí depende del tipo de cuenta y "
+           "de su configuración. Las cuentas empresariales y de equipo están excluidas del "
+           "entrenamiento por defecto; en las cuentas individuales depende de los ajustes de cada "
+           "usuario. Esa segunda parte no la controla nuestro servicio.")
+ejemplo(doc, "las dos superficies, separadas", [
+    ("API de OpenAI", "(la usa nuestro servicio para evaluar) → no se usa para entrenar por defecto, "
+                      "según los términos de uso de datos de la API."),
+    ("ChatGPT", "(donde usted sube el archivo y conversa) → depende del tipo de cuenta y de la "
+                "configuración de esa cuenta, no de nuestro servicio."),
+    ("Conclusión práctica:", "el tratamiento del documento en ChatGPT es una decisión de "
+                             "administración de cuentas de la OIT, no una característica del Agente."),
+])
+bloque(doc, "Cuidado:", "no afirmar de forma tajante «sus datos nunca se usan para entrenar». La parte "
+      "de la API está declarada por escrito; la parte de ChatGPT depende de una configuración que no "
+      "nos corresponde certificar en una capacitación. La formulación segura es: «por el lado de la "
+      "API, no; por el lado de ChatGPT, depende de la cuenta, y eso hay que confirmarlo con la "
+      "instancia institucional».", color=RED)
+
+pregunta(doc, 15, "¿Quién puede ver mis evaluaciones? ¿Otros colegas? ¿El consultor?")
+decir(doc, "Su conversación y su Excel son suyos: ningún otro usuario del Agente ve lo que usted "
+           "evaluó, porque cada conversación es independiente y no hay un repositorio compartido de "
+           "resultados. Ahora bien, hay que ser honesto sobre el otro lado: el servicio no registra "
+           "quién lanzó cada evaluación. No hay usuarios ni identidades: todas las llamadas usan una "
+           "única clave de API compartida por los tres asistentes. Eso significa que nadie puede ver "
+           "sus resultados, pero también que el sistema no puede atribuir el consumo a una persona.")
+bloque(doc, "Respaldo:", "el servicio guarda los trabajos en memoria durante la ejecución y los "
+      "descarta al reiniciarse; no hay histórico consultable. Quien administre el servidor puede ver "
+      "registros técnicos de funcionamiento, no un archivo de evaluaciones.")
+bloque(doc, "Cuidado:", "esta ausencia de trazabilidad por persona es una decisión de diseño del "
+      "piloto, no un descuido, y conviene presentarla así. Si la OIT necesita auditoría por usuario, "
+      "es un requisito nuevo que hay que construir.", color=RED)
+
+pregunta(doc, 16, "¿Cuánto tiempo se conservan los datos y dónde están alojados?")
+decir(doc, "Del lado de nuestro servicio, la respuesta es corta: nada se conserva. No hay base de "
+           "datos; los trabajos y sus resultados viven en memoria mientras corren y se descartan "
+           "cuando el servicio se reinicia. El servidor está alojado en Render. Del lado de ChatGPT y "
+           "de la API de OpenAI, la retención se rige por las condiciones de esas cuentas, que es "
+           "donde hay que mirar si necesitan una respuesta formal de cumplimiento. El único registro "
+           "duradero que existe es el Excel que ustedes descargan, y ese queda bajo su control.")
+bloque(doc, "Cuidado:", "el Excel contiene citas textuales del PRODOC. Debe manejarse con la misma "
+      "confidencialidad que el documento original: si el PRODOC es restringido, el Excel también lo "
+      "es.", color=RED)
+
+pregunta(doc, 17, "¿Qué diferencia hay entre una cuenta gratuita y una de pago? ¿Quién paga qué?")
+decir(doc, "Son dos contadores distintos y conviene no confundirlos. El primero es la cuenta de "
+           "ChatGPT de cada usuario: determina si pueden abrir el Agente y cuántos mensajes pueden "
+           "enviar. Ese contador es de cada persona. El segundo es el consumo de la API que genera la "
+           "evaluación —las setecientas y pico consultas al modelo—, y ese se factura siempre contra "
+           "la clave del proyecto, no contra la cuenta del usuario. Es decir: la evaluación la paga el "
+           "presupuesto del piloto, independientemente de quién la lance y de qué plan de ChatGPT "
+           "tenga.")
+ejemplo(doc, "los dos contadores", [
+    ("Cuenta de ChatGPT del usuario", "condiciona el acceso al Agente y el número de mensajes. Un plan "
+                                      "gratuito puede toparse con límites de uso en su propio lado."),
+    ("Clave de API del proyecto", "paga la evaluación en sí. Es la misma para los tres asistentes y "
+                                  "para todos los usuarios."),
+    ("Consecuencia:", "un usuario con plan gratuito no ahorra presupuesto al proyecto, y uno con plan "
+                      "de pago no le cuesta más. Lo que mueve la aguja del costo es cuántos criterios "
+                      "se evalúan."),
+])
+bloque(doc, "Respaldo:", "por eso el tablero de consumo de OpenAI desagrega por clave y por modelo, "
+      "pero no por persona. Si en algún momento se necesita atribuir el gasto por área o por usuario, "
+      "habría que emitir claves separadas.")
+
+pregunta(doc, 18, "¿Puedo subir un PRODOC confidencial, restringido o con datos personales?")
+decir(doc, "La regla operativa es simple: no suban documentos que no estén autorizados para "
+           "procesamiento por servicios externos de inteligencia artificial. El documento sale de la "
+           "infraestructura de la OIT —pasa por ChatGPT y por la API de OpenAI—, y esa es la pregunta "
+           "que hay que responder antes de subirlo, no después. Si el PRODOC contiene datos personales "
+           "identificables o información restringida, la decisión no es técnica ni mía: corresponde a "
+           "quien administre la política de información de la OIT. Lo que sí puedo decirles es qué "
+           "hace el sistema, y con eso pueden llevar la consulta a quien corresponda.")
+bloque(doc, "Cuidado:", "no dar una autorización implícita. La respuesta correcta no es «sí, es "
+      "seguro», sino «esto es lo que ocurre con el documento; la autorización la da la instancia "
+      "competente».", color=RED)
+
+pregunta(doc, 19, "¿Qué pasa si el enlace del Agente se difunde fuera del grupo previsto?")
+decir(doc, "Hay que decirlo con claridad porque tiene consecuencias prácticas. Los tres asistentes "
+           "están configurados como «cualquiera con el enlace»: no aparecen en el directorio público "
+           "de ChatGPT, pero quien reciba el enlace y tenga una cuenta puede abrirlos y ejecutar "
+           "evaluaciones. El enlace funciona como una credencial: reenviarlo transfiere el acceso. Y "
+           "como el consumo se factura contra una única clave compartida, un enlace difundido de más "
+           "se traduce en gasto que no se puede atribuir a nadie. La forma de revocarlo es cambiar la "
+           "configuración de compartición o republicar el GPT para generar un enlace nuevo.")
+bloque(doc, "Respaldo:", "el acceso a la API sí está protegido con una clave que sólo conocen los tres "
+      "GPTs configurados: nadie puede llamar al servicio directamente desde fuera. La superficie "
+      "expuesta es el enlace del Agente, no el servidor.")
+bloque(doc, "Cuidado:", "no presentar la distribución de enlaces como un trámite menor: en la práctica "
+      "es el único control de acceso del piloto, y conviene que alguien sea responsable de esa lista.",
+      color=RED)
+
+section(doc, "F", "Institucionales — dar el marco y derivar")
 body(doc, "Estas cuatro no son preguntas técnicas. La estrategia es la misma en las cuatro: responder con "
           "precisión la parte que sí es del expositor, y devolver explícitamente la parte que es una "
           "decisión institucional. Responder de más aquí compromete definiciones que no son suyas.",
      italic=True, size=9.5, color=GRAY, after=8)
 
-pregunta(doc, 14, "¿Cuándo lo puedo usar?", quien="derivar a Cybele · bloque 3")
+pregunta(doc, 20, "¿Cuándo lo puedo usar?", quien="derivar a Cybele · bloque 3")
 decir(doc, "La secuencia de implementación para 2026 y el perfil de usuario los cubrió Cybele en el bloque "
            "anterior: hoy el uso está acotado a EVAL-ROLAC como primera etapa. Lo que sí corresponde a mi "
            "parte es el requisito técnico de uso, y quiero ser explícito: esta herramienta supone que quien "
@@ -489,7 +592,7 @@ decir(doc, "La secuencia de implementación para 2026 y el perfil de usuario los
            "diagnóstico es razonable, la herramienta deja de ser un apoyo y se convierte en un riesgo: "
            "produce resultados con apariencia de autoridad que nadie está en condiciones de contrastar.")
 
-pregunta(doc, 15, "¿Está en línea con las IGDS?", quien="derivar")
+pregunta(doc, 21, "¿Está en línea con las IGDS?", quien="derivar")
 decir(doc, "Esa es una definición institucional que excede lo técnico y no me corresponde pronunciarla. Lo "
            "que sí puedo afirmar con precisión es lo siguiente: la rúbrica que aplica el Agente es el "
            "Appraisal Checklist institucional, sin modificaciones metodológicas de nuestra parte. No "
@@ -501,7 +604,7 @@ bloque(doc, "Cuidado:", "no afirmar que sí está alineado ni que no lo está. E
       "institucional; una respuesta improvisada en una capacitación puede citarse después como posición "
       "del proyecto.", color=RED)
 
-pregunta(doc, 16, "¿Cómo es y cuánto cuesta el mantenimiento?", quien="derivar · marco general")
+pregunta(doc, 22, "¿Cómo es y cuánto cuesta el mantenimiento?", quien="derivar · marco general")
 decir(doc, "El mantenimiento tiene tres componentes distintos y conviene no mezclarlos. Primero, el consumo "
            "de API, que es variable y depende directamente de cuánto se use. Segundo, el servicio donde "
            "corre el backend, que hoy está en un plan sin costo con las limitaciones que eso implica. Y "
@@ -511,7 +614,7 @@ decir(doc, "El mantenimiento tiene tres componentes distintos y conviene no mezc
            "responsable de mantenerla sincronizada con la metodología. El esquema y el costo para después "
            "del piloto son una decisión institucional pendiente.")
 
-pregunta(doc, 17, "¿Cómo puedo ayudar a que se institucionalice la herramienta?", quien="derivar a Cybele / día 2")
+pregunta(doc, 23, "¿Cómo puedo ayudar a que se institucionalice la herramienta?", quien="derivar a Cybele / día 2")
 decir(doc, "Lo más útil que pueden hacer es usarla sobre PRODOCs reales y decirnos dónde falla. En "
            "particular dos tipos de caso: cuando el Agente no reconoció algo que sí estaba en el documento, "
            "y cuando marcó como brecha algo que en realidad no lo era. Cada uno de esos casos es "
@@ -524,7 +627,7 @@ bloque(doc, "Respaldo:", "si preguntan por un ejemplo concreto de ajuste: un cri
       "Ese cambio salió de una revisión como las que ustedes pueden hacer.")
 
 # ══ Cierre ═════════════════════════════════════════════════════════════
-section(doc, "F", "Tres frases para no perder el hilo")
+section(doc, "G", "Tres frases para no perder el hilo")
 for txt in [
     "El Agente lee el documento, no el proyecto. Un «No» puede ser una brecha de diseño o simplemente algo no documentado.",
     "La estabilidad mide consistencia, no acierto. La evidencia citada es lo único que hace defendible el diagnóstico.",
