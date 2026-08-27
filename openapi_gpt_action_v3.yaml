@@ -104,12 +104,10 @@ paths:
       operationId: getV3AppraisalJobStatus
       summary: Get v3 appraisal job status
       description: >
-        Call this operation at most once per user message requesting "estado",
-        progress, or equivalent. If status is queued or running, relay
-        progress_line verbatim, tell the user to write "estado" to check again,
-        and end the turn. Do not poll again in the same turn. If status is
-        succeeded, call getV3AppraisalResult immediately. If status is failed,
-        report the error and end the turn.
+        Call once per user progress request. If queued or running, relay
+        progress_line verbatim, ask the user to write "estado" again, and end
+        the turn without polling. If succeeded, call getV3AppraisalResult. If
+        failed, report the error and end the turn.
       x-openai-isConsequential: false
       parameters:
         - in: path
