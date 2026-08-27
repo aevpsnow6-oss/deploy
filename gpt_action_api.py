@@ -12,6 +12,7 @@ import asyncio
 import base64
 import os
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -19,7 +20,7 @@ import urllib.request
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
@@ -29,6 +30,9 @@ import tab2_core
 
 APP_TITLE = "ILO PRODOC Evaluation Action API"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PUBLIC_BASE_URL = os.getenv(
+    "PUBLIC_BASE_URL", "https://ilo-prodoc-appraisal-v3.onrender.com"
+).rstrip("/")
 
 app = FastAPI(
     title=APP_TITLE,
@@ -245,7 +249,6 @@ def _job_status_payload(job_id: str, job: dict[str, Any]) -> dict[str, Any]:
         "eta_seconds": eta_seconds,
         "document_name": job.get("document_name"),
         "document_word_count": job.get("document_word_count"),
-        "summary": job.get("summary"),
         "error": job.get("error"),
     }
 
@@ -367,8 +370,8 @@ def _run_evaluation_job(
             total=total_calls,
             summary=summary,
             result_filename=xlsx_name,
-            result_xlsx_b64=base64.b64encode(xlsx_bytes).decode("ascii"),
-            result_preview=v3_core.results_to_dataframe(results).head(10).to_dict("records"),
+            result_xlsx_bytes=xlsx_bytes,
+            download_token=secrets.token_urlsafe(32),
         )
     except Exception as exc:  # noqa: BLE001 - report job failures to the GPT
         _set_job(job_id, status="failed", message=str(exc), error=str(exc))
@@ -632,19 +635,37 @@ def get_v3_appraisal_result(job_id: str) -> dict[str, Any]:
             detail=f"Job is {job.get('status')}; result is available only after success.",
         )
 
+    token = job.get("download_token")
+    if not token or not job.get("result_xlsx_bytes"):
+        raise HTTPException(status_code=500, detail="Completed result file is unavailable.")
+
     return {
         "job_id": job_id,
         "status": job.get("status"),
         "summary": job.get("summary"),
-        "result_preview": job.get("result_preview", []),
         "openaiFileResponse": [
-            {
-                "name": job.get("result_filename", "valoracion_v3_resultados.xlsx"),
-                "mime_type": XLSX_MIME,
-                "content": job["result_xlsx_b64"],
-            }
+            f"{PUBLIC_BASE_URL}/v3/jobs/{job_id}/file?token={token}"
         ],
     }
+
+
+@app.get("/v3/jobs/{job_id}/file", include_in_schema=False)
+def download_v3_appraisal_result(job_id: str, token: str) -> Response:
+    """Serve the completed workbook to OpenAI's file fetcher via an opaque URL."""
+    job = _get_job(job_id)
+    expected = job.get("download_token")
+    if not expected or not secrets.compare_digest(token, expected):
+        raise HTTPException(status_code=404, detail="Result file not found.")
+
+    content = job.get("result_xlsx_bytes")
+    if not isinstance(content, bytes):
+        raise HTTPException(status_code=404, detail="Result file not found.")
+    filename = job.get("result_filename", "valoracion_v3_resultados.xlsx")
+    return Response(
+        content=content,
+        media_type=XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/sustainability/jobs", response_model=JobCreated, dependencies=[Depends(require_api_key)])

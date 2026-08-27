@@ -152,8 +152,6 @@ paths:
                     type: string
                   document_word_count:
                     type: integer
-                  summary:
-                    type: object
                   error:
                     type: string
   /v3/jobs/{job_id}/result:
@@ -161,10 +159,9 @@ paths:
       operationId: getV3AppraisalResult
       summary: Get v3 appraisal XLSX result
       description: >
-        Returns the completed summary, a small user-facing preview, and an XLSX
-        file via openaiFileResponse. The workbook includes a friendly summary
-        sheet plus a technical audit sheet with stability distribution. Call
-        only after status is succeeded.
+        Returns a compact summary and the XLSX via an openaiFileResponse URL.
+        The workbook includes the user view and technical audit. Call only
+        after status is succeeded.
       x-openai-isConsequential: false
       parameters:
         - in: path
@@ -186,22 +183,12 @@ paths:
                     type: string
                   summary:
                     type: object
-                  result_preview:
-                    type: array
-                    items:
-                      type: object
                   openaiFileResponse:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        mime_type:
-                          type: string
-                        content:
-                          type: string
-                          format: byte
+                      type: string
+                      format: uri
+                      description: Tokenized URL fetched by ChatGPT as a file.
 components:
   schemas: {}
   securitySchemes:

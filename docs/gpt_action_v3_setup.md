@@ -348,7 +348,7 @@ Ask ILO:
 
 ## Known Limitations
 
-- The pilot API keeps jobs in memory. A restart (including a Render free-plan idle spin-down) loses active/completed jobs. A job polled after a spin-down will be gone.
+- The pilot API keeps jobs in memory. A restart (including a Render free-plan idle spin-down) loses active/completed jobs. Render auto-deploys are disabled in `render.yaml`; deploy manually only when no evaluation is active.
 - The pilot API processes one DOCX at a time, per GPT.
 - Stability repeats multiply model calls. Approximate full-run cost per document:
   - GPT 1 (Tab 1): 76 criteria × 10 = ~760 calls.
@@ -356,4 +356,4 @@ Ask ILO:
   - GPT 3 (Tab 3): ~28 indicators × 5 = ~140 calls.
   Adjust `max_workers` down if the OpenAI project hits rate limits.
 - On a sustained OpenAI outage, each failing call retries with escalating backoff (internal rate-limit retries plus outer stability retries), so a job slows down rather than failing fast.
-- The returned XLSX is embedded in the GPT Action response. If future results exceed GPT Action file limits, switch to returning a short-lived download URL.
+- The returned XLSX uses the GPT Actions URL file-return option so the JSON Action response remains small. The tokenized URL is fetched immediately by ChatGPT and is not presented as a server link to the user.

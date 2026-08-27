@@ -4,6 +4,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile.gpt-action
     plan: free
+    autoDeployTrigger: off
     healthCheckPath: /health
     envVars:
       # Set both values in the Render dashboard. sync:false keeps them
