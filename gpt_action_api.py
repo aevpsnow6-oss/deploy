@@ -163,7 +163,9 @@ def _get_job(job_id: str) -> dict[str, Any]:
 # de estado aguarda a que el trabajo termine (o a que venza el plazo) antes de
 # responder. Así cada llamada devuelve algo nuevo y el bucle se autorregula.
 POLL_MAX_WAIT_SECONDS = 25.0
-POLL_DEFAULT_WAIT_SECONDS = 20.0
+# Corto a propósito: ChatGPT sólo puede escribir texto ENTRE llamadas a la
+# acción. Una espera larga silencia al modelo justo cuando debería informar.
+POLL_DEFAULT_WAIT_SECONDS = 3.0
 _TERMINAL_STATUSES = {"succeeded", "failed"}
 
 
@@ -176,6 +178,41 @@ async def _await_job(job_id: str, wait_seconds: float) -> dict[str, Any]:
         await asyncio.sleep(1.0)
         job = _get_job(job_id)
     return job
+
+
+def _eta_text(seconds: int | None) -> str:
+    if not seconds:
+        return ""
+    if seconds < 60:
+        return " Queda menos de un minuto."
+    return f" Quedan unos {max(1, round(seconds / 60))} minutos."
+
+
+def _progress_line(job: dict[str, Any], completed: int, total: int,
+                   percent: float | None, eta_seconds: int | None) -> str:
+    """A sentence the GPT can relay verbatim, so it never has to invent one."""
+    status = job.get("status")
+    if status == "failed":
+        return f"La evaluación falló: {job.get('error') or job.get('message') or 'error desconocido'}"
+    if status == "succeeded":
+        return "Evaluación completada. Preparando el archivo de resultados."
+
+    # El encabezado del documento sólo en la primera línea informativa: repetirlo
+    # en cada sondeo convierte el avance en ruido.
+    doc = job.get("document_name")
+    palabras = job.get("document_word_count")
+    encabezado = ""
+    if completed == 0 and doc:
+        encabezado = (f"Documento recibido: {doc} ({palabras:,} palabras). ".replace(",", ".")
+                      if palabras else f"Documento recibido: {doc}. ")
+
+    if total and completed < total:
+        pct = f" ({round(percent)}%)" if percent is not None else ""
+        return (f"{encabezado}Evaluando: {completed} de {total} consultas"
+                f"{pct}.{_eta_text(eta_seconds)}")
+    if total:
+        return f"{encabezado}Consolidando resultados ({total} de {total} consultas)."
+    return f"{encabezado}{job.get('message') or 'Preparando la evaluación…'}"
 
 
 def _job_status_payload(job_id: str, job: dict[str, Any]) -> dict[str, Any]:
@@ -196,6 +233,7 @@ def _job_status_payload(job_id: str, job: dict[str, Any]) -> dict[str, Any]:
         "job_id": job_id,
         "status": job.get("status"),
         "message": job.get("message"),
+        "progress_line": _progress_line(job, completed, total, percent, eta_seconds),
         "completed": completed,
         "total": total,
         "percent_complete": percent,

@@ -51,11 +51,13 @@ REGLAS
 - Explica que los resultados son asistidos por IA y requieren validación experta. Nunca los describas como determinación oficial de la OIT.
 
 SEGUIMIENTO DEL PROGRESO (muy importante)
-La acción de estado espera hasta 20 segundos antes de responder, de modo que cada llamada devuelve información nueva. Mientras el estado sea "queued" o "running":
-- Vuelve a llamar a la acción de estado INMEDIATAMENTE, en el mismo turno, sin pedir permiso y sin devolver el control al usuario.
-- Antes de cada nueva llamada escribe UNA sola línea de avance con los datos que devuelve la acción: completed/total, percent_complete y eta_seconds. Ejemplo: «Evaluando… 180/760 (24%), quedan unos 3 minutos.»
-- NUNCA preguntes «¿quieres que verifique de nuevo?» ni «avísame cuando quieras que consulte». El usuario no debe tener que pedir actualizaciones.
-- Si agotas el número de llamadas disponibles en el turno, di explícitamente en qué punto quedó («va por el 60%, unos 2 minutos») y continúa consultando en cuanto puedas.
+El usuario no ve nada mientras trabajas: para él eres una pantalla en silencio. Tienes que hablar entre una llamada y la siguiente.
+- En cuanto lances el trabajo, escribe una línea confirmando que empezaste. No esperes al primer sondeo para decir algo.
+- Cada respuesta de la acción de estado trae un campo `progress_line` ya redactado. ESCRÍBELO TAL CUAL, en una línea, ANTES de volver a llamar a la acción. No lo reformules ni lo resumas.
+- Encadena: escribir la línea → llamar a la acción → escribir la línea → llamar a la acción, sin pedir permiso y sin devolver el control al usuario.
+- NUNCA hagas dos llamadas seguidas sin escribir nada entre medio: eso deja al usuario a oscuras, que es exactamente lo que hay que evitar.
+- NUNCA preguntes «¿quieres que verifique de nuevo?». El usuario no debe pedir actualizaciones.
+- Si se te agotan las llamadas del turno, di en qué punto quedó («va por el 60%, quedan unos 2 minutos») y sigue consultando en cuanto puedas.
 Devuelve el turno únicamente cuando el estado sea succeeded o failed.
 
 FLUJO
@@ -125,11 +127,13 @@ REGLAS
 - Resultados asistidos por IA: requieren validación experta; nunca son determinación oficial de la OIT.
 
 SEGUIMIENTO DEL PROGRESO (muy importante)
-La acción de estado espera hasta 20 segundos antes de responder, de modo que cada llamada devuelve información nueva. Mientras el estado sea "queued" o "running":
-- Vuelve a llamar a la acción de estado INMEDIATAMENTE, en el mismo turno, sin pedir permiso y sin devolver el control al usuario.
-- Antes de cada nueva llamada escribe UNA sola línea de avance con los datos que devuelve la acción: completed/total, percent_complete y eta_seconds. Ejemplo: «Evaluando… 180/760 (24%), quedan unos 3 minutos.»
-- NUNCA preguntes «¿quieres que verifique de nuevo?» ni «avísame cuando quieras que consulte». El usuario no debe tener que pedir actualizaciones.
-- Si agotas el número de llamadas disponibles en el turno, di explícitamente en qué punto quedó («va por el 60%, unos 2 minutos») y continúa consultando en cuanto puedas.
+El usuario no ve nada mientras trabajas: para él eres una pantalla en silencio. Tienes que hablar entre una llamada y la siguiente.
+- En cuanto lances el trabajo, escribe una línea confirmando que empezaste. No esperes al primer sondeo para decir algo.
+- Cada respuesta de la acción de estado trae un campo `progress_line` ya redactado. ESCRÍBELO TAL CUAL, en una línea, ANTES de volver a llamar a la acción. No lo reformules ni lo resumas.
+- Encadena: escribir la línea → llamar a la acción → escribir la línea → llamar a la acción, sin pedir permiso y sin devolver el control al usuario.
+- NUNCA hagas dos llamadas seguidas sin escribir nada entre medio: eso deja al usuario a oscuras, que es exactamente lo que hay que evitar.
+- NUNCA preguntes «¿quieres que verifique de nuevo?». El usuario no debe pedir actualizaciones.
+- Si se te agotan las llamadas del turno, di en qué punto quedó («va por el 60%, quedan unos 2 minutos») y sigue consultando en cuanto puedas.
 Devuelve el turno únicamente cuando el estado sea succeeded o failed.
 
 FLUJO
@@ -198,11 +202,13 @@ REGLAS
 - Resultados asistidos por IA: requieren validación experta; nunca son determinación oficial de la OIT.
 
 SEGUIMIENTO DEL PROGRESO (muy importante)
-La acción de estado espera hasta 20 segundos antes de responder, de modo que cada llamada devuelve información nueva. Mientras el estado sea "queued" o "running":
-- Vuelve a llamar a la acción de estado INMEDIATAMENTE, en el mismo turno, sin pedir permiso y sin devolver el control al usuario.
-- Antes de cada nueva llamada escribe UNA sola línea de avance con los datos que devuelve la acción: completed/total, percent_complete y eta_seconds. Ejemplo: «Evaluando… 180/760 (24%), quedan unos 3 minutos.»
-- NUNCA preguntes «¿quieres que verifique de nuevo?» ni «avísame cuando quieras que consulte». El usuario no debe tener que pedir actualizaciones.
-- Si agotas el número de llamadas disponibles en el turno, di explícitamente en qué punto quedó («va por el 60%, unos 2 minutos») y continúa consultando en cuanto puedas.
+El usuario no ve nada mientras trabajas: para él eres una pantalla en silencio. Tienes que hablar entre una llamada y la siguiente.
+- En cuanto lances el trabajo, escribe una línea confirmando que empezaste. No esperes al primer sondeo para decir algo.
+- Cada respuesta de la acción de estado trae un campo `progress_line` ya redactado. ESCRÍBELO TAL CUAL, en una línea, ANTES de volver a llamar a la acción. No lo reformules ni lo resumas.
+- Encadena: escribir la línea → llamar a la acción → escribir la línea → llamar a la acción, sin pedir permiso y sin devolver el control al usuario.
+- NUNCA hagas dos llamadas seguidas sin escribir nada entre medio: eso deja al usuario a oscuras, que es exactamente lo que hay que evitar.
+- NUNCA preguntes «¿quieres que verifique de nuevo?». El usuario no debe pedir actualizaciones.
+- Si se te agotan las llamadas del turno, di en qué punto quedó («va por el 60%, quedan unos 2 minutos») y sigue consultando en cuanto puedas.
 Devuelve el turno únicamente cuando el estado sea succeeded o failed.
 
 FLUJO
