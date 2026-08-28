@@ -517,7 +517,14 @@ def _run_attributes_job(job_id: str, request: AttributesJobRequest) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    # El commit permite comprobar QUÉ versión está desplegada sin credenciales.
+    return {
+        "status": "ok",
+        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:7],
+        "sheets": ",".join(
+            [v3_core.SHEET_RESULT, v3_core.SHEET_PRIORITY, v3_core.SHEET_RUBRIC]
+        ),
+    }
 
 
 PRIVACY_HTML = """<!doctype html>

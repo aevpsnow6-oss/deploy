@@ -982,8 +982,21 @@ def results_to_xlsx_bytes(
             "R:R": 34,    # Revision humana recomendada
         })
 
+        # La hoja se escribe SIEMPRE: su ausencia era indistinguible de un
+        # despliegue viejo. Vacía, dice explícitamente que no hay pendientes.
         priority_df = priority_to_dataframe(results)
-        if not priority_df.empty:
+        if priority_df.empty:
+            write_sheet(
+                pd.DataFrame(
+                    [{PRIORITY_COLUMNS[0]: "—",
+                      "Motivo de prioridad": "Ningún criterio exige revisión "
+                      "obligatoria: no hubo resultados inestables ni veredictos «No»."}],
+                    columns=PRIORITY_COLUMNS,
+                ).fillna(""),
+                SHEET_PRIORITY,
+                {"A:B": 10, "C:C": 52, "D:D": 76},
+            )
+        else:
             write_sheet(priority_df, SHEET_PRIORITY, {
                 "A:B": 10,    # ID, Subseccion
                 "C:C": 52,    # Criterio
@@ -994,6 +1007,7 @@ def results_to_xlsx_bytes(
                 "I:I": 16,    # Subjetividad
                 "J:K": 60,    # Razonamiento, Evidencia
             })
+
 
         rubric_df = rubric_to_dataframe(criteria, results)
         if not rubric_df.empty:
@@ -1150,8 +1164,13 @@ def _demo_priority() -> None:
     book = openpyxl.load_workbook(io.BytesIO(results_to_xlsx_bytes(rows)))
     assert SHEET_PRIORITY in book.sheetnames, book.sheetnames
     assert book[SHEET_PRIORITY].max_row == 4  # cabecera + 3
+    # sin pendientes la hoja SIGUE estando, y lo dice: su ausencia no puede
+    # confundirse con una versión vieja del servidor
     limpio = openpyxl.load_workbook(io.BytesIO(results_to_xlsx_bytes([rows[0]])))
-    assert SHEET_PRIORITY not in limpio.sheetnames
+    assert SHEET_PRIORITY in limpio.sheetnames
+    hoja = limpio[SHEET_PRIORITY]
+    assert hoja.max_row == 2
+    assert "Ningún criterio exige revisión obligatoria" in hoja.cell(2, 4).value
 
 
 if __name__ == "__main__":
