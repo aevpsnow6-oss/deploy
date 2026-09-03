@@ -69,6 +69,14 @@ paths:
                   description: Parallel OpenAI calls for repeated criterion evaluation. Default is 48.
                   minimum: 1
                   maximum: 48
+                language:
+                  type: string
+                  enum: [es, en]
+                  default: es
+                  description: >-
+                    Output language of the XLSX. Use 'en' when the user asks for
+                    the report in English. Presentation only; verdicts are
+                    identical in both languages.
       responses:
         "200":
           description: Job was accepted.

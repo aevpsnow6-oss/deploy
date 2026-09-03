@@ -51,6 +51,138 @@ RESULT_COLUMNS = [
     "Revisión humana recomendada",
 ]
 
+# ════════════════════════════════════════════════════════════════════════
+# Idioma de salida. La rúbrica autoritativa sigue siendo la española: el
+# idioma sólo cambia la PRESENTACIÓN, nunca la evaluación. Un mismo PRODOC
+# produce los mismos veredictos en "es" y en "en".
+# ════════════════════════════════════════════════════════════════════════
+DEFAULT_LANG = "es"
+LANGS = ("es", "en")
+
+
+def _lang(lang: str | None) -> str:
+    """Normalise to a supported language, defaulting to Spanish."""
+    code = str(lang or DEFAULT_LANG).strip().lower()[:2]
+    return code if code in LANGS else DEFAULT_LANG
+
+
+# Etiquetas de presentación. Las claves internas del resultado NO cambian
+# (siguen en español): sólo se traducen al escribir el Excel.
+LABELS: dict[str, dict[str, str]] = {
+    "es": {
+        "sheet_result": "Resultado Diagnostico",
+        "sheet_priority": "Revisión prioritaria",
+        "sheet_rubric": "Rubrica aplicada",
+        "why": "POR QUÉ",
+        "why_generic": "POR QUÉ ESTE RESULTADO",
+        "checks_met": "Se cumplen {ok} de {total} chequeos.",
+        "missing": "Falta",
+        "and_more": "y {n} más",
+        "verification": "VERIFICACIÓN",
+        "stability": "ESTABILIDAD",
+        "runs_agreed": "{modal} de {total} corridas coincidieron",
+        "alt_result": "Resultado alternativo",
+        "rule": "REGLA",
+        "rule_all": "se requieren los {n} chequeos",
+        "rule_atleast": "se requieren al menos {k} de {n} chequeos",
+        "rule_mixed": "regla compuesta; cumplidos {ok} de {n}",
+        "prior_unstable": "Inestable ({pct} < {thr})",
+        "prior_no": "Resultado No",
+        "prior_none": ("Ningún criterio exige revisión obligatoria: no hubo "
+                       "resultados inestables ni veredictos «No»."),
+        "yes": "Sí",
+        "no": "No",
+        "review_yes": "Sí",
+        "review_no": "No - revisión muestral",
+        "review_subj": "subjetividad alta",
+        "review_stab": "estabilidad <{thr} ({pct})",
+        "review_verdict": "resultado requiere revisión",
+        "modal_prefix": ("Resultado modal tras {total} corridas independientes: "
+                         "{ans} ({modal}/{total}; {pct} de estabilidad). "
+                         "Distribución: {dist}."),
+        "unstable_note": " Resultado inestable (<{thr}).",
+        "alt_note": " Resultado alternativo: {drift}.",
+        "representative": "Razonamiento representativo de una corrida con el resultado modal:",
+        "no_runs": "No se recibieron corridas para este criterio.",
+        "tie": "empate: ",
+        "remaining": "{n}/{rest} restantes; {pct} total",
+        "prior_placeholder": "—",
+    },
+    "en": {
+        "sheet_result": "Appraisal Result",
+        "sheet_priority": "Priority Review",
+        "sheet_rubric": "Rubric Applied",
+        "why": "WHY",
+        "why_generic": "WHY THIS RESULT",
+        "checks_met": "{ok} of {total} checks are met.",
+        "missing": "Missing",
+        "and_more": "and {n} more",
+        "verification": "VERIFICATION",
+        "stability": "STABILITY",
+        "runs_agreed": "{modal} of {total} runs agreed",
+        "alt_result": "Alternative result",
+        "rule": "RULE",
+        "rule_all": "all {n} checks are required",
+        "rule_atleast": "at least {k} of {n} checks are required",
+        "rule_mixed": "composite rule; {ok} of {n} met",
+        "prior_unstable": "Unstable ({pct} < {thr})",
+        "prior_no": "Verdict No",
+        "prior_none": ("No criterion requires mandatory review: there were no "
+                       "unstable results and no \u201cNo\u201d verdicts."),
+        "yes": "Yes",
+        "no": "No",
+        "review_yes": "Yes",
+        "review_no": "No - sample check",
+        "review_subj": "high subjectivity",
+        "review_stab": "stability <{thr} ({pct})",
+        "review_verdict": "verdict requires review",
+        "modal_prefix": ("Modal result after {total} independent runs: {ans} "
+                         "({modal}/{total}; {pct} stability). "
+                         "Distribution: {dist}."),
+        "unstable_note": " Unstable result (<{thr}).",
+        "alt_note": " Alternative result: {drift}.",
+        "representative": "Representative reasoning from a run with the modal result:",
+        "no_runs": "No runs were received for this criterion.",
+        "tie": "tie: ",
+        "remaining": "{n}/{rest} remaining; {pct} total",
+        "prior_placeholder": "—",
+    },
+}
+
+# Cabeceras de columna: clave interna (es) -> encabezado mostrado (en).
+COLUMN_LABELS_EN = {
+    "Subsección": "Subsection",
+    "Pregunta orientadora (no evaluada)": "Guiding question (not evaluated)",
+    "Criterio": "Criterion",
+    "Subjetividad": "Subjectivity",
+    "Transversales": "Cross-cutting",
+    "Respuesta": "Verdict",
+    "N corridas": "Runs",
+    "Conteo modal": "Modal count",
+    "Estabilidad (%)": "Stability (%)",
+    "Estable (>=80%)": "Stable (>=80%)",
+    "Resultado Alternativo": "Alternative result",
+    "Distribución de respuestas": "Verdict distribution",
+    "Corridas con error": "Runs with error",
+    "Razonamiento": "Reasoning",
+    "Evidencia": "Evidence",
+    "Revisión humana recomendada": "Human review recommended",
+    "Motivo de prioridad": "Reason for priority",
+    "Sección": "Section",
+    "Criterio a evaluar": "Criterion",
+    "Tipo de criterio": "Criterion type",
+    "Aplicabilidad": "Applicability",
+    "Aspectos transversales": "Cross-cutting aspects",
+    "Elementos a verificar": "Elements to verify",
+    "Rúbrica — Sí": "Rubric — Yes",
+    "Rúbrica — Parcial": "Rubric — Partial",
+    "Rúbrica — No": "Rubric — No",
+    "Rúbrica — No aplica": "Rubric — N/A",
+    "Anclas verificables (v3)": "Verifiable anchors (v3)",
+    "Subjetividad residual (v3)": "Residual subjectivity (v3)",
+}
+
+
 SHEET_RESULT = "Resultado Diagnostico"
 SHEET_PRIORITY = "Revisión prioritaria"
 SHEET_RUBRIC = "Rubrica aplicada"
@@ -166,6 +298,34 @@ FORMATO DEL Razonamiento (estricto):
   RESULTADO: <Yes/No/Partial/Not Found/N/A>
 
 Devuelve SIEMPRE JSON con: {"Respuesta", "Razonamiento", "Evidencia"}. Idioma: español."""
+
+
+# El andamiaje estructural (verdadero/falso, DECISIÓN:, RESULTADO:) se mantiene
+# SIEMPRE en español porque el renderizador lo parsea; el lector nunca lo ve
+# (se convierte en ✓/✗). Sólo la prosa cambia de idioma.
+V3_SYSTEM_PROMPT_EN_SUFFIX = """
+
+═════ IDIOMA DE SALIDA ═════
+Escribe la JUSTIFICACIÓN de cada test y el campo "Evidencia" en INGLÉS.
+Las citas textuales del documento van tal cual aparecen (no las traduzcas).
+
+CRÍTICO — no cambies estas etiquetas estructurales, deben seguir en español
+aunque el resto esté en inglés:
+  - «verdadero» / «falso» tras cada Tn (NO uses true/false)
+  - «DECISIÓN:» (NO uses DECISION:)
+  - «RESULTADO:» (NO uses RESULT:)
+Ejemplo correcto:
+  T1: verdadero — The document distinguishes the two approaches in section 3.2.
+  T2: falso — No mechanism is articulated.
+  DECISIÓN: T1 ∧ T2 = falso → Parcial
+  RESULTADO: Partial"""
+
+
+def system_prompt(lang: str = DEFAULT_LANG) -> str:
+    """System prompt for the requested output language."""
+    if _lang(lang) == "en":
+        return V3_SYSTEM_PROMPT + V3_SYSTEM_PROMPT_EN_SUFFIX
+    return V3_SYSTEM_PROMPT
 
 
 V3_USER_PROMPT_TEMPLATE = """═════ CRITERIO A EVALUAR ═════
@@ -342,7 +502,9 @@ def _extract_usage(resp: Any) -> dict[str, int]:
     }
 
 
-def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[str, Any]:
+def evaluate_criterion(
+    client: Any, row: pd.Series, document_text: str, lang: str = DEFAULT_LANG
+) -> dict[str, Any]:
     """Run a single criterion through the v3 prompt and return a result dict."""
     crit_id = str(row.get("ID", ""))
     subj = str(row.get("Subjetividad residual (v3)", "Media")).strip()
@@ -379,7 +541,7 @@ def evaluate_criterion(client: Any, row: pd.Series, document_text: str) -> dict[
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": V3_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt(lang)},
                 {"role": "user", "content": build_user_prompt(row, document_text)},
             ],
             max_completion_tokens=MAX_COMPLETION_TOKENS,
@@ -442,6 +604,7 @@ def _drift_text(
     modal_answer: str,
     total: int,
     stable: bool,
+    lang: str = DEFAULT_LANG,
 ) -> str:
     if stable:
         return ""
@@ -463,13 +626,14 @@ def _drift_text(
         [answer for answer, count in non_modal.items() if count == max_count],
         key=_answer_order_index,
     )
+    L = LABELS[_lang(lang)]
     label = " / ".join(top_answers)
-    tie_prefix = "empate: " if len(top_answers) > 1 else ""
+    tie_prefix = L["tie"] if len(top_answers) > 1 else ""
     total_pct = 100 * max_count / total
-    return (
-        f"{label} "
-        f"({tie_prefix}{max_count}/{remaining} restantes; {_format_pct(total_pct)} total)"
+    rest = L["remaining"].format(
+        n=max_count, rest=remaining, pct=_format_pct(total_pct)
     )
+    return f"{label} ({tie_prefix}{rest})"
 
 
 def _representative_modal_result(
@@ -495,8 +659,10 @@ def _representative_modal_result(
 def aggregate_repeated_criterion_results(
     repeated_results: list[dict[str, Any]],
     stability_threshold_pct: float = STABILITY_THRESHOLD_PCT,
+    lang: str = DEFAULT_LANG,
 ) -> dict[str, Any]:
     """Collapse repeated criterion evaluations into one modal result plus stability."""
+    L = LABELS[_lang(lang)]
     if not repeated_results:
         return {
             "Respuesta": "Error",
@@ -507,7 +673,7 @@ def aggregate_repeated_criterion_results(
             "Deriva principal (si inestable)": "",
             "Distribución de respuestas": "",
             "Corridas con error": 0,
-            "Razonamiento": "No se recibieron corridas para este criterio.",
+            "Razonamiento": L["no_runs"],
             "Evidencia": "",
             "Status": "Error",
         }
@@ -527,7 +693,7 @@ def aggregate_repeated_criterion_results(
     modal_count = counts[modal_answer]
     stability_pct = round(100 * modal_count / total, 1)
     stable = stability_pct >= stability_threshold_pct
-    drift = _drift_text(counts, modal_answer, total, stable)
+    drift = _drift_text(counts, modal_answer, total, stable, lang)
     distribution = _distribution_text(counts)
     representative = _representative_modal_result(repeated_results, modal_answer)
     error_count = sum(
@@ -536,15 +702,16 @@ def aggregate_repeated_criterion_results(
         if result.get("Status") == "Error" or str(result.get("Respuesta")) == "Error"
     )
 
-    reasoning_prefix = (
-        f"Resultado modal tras {total} corridas independientes: {modal_answer} "
-        f"({modal_count}/{total}; {_format_pct(stability_pct)} de estabilidad). "
-        f"Distribución: {distribution}."
+    reasoning_prefix = L["modal_prefix"].format(
+        total=total, ans=modal_answer, modal=modal_count,
+        pct=_format_pct(stability_pct), dist=distribution,
     )
     if not stable:
-        reasoning_prefix += f" Resultado inestable (<{_format_pct(stability_threshold_pct)})."
+        reasoning_prefix += L["unstable_note"].format(
+            thr=_format_pct(stability_threshold_pct)
+        )
         if drift:
-            reasoning_prefix += f" Resultado alternativo: {drift}."
+            reasoning_prefix += L["alt_note"].format(drift=drift)
 
     return {
         **representative,
@@ -552,13 +719,13 @@ def aggregate_repeated_criterion_results(
         "N corridas": total,
         "Conteo modal": modal_count,
         "Estabilidad (%)": stability_pct,
-        "Estable (>=80%)": "Sí" if stable else "No",
+        "Estable (>=80%)": L["yes"] if stable else L["no"],
         "Deriva principal (si inestable)": drift,
         "Distribución de respuestas": distribution,
         "Corridas con error": error_count,
         "Razonamiento": (
             f"{reasoning_prefix}\n\n"
-            "Razonamiento representativo de una corrida con el resultado modal:\n"
+            f"{L['representative']}\n"
             f"{representative.get('Razonamiento', '')}"
         ).strip(),
         "Status": "Error" if modal_answer == "Error" else "Success",
@@ -570,14 +737,15 @@ def evaluate_criterion_with_retries(
     row: pd.Series,
     document_text: str,
     max_retries: int = MAX_REPEAT_CALL_RETRIES,
+    lang: str = DEFAULT_LANG,
 ) -> dict[str, Any]:
     """Run one criterion call, retrying only model/API failures reported as Error."""
-    result = evaluate_criterion(client, row, document_text)
+    result = evaluate_criterion(client, row, document_text, lang)
     for attempt in range(1, max_retries + 1):
         if result.get("Status") != "Error":
             break
         time.sleep(RETRY_BACKOFF_SECONDS * attempt)
-        result = evaluate_criterion(client, row, document_text)
+        result = evaluate_criterion(client, row, document_text, lang)
     return result
 
 
@@ -587,8 +755,10 @@ def evaluate_criteria(
     document_text: str,
     max_workers: int = MAX_WORKERS,
     progress_callback: Callable[[int, int], None] | None = None,
+    lang: str = DEFAULT_LANG,
 ) -> list[dict[str, Any]]:
     """Evaluate all rows using the standard 10-repeat stability scheme."""
+    lang = _lang(lang)
     total_criteria = len(df_criteria)
     results: list[dict[str, Any]] = []
     if total_criteria == 0:
@@ -605,7 +775,10 @@ def evaluate_criteria(
         for crit_id, row in rows:
             for repeat in range(1, STABILITY_REPEATS + 1):
                 futures[
-                    ex.submit(evaluate_criterion_with_retries, client, row, document_text)
+                    ex.submit(
+                        evaluate_criterion_with_retries,
+                        client, row, document_text, MAX_REPEAT_CALL_RETRIES, lang,
+                    )
                 ] = (crit_id, repeat)
 
         done = 0
@@ -620,7 +793,11 @@ def evaluate_criteria(
 
     results = [
         _with_readable_reasoning(
-            aggregate_repeated_criterion_results(repeated_by_id[crit_id]), row
+            aggregate_repeated_criterion_results(
+                repeated_by_id[crit_id], STABILITY_THRESHOLD_PCT, lang
+            ),
+            row,
+            lang,
         )
         for crit_id, row in rows
     ]
@@ -643,11 +820,11 @@ _TEST_DEF_RE = re.compile(rf"^\s*{_TEST_LABEL}\s*(?:\([^)]*\))?\s*[:—-]\s*(.+?
 # porque el modelo no siempre respeta el formato al pie de la letra.
 _TEST_OBS_RE = re.compile(
     rf"^\s*(?:[-*•]\s+)?\*{{0,2}}_{{0,2}}{_TEST_LABEL}_{{0,2}}\*{{0,2}}\s*[:—–-]\s*"
-    rf"(verdadero|falso|s[íi]|no|n/?a|no aplica)\b[\s.,;—–:-]*(.*)$",
+    rf"(verdadero|falso|true|false|s[íi]|yes|no|n/?a|no aplica)\b[\s.,;—–:-]*(.*)$",
     re.M | re.I,
 )
 _DECISION_RE = re.compile(r"DECISI[ÓO]N\s*:\s*(.+)")
-_TRUE_WORDS = {"verdadero", "sí", "si"}
+_TRUE_WORDS = {"verdadero", "sí", "si", "true", "yes"}
 _NA_WORDS = {"n/a", "na", "no aplica"}
 
 
@@ -703,19 +880,23 @@ def parse_observed_tests(reasoning: str) -> list[tuple[str, str | None, str]]:
     return observed
 
 
-def _rule_summary(decision: str, n_ok: int, n_total: int) -> str:
+def _rule_summary(decision: str, n_ok: int, n_total: int, lang: str = DEFAULT_LANG) -> str:
     """One plain-language line describing what the rule required."""
+    L = LABELS[_lang(lang)]
     d = decision.strip()
     counting = re.search(r"#\s*verdaderos[^≥>]*[≥>]=?\s*(\d+)", d, re.I)
     if counting:
-        return f"se requieren al menos {counting.group(1)} de {n_total} chequeos"
+        return L["rule_atleast"].format(k=counting.group(1), n=n_total)
     if "∨" not in d and "#" not in d and d.count("∧") == max(n_total - 1, 0) and n_total > 1:
-        return f"se requieren los {n_total} chequeos"
-    return f"regla compuesta; cumplidos {n_ok} de {n_total}"
+        return L["rule_all"].format(n=n_total)
+    return L["rule_mixed"].format(ok=n_ok, n=n_total)
 
 
-def render_reasoning(result: dict[str, Any], rubrica_si: str) -> str:
+def render_reasoning(
+    result: dict[str, Any], rubrica_si: str, lang: str = DEFAULT_LANG
+) -> str:
     """Rewrite the reasoning so every check reads on its own, without T-labels."""
+    L = LABELS[_lang(lang)]
     raw = str(result.get("Razonamiento", "")).strip()
     tests = parse_rubric_tests(rubrica_si)
     observed = parse_observed_tests(raw)
@@ -732,16 +913,16 @@ def render_reasoning(result: dict[str, Any], rubrica_si: str) -> str:
     ]
 
     lineas: list[str] = []
-    cabecera = f"POR QUÉ {answer.upper()}" if answer else "POR QUÉ ESTE RESULTADO"
-    resumen = f"Se cumplen {n_ok} de {n_total} chequeos."
+    cabecera = f"{L['why']} {answer.upper()}" if answer else L["why_generic"]
+    resumen = L["checks_met"].format(ok=n_ok, total=n_total)
     if faltan and answer != "Yes":
         falta_txt = "; ".join(faltan[:3])
         if len(faltan) > 3:
-            falta_txt += f"; y {len(faltan) - 3} más"
-        resumen += f" Falta: {falta_txt}."
+            falta_txt += "; " + L["and_more"].format(n=len(faltan) - 3)
+        resumen += f" {L['missing']}: {falta_txt}."
     lineas.append(f"{cabecera} · {resumen}")
     lineas.append("")
-    lineas.append("VERIFICACIÓN")
+    lineas.append(L["verification"])
     for label, state, justification in observed:
         marca = "✓" if state is True else ("✗" if state is False else "–")
         enunciado = tests.get(label, f"(chequeo {label})")
@@ -753,37 +934,43 @@ def render_reasoning(result: dict[str, Any], rubrica_si: str) -> str:
     n_corridas = result.get("N corridas")
     n_modal = result.get("Conteo modal")
     if n_corridas and n_modal:
-        est = f"ESTABILIDAD · {n_modal} de {n_corridas} corridas coincidieron"
+        agreed = L["runs_agreed"].format(modal=n_modal, total=n_corridas)
+        est = f"{L['stability']} · {agreed}"
         drift = str(result.get(DRIFT_SOURCE_COLUMN, "") or "").strip()
-        est += f". Resultado alternativo: {drift}." if drift else "."
+        est += f". {L['alt_result']}: {drift}." if drift else "."
         lineas.append("")
         lineas.append(est)
 
     decision = _DECISION_RE.search(rubrica_si)
     if decision:
         regla = decision.group(1).strip().splitlines()[0].strip()
-        lineas.append(f"REGLA · {_rule_summary(regla, n_ok, n_total)}  ({regla})")
+        resumen_regla = _rule_summary(regla, n_ok, n_total, lang)
+        lineas.append(f"{L['rule']} · {resumen_regla}  ({regla})")
 
     return "\n".join(lineas)
 
 
-def _with_readable_reasoning(result: dict[str, Any], row: pd.Series) -> dict[str, Any]:
+def _with_readable_reasoning(
+    result: dict[str, Any], row: pd.Series, lang: str = DEFAULT_LANG
+) -> dict[str, Any]:
     """Apply render_reasoning, falling back to the original text on any error."""
     try:
-        rendered = render_reasoning(result, str(row.get("Rúbrica — Sí", "")))
+        rendered = render_reasoning(result, str(row.get("Rúbrica — Sí", "")), lang)
     except Exception:
         return result
     return {**result, "Razonamiento": rendered} if rendered else result
 
 
-def results_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
+def results_to_dataframe(
+    results: list[dict[str, Any]], lang: str = DEFAULT_LANG
+) -> pd.DataFrame:
     """Return a sorted dataframe with the public result columns."""
     if not results:
         return pd.DataFrame(columns=RESULT_COLUMNS)
     df = pd.DataFrame(results)
     if DRIFT_SOURCE_COLUMN in df.columns:
         df = df.rename(columns={DRIFT_SOURCE_COLUMN: "Resultado Alternativo"})
-    df["Revisión humana recomendada"] = df.apply(_review_flag, axis=1)
+    df["Revisión humana recomendada"] = df.apply(_review_flag, axis=1, lang=lang)
     available = [c for c in RESULT_COLUMNS if c in df.columns]
     df_sorted = (
         df.assign(_sk=df["ID"].map(_id_sort_key))
@@ -842,23 +1029,26 @@ def _improvement_hint(answer: str) -> str:
     return mapping.get(str(answer), "Revisar la auditoría técnica.")
 
 
-def _review_flag(row: pd.Series) -> str:
+def _review_flag(row: pd.Series, lang: str = DEFAULT_LANG) -> str:
+    L = LABELS[_lang(lang)]
     reasons = []
     if str(row.get("Subjetividad", "")).strip() == "Alta":
-        reasons.append("subjetividad alta")
+        reasons.append(L["review_subj"])
     stability = row.get("Estabilidad (%)")
     if stability is not None and not pd.isna(stability):
         try:
             if float(stability) < STABILITY_THRESHOLD_PCT:
-                reasons.append(
-                    f"estabilidad <{_format_pct(STABILITY_THRESHOLD_PCT)} "
-                    f"({_format_pct(float(stability))})"
-                )
+                reasons.append(L["review_stab"].format(
+                    thr=_format_pct(STABILITY_THRESHOLD_PCT),
+                    pct=_format_pct(float(stability)),
+                ))
         except (TypeError, ValueError):
             pass
     if str(row.get("Respuesta", "")).strip() in {"Partial", "No", "Not Found", "Error"}:
-        reasons.append("resultado requiere revisión")
-    return "Sí - " + "; ".join(reasons) if reasons else "No - revisión muestral"
+        reasons.append(L["review_verdict"])
+    if not reasons:
+        return L["review_no"]
+    return f"{L['review_yes']} - " + "; ".join(reasons)
 
 
 def results_to_public_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
@@ -886,26 +1076,29 @@ def _is_unstable(row: pd.Series) -> bool:
         return False
 
 
-def _priority_reason(row: pd.Series) -> str:
+def _priority_reason(row: pd.Series, lang: str = DEFAULT_LANG) -> str:
     """Why this criterion must be reviewed. Empty string = not priority."""
+    L = LABELS[_lang(lang)]
     motivos = []
     if _is_unstable(row):
-        motivos.append(
-            f"Inestable ({_format_pct(float(row['Estabilidad (%)']))} "
-            f"< {_format_pct(STABILITY_THRESHOLD_PCT)})"
-        )
+        motivos.append(L["prior_unstable"].format(
+            pct=_format_pct(float(row["Estabilidad (%)"])),
+            thr=_format_pct(STABILITY_THRESHOLD_PCT),
+        ))
     if str(row.get("Respuesta", "")).strip() == "No":
-        motivos.append("Resultado No")
+        motivos.append(L["prior_no"])
     return " + ".join(motivos)
 
 
-def priority_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
+def priority_to_dataframe(
+    results: list[dict[str, Any]], lang: str = DEFAULT_LANG
+) -> pd.DataFrame:
     """Criteria requiring mandatory human review: unstable and/or answered No."""
-    df = results_to_dataframe(results)
+    df = results_to_dataframe(results, lang)
     if df.empty:
         return pd.DataFrame(columns=PRIORITY_COLUMNS)
     df = df.copy()
-    df["Motivo de prioridad"] = df.apply(_priority_reason, axis=1)
+    df["Motivo de prioridad"] = df.apply(_priority_reason, axis=1, lang=lang)
     df = df[df["Motivo de prioridad"] != ""]
     if df.empty:
         return pd.DataFrame(columns=PRIORITY_COLUMNS)
@@ -919,7 +1112,9 @@ def priority_to_dataframe(results: list[dict[str, Any]]) -> pd.DataFrame:
     return df[available]
 
 
-def rubric_to_dataframe(criteria: pd.DataFrame, results: list[dict[str, Any]]) -> pd.DataFrame:
+def rubric_to_dataframe(
+    criteria: pd.DataFrame, results: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Rubric rows for the criteria actually evaluated, in result order."""
     if criteria is None or criteria.empty:
         return pd.DataFrame(columns=RUBRIC_SHEET_COLUMNS)
@@ -939,6 +1134,7 @@ def rubric_to_dataframe(criteria: pd.DataFrame, results: list[dict[str, Any]]) -
 def results_to_xlsx_bytes(
     results: list[dict[str, Any]],
     criteria: pd.DataFrame | None = None,
+    lang: str = DEFAULT_LANG,
 ) -> bytes:
     """Serialize v3 results to an XLSX workbook.
 
@@ -949,7 +1145,9 @@ def results_to_xlsx_bytes(
     Sheet 3, "Rubrica aplicada" (when `criteria` is given): the definition of
     each criterion evaluated, so the file can be audited on its own.
     """
-    df = results_to_dataframe(results)
+    lang = _lang(lang)
+    L = LABELS[lang]
+    df = results_to_dataframe(results, lang)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
         workbook = writer.book
@@ -959,6 +1157,9 @@ def results_to_xlsx_bytes(
         wrap_fmt = workbook.add_format({"text_wrap": True, "valign": "top"})
 
         def write_sheet(frame: pd.DataFrame, name: str, widths: dict[str, int]) -> None:
+            # Las claves internas siguen en español; sólo se traduce al mostrar.
+            if lang != DEFAULT_LANG:
+                frame = frame.rename(columns=COLUMN_LABELS_EN)
             frame.to_excel(writer, index=False, sheet_name=name)
             ws = writer.sheets[name]
             ws.freeze_panes(1, 0)
@@ -968,7 +1169,7 @@ def results_to_xlsx_bytes(
             for col_range, width in widths.items():
                 ws.set_column(col_range, width, wrap_fmt)
 
-        write_sheet(df, SHEET_RESULT, {
+        write_sheet(df, L["sheet_result"], {
             "A:B": 10,    # ID, Subseccion
             "C:D": 52,    # Pregunta orientadora, Criterio
             "E:F": 18,    # Subjetividad, Transversales
@@ -984,20 +1185,19 @@ def results_to_xlsx_bytes(
 
         # La hoja se escribe SIEMPRE: su ausencia era indistinguible de un
         # despliegue viejo. Vacía, dice explícitamente que no hay pendientes.
-        priority_df = priority_to_dataframe(results)
+        priority_df = priority_to_dataframe(results, lang)
         if priority_df.empty:
             write_sheet(
                 pd.DataFrame(
-                    [{PRIORITY_COLUMNS[0]: "—",
-                      "Motivo de prioridad": "Ningún criterio exige revisión "
-                      "obligatoria: no hubo resultados inestables ni veredictos «No»."}],
+                    [{PRIORITY_COLUMNS[0]: L["prior_placeholder"],
+                      "Motivo de prioridad": L["prior_none"]}],
                     columns=PRIORITY_COLUMNS,
                 ).fillna(""),
-                SHEET_PRIORITY,
+                L["sheet_priority"],
                 {"A:B": 10, "C:C": 52, "D:D": 76},
             )
         else:
-            write_sheet(priority_df, SHEET_PRIORITY, {
+            write_sheet(priority_df, L["sheet_priority"], {
                 "A:B": 10,    # ID, Subseccion
                 "C:C": 52,    # Criterio
                 "D:D": 30,    # Motivo de prioridad
@@ -1011,7 +1211,7 @@ def results_to_xlsx_bytes(
 
         rubric_df = rubric_to_dataframe(criteria, results)
         if not rubric_df.empty:
-            write_sheet(rubric_df, SHEET_RUBRIC, {
+            write_sheet(rubric_df, L["sheet_rubric"], {
                 "A:A": 10, "B:C": 16, "D:D": 54, "E:G": 18,
                 "H:H": 46, "I:L": 52, "M:M": 34, "N:N": 16,
             })
@@ -1130,7 +1330,80 @@ def _demo() -> None:
     assert render_reasoning(result, "sin estructura") == result["Razonamiento"]
 
     _demo_priority()
+    _demo_language()
     print("tab1_v3_core._demo OK")
+
+
+def _demo_language() -> None:
+    """Self-check for the output-language switch."""
+    rubrica = (
+        "TESTS:\n"
+        "T1: ¿Distingue tipo de enfoque? (sí/no)\n"
+        "T2: ¿Articula el mecanismo? (sí/no)\n\n"
+        "DECISIÓN: T1 ∧ T2"
+    )
+    corridas = [
+        {"repeat": i, "Respuesta": "No", "Status": "OK", "Evidencia": "q",
+         "Razonamiento": "T1: verdadero — ok.\nT2: falso — no.\n"
+                         "DECISIÓN: T1 ∧ T2 = falso → No"}
+        for i in range(6)
+    ] + [
+        {"repeat": i, "Respuesta": "Partial", "Status": "OK", "Evidencia": "q",
+         "Razonamiento": "T1: falso — x"} for i in range(6, 10)
+    ]
+    row = pd.Series({"Rúbrica — Sí": rubrica})
+
+    def build(lang):
+        agg = aggregate_repeated_criterion_results(
+            corridas, STABILITY_THRESHOLD_PCT, lang
+        )
+        agg.update({"ID": "1.5.6", "Subsección": "1.5", "Criterio": "C",
+                    "Subjetividad": "Alta"})
+        return [_with_readable_reasoning(agg, row, lang)]
+
+    es, en = build("es"), build("en")
+
+    # el veredicto y la estabilidad NO dependen del idioma: sólo la presentación
+    for key in ("Respuesta", "Estabilidad (%)", "Conteo modal", "N corridas"):
+        assert es[0][key] == en[0][key], key
+    # el resumen sólo puede diferir en texto de presentación (unstable_drift)
+    s_es, s_en = summarize_results(es), summarize_results(en)
+    assert {k: v for k, v in s_es.items() if k != "unstable_drift"} == \
+           {k: v for k, v in s_en.items() if k != "unstable_drift"}
+
+    r_es = results_to_dataframe(es, "es").iloc[0]
+    r_en = results_to_dataframe(en, "en").iloc[0]
+    assert r_es["Razonamiento"].startswith("POR QUÉ NO")
+    assert r_en["Razonamiento"].startswith("WHY NO")
+    assert "VERIFICACIÓN" in r_es["Razonamiento"]
+    assert "VERIFICATION" in r_en["Razonamiento"]
+    assert "corridas coincidieron" in r_es["Razonamiento"]
+    assert "runs agreed" in r_en["Razonamiento"]
+    assert r_es["Revisión humana recomendada"].startswith("Sí - ")
+    assert r_en["Revisión humana recomendada"].startswith("Yes - ")
+    assert r_es["Estable (>=80%)"] == "No" and r_en["Estable (>=80%)"] == "No"
+
+    assert priority_to_dataframe(es, "es").iloc[0]["Motivo de prioridad"] == (
+        "Inestable (60% < 80%) + Resultado No")
+    assert priority_to_dataframe(en, "en").iloc[0]["Motivo de prioridad"] == (
+        "Unstable (60% < 80%) + Verdict No")
+
+    # el andamiaje que parsea el renderizador se mantiene en español
+    assert "verdadero" in system_prompt("en") and "DECISIÓN" in system_prompt("en")
+    assert system_prompt("es") == V3_SYSTEM_PROMPT
+    # idioma desconocido -> español, nunca un fallo
+    assert _lang("fr") == "es" and _lang(None) == "es" and _lang("EN") == "en"
+
+    import openpyxl
+    wb_en = openpyxl.load_workbook(io.BytesIO(results_to_xlsx_bytes(en, None, "en")))
+    assert wb_en.sheetnames[0] == "Appraisal Result"
+    assert "Priority Review" in wb_en.sheetnames
+    assert [c.value for c in wb_en["Appraisal Result"][1]][:3] == [
+        "ID", "Subsection", "Criterion"]
+    wb_es = openpyxl.load_workbook(io.BytesIO(results_to_xlsx_bytes(es, None, "es")))
+    assert wb_es.sheetnames[0] == SHEET_RESULT
+    assert [c.value for c in wb_es[SHEET_RESULT][1]][:3] == [
+        "ID", "Subsección", "Criterio"]
 
 
 def _demo_priority() -> None:

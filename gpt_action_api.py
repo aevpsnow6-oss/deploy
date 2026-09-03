@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from openai import OpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import sustainability_core
 import tab1_v3_core as v3_core
@@ -77,6 +77,23 @@ class EvaluationJobRequest(BaseModel):
         le=v3_core.MAX_WORKERS,
         description="Parallel OpenAI calls for criterion evaluation.",
     )
+    language: str = Field(
+        v3_core.DEFAULT_LANG,
+        description=(
+            "Output language for the XLSX: 'es' (default) or 'en'. Affects "
+            "presentation only; verdicts are identical in both languages."
+        ),
+    )
+
+    @field_validator("language")
+    @classmethod
+    def _check_language(cls, value: str) -> str:
+        code = str(value or "").strip().lower()[:2]
+        if code and code not in v3_core.LANGS:
+            raise ValueError(
+                f"language must be one of {', '.join(v3_core.LANGS)}"
+            )
+        return code or v3_core.DEFAULT_LANG
 
 
 class SustainabilityJobRequest(BaseModel):
@@ -357,9 +374,10 @@ def _run_evaluation_job(
             document_text,
             max_workers=request.max_workers,
             progress_callback=progress,
+            lang=request.language,
         )
         summary = v3_core.summarize_results(results)
-        xlsx_bytes = v3_core.results_to_xlsx_bytes(results, criteria)
+        xlsx_bytes = v3_core.results_to_xlsx_bytes(results, criteria, request.language)
         xlsx_name = f"valoracion_v3_{_safe_filename_stem(filename)}.xlsx"
 
         _set_job(
