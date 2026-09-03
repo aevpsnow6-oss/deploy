@@ -533,6 +533,33 @@ def _run_attributes_job(job_id: str, request: AttributesJobRequest) -> None:
         _set_job(job_id, status="failed", message=str(exc), error=str(exc))
 
 
+_NO_JOB_ID_HINT = (
+    "This endpoint needs a job_id: GET /{prefix}/jobs/{{job_id}}. There is no "
+    "job listing (jobs are private to the conversation that created them). "
+    "Recover the job_id from the start_line shown when the job began — it ends "
+    "with 'ID del trabajo: <job_id>' — or start a new job."
+)
+
+
+def _require_job_id(prefix: str) -> None:
+    raise HTTPException(status_code=400, detail=_NO_JOB_ID_HINT.format(prefix=prefix))
+
+
+@app.get("/v3/jobs", include_in_schema=False)
+def v3_jobs_no_id() -> None:
+    _require_job_id("v3")
+
+
+@app.get("/sustainability/jobs", include_in_schema=False)
+def sustainability_jobs_no_id() -> None:
+    _require_job_id("sustainability")
+
+
+@app.get("/attributes/jobs", include_in_schema=False)
+def attributes_jobs_no_id() -> None:
+    _require_job_id("attributes")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     # El commit permite comprobar QUÉ versión está desplegada sin credenciales.
@@ -608,12 +635,15 @@ def start_v3_appraisal_job(request: EvaluationJobRequest) -> JobCreated:
 
     job_id = str(uuid.uuid4())
     minutos = max(1, round(prepared["estimated_seconds"] / 60))
+    # El job_id va en el texto visible a propósito: es la única copia que
+    # sobrevive si ChatGPT pierde el contexto estructurado de la herramienta.
     start_line = (
         f"Documento recibido: {prepared['filename']} "
         f"({prepared['word_count']:,} palabras).".replace(",", ".")
         + f" Evaluando {len(prepared['criteria'])} criterios "
         f"({prepared['total_calls']} consultas al modelo). "
-        f"Tiempo estimado: {minutos} minuto{'s' if minutos != 1 else ''}."
+        f"Tiempo estimado: {minutos} minuto{'s' if minutos != 1 else ''}. "
+        f"ID del trabajo: {job_id}"
     )
     _set_job(
         job_id,

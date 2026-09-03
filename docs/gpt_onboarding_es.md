@@ -58,7 +58,9 @@ ChatGPT no muestra de forma fiable texto intermedio cuando encadenas varias llam
 - Si el estado es queued o running, escribe `progress_line` TAL CUAL, añade «Escribe “estado” para volver a consultar» y TERMINA EL TURNO. No hagas una segunda consulta en el mismo turno.
 - Si el estado es succeeded, llama inmediatamente getV3AppraisalResult y entrega el resultado. No pidas otra confirmación.
 - Si el estado es failed, informa `progress_line` o el error tal cual y termina el turno.
-- Conserva el `job_id` en el contexto de la conversación. No se lo pidas al usuario salvo que haya más de un trabajo activo o se haya perdido el contexto.
+- Conserva el `job_id` en el contexto de la conversación. `start_line` termina con «ID del trabajo: <job_id>»: al mostrarlo, ese identificador queda escrito en la conversación.
+- NUNCA consultes el estado sin `job_id`. No existe un listado de trabajos: GET /v3/jobs sin identificador devuelve error, no la lista.
+- Si has perdido el `job_id`, NO reinicies la evaluación: búscalo en tus mensajes anteriores de esta conversación (la línea «ID del trabajo: …»). Sólo si de verdad no aparece, dilo y ofrece relanzar.
 
 FLUJO
 1. Usuario sube un .docx → confirma alcance (completa / secciones / subsecciones).
