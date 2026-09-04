@@ -300,6 +300,17 @@ FORMATO DEL Razonamiento (estricto):
 Devuelve SIEMPRE JSON con: {"Respuesta", "Razonamiento", "Evidencia"}. Idioma: español."""
 
 
+# Frase del prompt base que fija el idioma. En inglés hay que SUSTITUIRLA:
+# dejarla y añadir después «escribe en inglés» produce un prompt que se
+# contradice, y el modelo sigue la orden en español (toda la rúbrica y el
+# prompt de usuario están en español, lo que refuerza ese sesgo).
+_ES_LANG_DIRECTIVE = "Idioma: español."
+_EN_LANG_DIRECTIVE = (
+    "IDIOMA DE SALIDA: INGLÉS. Escribe «Razonamiento» y «Evidencia» en inglés "
+    "(ver la sección IDIOMA DE SALIDA al final para las etiquetas que NO se "
+    "traducen)."
+)
+
 # El andamiaje estructural (verdadero/falso, DECISIÓN:, RESULTADO:) se mantiene
 # SIEMPRE en español porque el renderizador lo parsea; el lector nunca lo ve
 # (se convierte en ✓/✗). Sólo la prosa cambia de idioma.
@@ -323,9 +334,11 @@ Ejemplo correcto:
 
 def system_prompt(lang: str = DEFAULT_LANG) -> str:
     """System prompt for the requested output language."""
-    if _lang(lang) == "en":
-        return V3_SYSTEM_PROMPT + V3_SYSTEM_PROMPT_EN_SUFFIX
-    return V3_SYSTEM_PROMPT
+    if _lang(lang) != "en":
+        return V3_SYSTEM_PROMPT
+    assert _ES_LANG_DIRECTIVE in V3_SYSTEM_PROMPT, "cambió la frase de idioma"
+    base = V3_SYSTEM_PROMPT.replace(_ES_LANG_DIRECTIVE, _EN_LANG_DIRECTIVE)
+    return base + V3_SYSTEM_PROMPT_EN_SUFFIX
 
 
 V3_USER_PROMPT_TEMPLATE = """═════ CRITERIO A EVALUAR ═════
@@ -451,7 +464,17 @@ def filter_rubric(
     return df.reset_index(drop=True)
 
 
-def build_user_prompt(row: pd.Series, document_text: str) -> str:
+_EN_USER_REMINDER = """
+
+═════ RECORDATORIO DE IDIOMA ═════
+La rúbrica de arriba está en español, pero la SALIDA va en INGLÉS:
+«Razonamiento» y «Evidencia» en inglés. Mantén en español sólo las etiquetas
+estructurales: verdadero / falso, DECISIÓN:, RESULTADO:."""
+
+
+def build_user_prompt(
+    row: pd.Series, document_text: str, lang: str = DEFAULT_LANG
+) -> str:
     """Inject one criterion's rubric into the user prompt template."""
 
     def get(col: str, default: str = "") -> str:
@@ -479,7 +502,7 @@ def build_user_prompt(row: pd.Series, document_text: str) -> str:
         na=na_text,
         anclas=get("Anclas verificables (v3)"),
         document_text=document_text,
-    )
+    ) + (_EN_USER_REMINDER if _lang(lang) == "en" else "")
 
 
 def _extract_usage(resp: Any) -> dict[str, int]:
@@ -542,7 +565,7 @@ def evaluate_criterion(
             model=MODEL,
             messages=[
                 {"role": "system", "content": system_prompt(lang)},
-                {"role": "user", "content": build_user_prompt(row, document_text)},
+                {"role": "user", "content": build_user_prompt(row, document_text, lang)},
             ],
             max_completion_tokens=MAX_COMPLETION_TOKENS,
             reasoning_effort=effort,
@@ -1389,8 +1412,22 @@ def _demo_language() -> None:
         "Unstable (60% < 80%) + Verdict No")
 
     # el andamiaje que parsea el renderizador se mantiene en español
-    assert "verdadero" in system_prompt("en") and "DECISIÓN" in system_prompt("en")
-    assert system_prompt("es") == V3_SYSTEM_PROMPT
+    p_en, p_es = system_prompt("en"), system_prompt("es")
+    assert "verdadero" in p_en and "DECISIÓN" in p_en
+    assert p_es == V3_SYSTEM_PROMPT
+    # ...pero la orden de idioma NO puede quedar duplicada ni contradecirse:
+    # dejar "Idioma: español." y añadir "escribe en inglés" hacía que el
+    # modelo devolviera español con cabeceras inglesas.
+    assert _ES_LANG_DIRECTIVE not in p_en, "el prompt en inglés se contradice"
+    assert "IDIOMA DE SALIDA: INGLÉS" in p_en
+    assert _ES_LANG_DIRECTIVE in p_es
+    # el recordatorio final sólo aparece en inglés
+    fila = pd.Series({"ID": "1.1.1", "Criterio a evaluar": "C", "Rúbrica — Sí": "T1: x"})
+    u_en = build_user_prompt(fila, "texto", "en")
+    u_es = build_user_prompt(fila, "texto", "es")
+    assert "RECORDATORIO DE IDIOMA" in u_en
+    assert "RECORDATORIO DE IDIOMA" not in u_es
+    assert u_es == build_user_prompt(fila, "texto")  # es por defecto, sin cambios
     # idioma desconocido -> español, nunca un fallo
     assert _lang("fr") == "es" and _lang(None) == "es" and _lang("EN") == "en"
 
