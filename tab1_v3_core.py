@@ -180,14 +180,58 @@ VALUE_LABELS_EN = {
     "Accesibilidad": "Accessibility",
     "EAS (Explotación y abuso sexuales)": "SEA (Sexual exploitation and abuse)",
     "Medio ambiente": "Environment",
+    "Sostenibilidad": "Sustainability",
+    "Tripartismo": "Tripartism",
+    "Trabajo decente": "Decent work",
+    "Mecanismos de supervisión": "Supervisory mechanisms",
+    "Normas Internacionales del Trabajo (NIT)": "International Labour Standards (ILS)",
     "1. Pertinencia": "1. Relevance",
     "2. Validez del diseño": "2. Design validity",
     "3. Marco de resultados / R&M": "3. Results framework / M&E",
     "4. Implementación": "4. Implementation",
     "5. Presentación": "5. Presentation",
+    # Tipo de criterio
+    "Binario": "Binary",
+    "Binario calibración": "Binary — calibration",
+    "Binario calidad": "Binary — quality",
+    "Binario formal": "Binary — formal",
+    "Binario presencia": "Binary — presence",
+    "Binario presencia con calidad": "Binary — presence with quality",
+    "Calibración": "Calibration",
+    "Calibración transversal": "Calibration — cross-cutting",
+    "Calidad narrativa": "Narrative quality",
+    "Condicional binario": "Conditional binary",
+    "Lista condicional": "Conditional checklist",
+    "Lista condicional transversal": "Conditional checklist — cross-cutting",
+    "Lista de verificación": "Checklist",
+    "Lista de verificación SMART": "SMART checklist",
+    "Lista transversal": "Cross-cutting checklist",
+    "Lista transversal SMART": "Cross-cutting SMART checklist",
+    "Transversal": "Cross-cutting",
+    # Aplicabilidad
+    "Siempre": "Always",
+    "Condicional: aplica si el proyecto contrata trabajadores directa o indirectamente":
+        "Conditional: applies if the project engages workers directly or indirectly",
+    "Condicional: aplica si hay contratistas/subcontratistas/proveedores externos":
+        "Conditional: applies if there are contractors/subcontractors/external suppliers",
+    "Condicional: aplica si hay infraestructura, presencia comunitaria, o personal de seguridad":
+        "Conditional: applies if there is infrastructure, community presence, or security personnel",
+    "Condicional: aplica si la evaluación de capacidad organizativa identifica brechas":
+        "Conditional: applies if the organizational capacity assessment identifies gaps",
+    "Condicional: aplica si la propuesta es piloto o tiene fase de prueba — la fase debe estar "
+    "EXPLÍCITAMENTE definida en el documento analizado.":
+        "Conditional: applies if the proposal is a pilot or has a test phase — the phase must be "
+        "EXPLICITLY defined in the document under review.",
+    "Condicional: aplica si presupuesto > 1.000.000 USD":
+        "Conditional: applies if the budget > USD 1,000,000",
+    "Condicional: presupuesto > 5.000.000 USD Y financiamiento PPP o CE":
+        "Conditional: budget > USD 5,000,000 AND PPP or EC funding",
+    "Condicional: si hay fase inicial / inception":
+        "Conditional: if there is an inception phase",
 }
 VALUE_COLUMNS = ("Subjetividad", "Transversales", "Sección",
-                 "Aspectos transversales", "Subjetividad residual (v3)")
+                 "Aspectos transversales", "Subjetividad residual (v3)",
+                 "Estable (>=80%)", "Tipo de criterio", "Aplicabilidad")
 
 
 def _translate_value(value: Any) -> Any:
@@ -970,7 +1014,7 @@ def _rule_summary(decision: str, n_ok: int, n_total: int, lang: str = DEFAULT_LA
     """One plain-language line describing what the rule required."""
     L = LABELS[_lang(lang)]
     d = decision.strip()
-    counting = re.search(r"#\s*verdaderos[^≥>]*[≥>]=?\s*(\d+)", d, re.I)
+    counting = re.search(r"#\s*(?:verdaderos|true)[^≥>]*[≥>]=?\s*(\d+)", d, re.I)
     if counting:
         return L["rule_atleast"].format(k=counting.group(1), n=n_total)
     if "∨" not in d and "#" not in d and d.count("∧") == max(n_total - 1, 0) and n_total > 1:
