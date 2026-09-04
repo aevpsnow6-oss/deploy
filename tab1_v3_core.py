@@ -149,6 +149,63 @@ LABELS: dict[str, dict[str, str]] = {
     },
 }
 
+# Traducción del contenido de la rúbrica. Las columnas «… (EN)» del xlsx son
+# SÓLO para mostrar: la evaluación usa siempre la columna española, que es la
+# autoritativa. Si una celda (EN) falta o está vacía, se muestra la española.
+EN_COLUMN_SUFFIX = " (EN)"
+
+
+def rubric_text(row: Any, col: str, lang: str = DEFAULT_LANG) -> str:
+    """Display text for a rubric column, falling back to Spanish."""
+    if _lang(lang) == "en":
+        value = row.get(col + EN_COLUMN_SUFFIX, "")
+        if value is not None and not (isinstance(value, float) and pd.isna(value)):
+            text = str(value).strip()
+            if text:
+                return text
+    value = row.get(col, "")
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    return str(value)
+
+
+# Valores categóricos. Se traducen AL ESCRIBIR: las claves internas siguen en
+# español porque la lógica las compara (p.ej. Subjetividad == "Alta").
+VALUE_LABELS_EN = {
+    "Alta": "High", "Media": "Medium", "Baja": "Low",
+    "Ninguno": "None",
+    "Género": "Gender",
+    "Discapacidad": "Disability",
+    "Pueblos indígenas": "Indigenous peoples",
+    "Accesibilidad": "Accessibility",
+    "EAS (Explotación y abuso sexuales)": "SEA (Sexual exploitation and abuse)",
+    "Medio ambiente": "Environment",
+    "1. Pertinencia": "1. Relevance",
+    "2. Validez del diseño": "2. Design validity",
+    "3. Marco de resultados / R&M": "3. Results framework / M&E",
+    "4. Implementación": "4. Implementation",
+    "5. Presentación": "5. Presentation",
+}
+VALUE_COLUMNS = ("Subjetividad", "Transversales", "Sección",
+                 "Aspectos transversales", "Subjetividad residual (v3)")
+
+
+def _translate_value(value: Any) -> Any:
+    """Translate a categorical cell, including 'A; B' compound values."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    if text in VALUE_LABELS_EN:
+        return VALUE_LABELS_EN[text]
+    if ";" in text:
+        parts = [p.strip() for p in text.split(";")]
+        if all(p in VALUE_LABELS_EN for p in parts):
+            return "; ".join(VALUE_LABELS_EN[p] for p in parts)
+    return value
+
+
 # Cabeceras de columna: clave interna (es) -> encabezado mostrado (en).
 COLUMN_LABELS_EN = {
     "Subsección": "Subsection",
@@ -536,10 +593,10 @@ def evaluate_criterion(
     base = {
         "ID": crit_id,
         "Subsección": _extract_subsection(crit_id),
-        "Pregunta orientadora (no evaluada)": str(
-            row.get("Pregunta orientadora (CONTEXTO — no evaluar)", "")
+        "Pregunta orientadora (no evaluada)": rubric_text(
+            row, "Pregunta orientadora (CONTEXTO — no evaluar)", lang
         ),
-        "Criterio": str(row.get("Criterio a evaluar", "")),
+        "Criterio": rubric_text(row, "Criterio a evaluar", lang),
         "Tipo": str(row.get("Tipo de criterio", "")),
         "Subjetividad": subj,
         "Transversales": str(row.get("Aspectos transversales", "Ninguno")),
@@ -851,7 +908,7 @@ _TRUE_WORDS = {"verdadero", "sí", "si", "true", "yes"}
 _NA_WORDS = {"n/a", "na", "no aplica"}
 
 
-def _clean_test_text(text: str) -> str:
+def _clean_test_text(text: str, lang: str = DEFAULT_LANG) -> str:
     """Trim answer-format hints and resolve T-references inside a statement.
 
     A few rubric statements refer to sibling checks by label ("vincula la
@@ -859,7 +916,13 @@ def _clean_test_text(text: str) -> str:
     the rendering removes, so they are turned into plain back-references. The
     rubric itself is untouched: the model still sees the labels in the prompt.
     """
-    text = re.sub(r"\s*\((?:s[íi]\s*/\s*no|verdadero\s*/\s*falso)[^)]*\)\s*$", "", text, flags=re.I)
+    text = re.sub(
+        r"\s*\((?:s[íi]\s*/\s*no|yes\s*/\s*no|verdadero\s*/\s*falso|true\s*/\s*false)"
+        r"[^)]*\)\s*$", "", text, flags=re.I)
+    if _lang(lang) == "en":
+        text = re.sub(r"\bT\d(?:\s*/\s*T\d)+\b", "the preceding checks", text)
+        text = re.sub(r"\bT(\d)\b", r"check \1", text)
+        return text.strip().rstrip(".").strip()
     text = re.sub(r"\bT\d(?:\s*/\s*T\d)+\b", "los chequeos anteriores", text)
     text = re.sub(r"\bT(\d)\b", r"el chequeo \1", text)
     text = re.sub(r"\bde el chequeo\b", "del chequeo", text)
@@ -878,12 +941,12 @@ def _as_statement(text: str) -> str:
     return text.strip().lstrip("¿").rstrip("?").strip()
 
 
-def parse_rubric_tests(rubrica_si: str) -> dict[str, str]:
+def parse_rubric_tests(rubrica_si: str, lang: str = DEFAULT_LANG) -> dict[str, str]:
     """Map each test label to its statement, as written in the rubric."""
     tests: dict[str, str] = {}
     body = rubrica_si.split("DECISI")[0]
     for label, text in _TEST_DEF_RE.findall(body):
-        cleaned = _clean_test_text(text)
+        cleaned = _clean_test_text(text, lang)
         if cleaned and label not in tests:
             tests[label] = cleaned
     return tests
@@ -921,7 +984,7 @@ def render_reasoning(
     """Rewrite the reasoning so every check reads on its own, without T-labels."""
     L = LABELS[_lang(lang)]
     raw = str(result.get("Razonamiento", "")).strip()
-    tests = parse_rubric_tests(rubrica_si)
+    tests = parse_rubric_tests(rubrica_si, lang)
     observed = parse_observed_tests(raw)
     if not tests or not observed:
         return raw  # formato inesperado: no tocar
@@ -978,7 +1041,7 @@ def _with_readable_reasoning(
 ) -> dict[str, Any]:
     """Apply render_reasoning, falling back to the original text on any error."""
     try:
-        rendered = render_reasoning(result, str(row.get("Rúbrica — Sí", "")), lang)
+        rendered = render_reasoning(result, rubric_text(row, "Rúbrica — Sí", lang), lang)
     except Exception:
         return result
     return {**result, "Razonamiento": rendered} if rendered else result
@@ -1136,7 +1199,7 @@ def priority_to_dataframe(
 
 
 def rubric_to_dataframe(
-    criteria: pd.DataFrame, results: list[dict[str, Any]]
+    criteria: pd.DataFrame, results: list[dict[str, Any]], lang: str = DEFAULT_LANG
 ) -> pd.DataFrame:
     """Rubric rows for the criteria actually evaluated, in result order."""
     if criteria is None or criteria.empty:
@@ -1145,6 +1208,14 @@ def rubric_to_dataframe(
     df = criteria.copy()
     df["ID"] = df["ID"].astype(str)
     df = df[df["ID"].isin(evaluated)]
+    if _lang(lang) == "en":
+        for col in RUBRIC_SHEET_COLUMNS:
+            en_col = col + EN_COLUMN_SUFFIX
+            if en_col in df.columns:
+                df[col] = df[en_col].where(
+                    df[en_col].notna() & (df[en_col].astype(str).str.strip() != ""),
+                    df[col],
+                )
     available = [c for c in RUBRIC_SHEET_COLUMNS if c in df.columns]
     return (
         df.assign(_sk=df["ID"].map(_id_sort_key))
@@ -1182,6 +1253,10 @@ def results_to_xlsx_bytes(
         def write_sheet(frame: pd.DataFrame, name: str, widths: dict[str, int]) -> None:
             # Las claves internas siguen en español; sólo se traduce al mostrar.
             if lang != DEFAULT_LANG:
+                frame = frame.copy()
+                for col in VALUE_COLUMNS:
+                    if col in frame.columns:
+                        frame[col] = frame[col].map(_translate_value)
                 frame = frame.rename(columns=COLUMN_LABELS_EN)
             frame.to_excel(writer, index=False, sheet_name=name)
             ws = writer.sheets[name]
@@ -1232,7 +1307,7 @@ def results_to_xlsx_bytes(
             })
 
 
-        rubric_df = rubric_to_dataframe(criteria, results)
+        rubric_df = rubric_to_dataframe(criteria, results, lang)
         if not rubric_df.empty:
             write_sheet(rubric_df, L["sheet_rubric"], {
                 "A:A": 10, "B:C": 16, "D:D": 54, "E:G": 18,
