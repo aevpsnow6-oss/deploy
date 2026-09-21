@@ -71,6 +71,14 @@ class EvaluationJobRequest(BaseModel):
         None,
         description="Optional rubric subsection IDs to evaluate, e.g. ['1.1', '2.3'].",
     )
+    criteria_ids: list[str] | None = Field(
+        None,
+        description=(
+            "Optional individual criterion IDs to evaluate, e.g. "
+            "['1.1.1', '2.1.2', '3.1.1']. Any length. Alone it evaluates "
+            "exactly those; alongside sections/subsections it adds to them."
+        ),
+    )
     max_workers: int = Field(
         v3_core.MAX_WORKERS,
         ge=1,
@@ -319,7 +327,9 @@ def _prepare_v3_job(request: EvaluationJobRequest) -> dict[str, Any]:
     document_text = v3_core.extract_docx_text_from_bytes(docx_bytes)
     word_count = len(document_text.split())
     rubric = v3_core.load_rubrica_v3()
-    criteria = v3_core.filter_rubric(rubric, request.sections, request.subsections)
+    criteria = v3_core.filter_rubric(
+        rubric, request.sections, request.subsections, request.criteria_ids
+    )
     if criteria.empty:
         raise ValueError("No v3 rubric criteria matched the selected filters.")
     total_calls = len(criteria) * v3_core.STABILITY_REPEATS

@@ -549,20 +549,56 @@ def extract_docx_text_from_bytes(docx_bytes: bytes) -> str:
             pass
 
 
+class UnknownCriteriaError(ValueError):
+    """Raised when criteria_ids names IDs that are not in the rubric."""
+
+
 def filter_rubric(
     df_rubric: pd.DataFrame,
     sections: list[int] | None = None,
     subsections: list[str] | None = None,
+    criteria_ids: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Filter rubric rows by section and/or subsection."""
+    """Filter rubric rows by section, subsection and/or explicit criterion ID.
+
+    sections and subsections keep their existing behaviour: given together they
+    intersect. criteria_ids is additive — alone it selects exactly those
+    criteria; alongside the others it adds them to the selection. An ID that is
+    not in the rubric raises rather than being dropped silently: a typo would
+    otherwise shrink the evaluation without anyone noticing.
+    """
     df = df_rubric.copy()
     df["_section"] = df["ID"].apply(_extract_section)
     df["_subsection"] = df["ID"].apply(_extract_subsection)
+
+    scoped = df
     if sections:
-        df = df[df["_section"].isin([int(s) for s in sections])]
+        scoped = scoped[scoped["_section"].isin([int(s) for s in sections])]
     if subsections:
-        df = df[df["_subsection"].isin([str(s) for s in subsections])]
-    return df.reset_index(drop=True)
+        scoped = scoped[scoped["_subsection"].isin([str(s) for s in subsections])]
+
+    if criteria_ids:
+        wanted = [str(c).strip() for c in criteria_ids if str(c).strip()]
+        known = set(df["ID"].astype(str).str.strip())
+        unknown = [c for c in wanted if c not in known]
+        if unknown:
+            raise UnknownCriteriaError(
+                "Unknown criterion ID(s): " + ", ".join(unknown)
+                + ". IDs look like 1.1.1, 2.1.2, 3.1.1."
+            )
+        picked = df[df["ID"].astype(str).str.strip().isin(wanted)]
+        scoped = (
+            pd.concat([scoped, picked]).drop_duplicates(subset="ID")
+            if (sections or subsections)
+            else picked
+        )
+
+    return (
+        scoped.assign(_sk=scoped["ID"].map(_id_sort_key))
+        .sort_values("_sk")
+        .drop(columns="_sk")
+        .reset_index(drop=True)
+    )
 
 
 _EN_USER_REMINDER = """
@@ -1473,7 +1509,46 @@ def _demo() -> None:
 
     _demo_priority()
     _demo_language()
+    _demo_filter()
     print("tab1_v3_core._demo OK")
+
+
+def _demo_filter() -> None:
+    """Self-check for rubric filtering, including the new criteria_ids."""
+    rub = pd.DataFrame({"ID": ["1.1.1", "1.1.2", "1.2.1", "2.1.2", "3.1.1",
+                               "4.2.1", "5.2.1"]})
+
+    def ids(**kw):
+        return list(filter_rubric(rub, **kw)["ID"])
+
+    # sin filtro: todo
+    assert ids() == list(rub["ID"])
+    # comportamiento existente intacto: sección, subsección y su intersección
+    assert ids(sections=[1]) == ["1.1.1", "1.1.2", "1.2.1"]
+    assert ids(subsections=["1.1"]) == ["1.1.1", "1.1.2"]
+    assert ids(sections=[1], subsections=["1.1"]) == ["1.1.1", "1.1.2"]
+
+    # criteria_ids solo: exactamente esos, ordenados por ID
+    assert ids(criteria_ids=["3.1.1", "1.1.1", "5.2.1"]) == ["1.1.1", "3.1.1", "5.2.1"]
+    # una lista de cualquier longitud, incluido un único criterio
+    assert ids(criteria_ids=["2.1.2"]) == ["2.1.2"]
+    # combinado: se SUMA a la selección, no la intersecta, y no duplica
+    assert ids(sections=[5], criteria_ids=["1.1.1"]) == ["1.1.1", "5.2.1"]
+    assert ids(sections=[1], criteria_ids=["1.1.1"]) == ["1.1.1", "1.1.2", "1.2.1"]
+    # espacios alrededor del ID no rompen la selección
+    assert ids(criteria_ids=[" 4.2.1 "]) == ["4.2.1"]
+    # lista vacía = sin filtro, no "cero criterios"
+    assert ids(criteria_ids=[]) == list(rub["ID"])
+
+    # un ID inexistente NO se descarta en silencio: se nombra y falla
+    try:
+        filter_rubric(rub, criteria_ids=["1.1.1", "9.9.9"])
+    except UnknownCriteriaError as exc:
+        # sólo los desconocidos se listan; el ejemplo del final no cuenta
+        listados = str(exc).split("ID(s): ")[1].split(". IDs look like")[0]
+        assert listados == "9.9.9", listados
+    else:
+        raise AssertionError("un ID inexistente debe fallar, no ignorarse")
 
 
 def _demo_language() -> None:

@@ -64,6 +64,16 @@ paths:
                   description: Optional subsection IDs to evaluate, e.g. ["1.1", "2.3"].
                   items:
                     type: string
+                criteria_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: >-
+                    Individual rubric criterion IDs to evaluate, e.g.
+                    ["1.1.1", "2.1.2", "3.1.1"]. Any number of them. Used alone
+                    it evaluates exactly those criteria; combined with sections
+                    or subsections it adds to that selection. An ID that is not
+                    in the rubric is rejected with an error.
                 max_workers:
                   type: integer
                   description: Parallel OpenAI calls for repeated criterion evaluation. Default is 48.
