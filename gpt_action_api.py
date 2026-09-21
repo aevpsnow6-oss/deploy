@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from openai import OpenAI
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import sustainability_core
 import tab1_v3_core as v3_core
@@ -55,6 +55,11 @@ class OpenAIFileRef(BaseModel):
 
 
 class EvaluationJobRequest(BaseModel):
+    # extra="allow" conserva el campo desconocido para poder AVISAR de él.
+    # Descartarlo en silencio hacía que un servidor desactualizado evaluara la
+    # rúbrica entera cuando el usuario había pedido un puñado de criterios.
+    model_config = ConfigDict(extra="allow")
+
     openaiFileIdRefs: list[OpenAIFileRef] = Field(
         ...,
         description=(
@@ -645,15 +650,30 @@ def start_v3_appraisal_job(request: EvaluationJobRequest) -> JobCreated:
 
     job_id = str(uuid.uuid4())
     minutos = max(1, round(prepared["estimated_seconds"] / 60))
+    n_criterios = len(prepared["criteria"])
+    if request.criteria_ids:
+        alcance = f"{n_criterios} criterios seleccionados por ID"
+    elif request.sections or request.subsections:
+        alcance = f"{n_criterios} criterios del filtro indicado"
+    else:
+        alcance = f"rúbrica completa ({n_criterios} criterios)"
+    desconocidos = sorted(request.model_extra or {})
+    aviso = (
+        " ⚠ AVISO: el servidor no reconoce estos parámetros y los ha ignorado: "
+        + ", ".join(desconocidos)
+        + ". Está desactualizado; NO continúes, avisa al usuario."
+        if desconocidos else ""
+    )
     # El job_id va en el texto visible a propósito: es la única copia que
     # sobrevive si ChatGPT pierde el contexto estructurado de la herramienta.
     start_line = (
         f"Documento recibido: {prepared['filename']} "
         f"({prepared['word_count']:,} palabras).".replace(",", ".")
-        + f" Evaluando {len(prepared['criteria'])} criterios "
+        + f" Alcance: {alcance} "
         f"({prepared['total_calls']} consultas al modelo). "
         f"Tiempo estimado: {minutos} minuto{'s' if minutos != 1 else ''}. "
         f"ID del trabajo: {job_id}"
+        + aviso
     )
     _set_job(
         job_id,
