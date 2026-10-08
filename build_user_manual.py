@@ -198,7 +198,7 @@ for i, (k, v) in enumerate([
     ("Organización", "Organización Internacional del Trabajo (OIT) — Oficina Regional para América Latina y el Caribe"),
     ("Dirigido a", "Personal de la OIT que diseña, revisa o evalúa documentos de proyecto"),
     ("Alcance", "Tres asistentes GPT publicados en ChatGPT, con backend compartido"),
-    ("Versión / Fecha", "1.0 — Julio de 2026"),
+    ("Versión / Fecha", "1.1 — Octubre de 2026"),
 ]):
     row = meta.rows[i]
     row.cells[0].text = k
@@ -279,8 +279,8 @@ body(doc,
 # ── 3. Cómo usarlos ──────────────────────────────────────────────────────
 heading(doc, "3. Cómo usarlos — flujo general")
 body(doc,
-     "Los tres asistentes siguen el mismo flujo. La evaluación se ejecuta en un servidor externo, por lo "
-     "que puede tardar varios minutos; el asistente le informará del avance.", after=6)
+     "Los tres asistentes siguen el mismo flujo general, con una diferencia importante en el paso 4. La "
+     "evaluación se ejecuta en un servidor externo y puede tardar varios minutos.", after=6)
 
 for i, (t, d) in enumerate([
     ("Abrir el asistente",
@@ -290,9 +290,14 @@ for i, (t, d) in enumerate([
      "Adjunte un único archivo .docx en el chat. Si sube varios, el asistente le pedirá elegir uno."),
     ("Indicar el alcance",
      "Escriba en el mismo mensaje qué quiere evaluar (una sección concreta, una rúbrica temática o una "
-     "dimensión del ciclo). Si no lo indica, el asistente se lo preguntará antes de empezar."),
-    ("Esperar la evaluación",
-     "El asistente lanza el trabajo y consulta su estado hasta terminar. No cierre la conversación."),
+     "dimensión del ciclo). Si no lo indica, el asistente se lo preguntará y le pedirá confirmación antes "
+     "de empezar. En Valoración de Calidad puede indicar también el idioma del informe."),
+    ("Seguir la evaluación",
+     "El asistente confirma que recibió el documento, indica el alcance que va a evaluar y el tiempo "
+     "estimado. A partir de ahí el comportamiento difiere: en Valoración de Calidad el asistente se "
+     "detiene y usted escribe «estado» cada vez que quiera conocer el avance; en Atributos Específicos "
+     "y en Sostenibilidad el asistente consulta el avance por su cuenta hasta terminar. En ambos casos, "
+     "no cierre la conversación."),
     ("Revisar y descargar",
      "Recibirá un resumen en pantalla y un archivo Excel descargable con la valoración completa y la "
      "evidencia citada."),
@@ -336,11 +341,31 @@ body(doc, "Filtros disponibles:", bold=True, after=4)
 for txt, pfx in [
     ("evalúa los 76 criterios. Es la opción más lenta pero la más completa.", "Evaluación completa: "),
     ("por ejemplo «solo la sección 3». Útil para revisar el marco de resultados de forma focalizada.", "Por sección: "),
-    ("por ejemplo «solo 1.1 y 2.3». La opción más rápida para verificar puntos concretos.", "Por subsección: "),
+    ("por ejemplo «solo 1.1 y 2.3». Evalúa todos los criterios de esas subsecciones.", "Por subsección: "),
+    ("por ejemplo «solo 1.1.1, 2.1.2, 3.1.1, 4.2.1 y 5.2.1», en cualquier cantidad. La opción más "
+     "rápida para revisar criterios concretos, por ejemplo los que señaló un revisor.", "Por criterio: "),
 ]:
     bullet(doc, txt, prefix=pfx)
 body(doc,
-     "El filtro debe indicarse en el mensaje al subir el documento.", italic=True, size=9.5, color=GRAY)
+     "El filtro debe indicarse en el mensaje al subir el documento. Para un criterio suelto, escriba su "
+     "código completo (1.1.1): «solo 1.1» evalúa la subsección entera. Si escribe un código que no existe, "
+     "el asistente se lo indicará antes de empezar en lugar de omitirlo.", italic=True, size=9.5, color=GRAY)
+
+body(doc, "Antes de empezar, compruebe el alcance anunciado:", bold=True, after=4)
+body(doc,
+     "Al lanzar la evaluación, el asistente escribe una línea como «Alcance: 5 criterios seleccionados "
+     "por ID (50 consultas al modelo)». Compruebe que coincide con lo que pidió. Si pidió criterios "
+     "concretos y la línea dice «rúbrica completa (76 criterios)», el filtro no se aplicó: no continúe y "
+     "avise al soporte técnico. Una evaluación completa consume quince veces más que una de cinco "
+     "criterios.")
+
+body(doc, "Idioma del informe:", bold=True, after=4)
+body(doc,
+     "El Excel puede generarse en español (por defecto) o en inglés. El asistente lo deduce del idioma "
+     "en que usted escribe; también puede pedirlo explícitamente («quiero el informe en inglés»). El "
+     "idioma sólo cambia la presentación: los veredictos son idénticos en ambos casos, porque la "
+     "evaluación se hace siempre contra la rúbrica oficial en español. La versión inglesa de la rúbrica "
+     "es una traducción de lectura.")
 
 starters(doc, [
     "¿Qué puedes hacer y cómo empiezo?",
@@ -349,15 +374,58 @@ starters(doc, [
     "¿Qué secciones y subsecciones puedo filtrar?",
 ])
 
-body(doc, "Qué recibe:", bold=True, after=4)
+body(doc, "Cómo seguir el avance:", bold=True, after=4)
+body(doc,
+     "Este asistente no informa del avance por su cuenta. Tras lanzar la evaluación se detiene y le pide "
+     "que escriba «estado»: hágalo cada vez que quiera saber cuánto falta. Cuando la evaluación termine, "
+     "la siguiente consulta de estado le entregará el resultado.", bold=True, color=RED)
+body(doc,
+     "El primer mensaje termina con una línea «ID del trabajo: …». Es el identificador de su evaluación; "
+     "si el asistente lo pierde, lo recupera de esa línea. No hace falta que usted lo copie.",
+     italic=True, size=9.5, color=GRAY)
+
+body(doc, "Qué recibe en el chat:", bold=True, after=4)
 for txt in [
     "Total de criterios evaluados y conteo por veredicto (Yes / Partial / No / Not Found / N/A).",
-    "Lista de criterios de alta subjetividad que requieren revisión humana prioritaria.",
-    "El porcentaje de estabilidad por criterio: por debajo de 80% de coincidencia entre corridas, el "
-    "criterio se marca como inestable y conviene revisarlo con atención.",
-    "Archivo Excel con la valoración y la evidencia citada por criterio.",
+    "Cuántos criterios requieren revisión obligatoria, que el Excel reúne en la hoja «Revisión prioritaria».",
+    "Los criterios de alta subjetividad, que conviene revisar según su criterio.",
+    "Un único enlace de descarga del Excel.",
 ]:
     bullet(doc, txt)
+
+body(doc, "Qué contiene el Excel (tres hojas):", bold=True, after=4)
+table(doc,
+      ["Hoja", "Contenido", "Para qué sirve"],
+      [["Resultado Diagnostico",
+        "Una fila por criterio: veredicto, estabilidad, verificación chequeo por chequeo y evidencia citada",
+        "Registro auditable completo de la evaluación"],
+       ["Revisión prioritaria",
+        "Los criterios con resultado inestable (menos de 80% de coincidencia entre corridas) o con "
+        "veredicto «No», y el motivo de cada uno",
+        "Revisión humana obligatoria: es el punto de partida"],
+       ["Rubrica aplicada",
+        "La definición de cada criterio evaluado: sus chequeos y sus reglas de decisión",
+        "Auditar la regla junto al veredicto sin abrir la rúbrica aparte"]],
+      widths=[3.6, 7.4, 5.0])
+doc.add_paragraph()
+body(doc,
+     "En un PRODOC completo, la hoja «Revisión prioritaria» suele reunir entre 17 y 20 criterios, "
+     "aproximadamente uno de cada cuatro. No es una lista de excepciones: es la parte del trabajo que "
+     "requiere su juicio. Si no hay ningún criterio inestable ni ningún «No», la hoja aparece igualmente "
+     "e indica que no hay pendientes. En inglés, las hojas se llaman «Appraisal Result», «Priority "
+     "Review» y «Rubric Applied».")
+
+body(doc, "Cómo leer el razonamiento de un criterio:", bold=True, after=4)
+body(doc, "La columna «Razonamiento» está organizada en cuatro partes:", after=4)
+for txt, pfx in [
+    ("el veredicto y cuántos chequeos se cumplen; si falta alguno, cuál.", "POR QUÉ: "),
+    ("cada chequeo, marcado ✓ (se cumple) o ✗ (no se cumple), con su justificación tomada del documento.",
+     "VERIFICACIÓN: "),
+    ("cuántas de las diez corridas coincidieron y, si hubo desacuerdo, cuál fue el resultado alternativo.",
+     "ESTABILIDAD: "),
+    ("qué exige la rúbrica para ese veredicto, en palabras y en su fórmula formal.", "REGLA: "),
+]:
+    bullet(doc, txt, prefix=pfx)
 
 # ── 5. Asistente 2 ───────────────────────────────────────────────────────
 heading(doc, "5. Asistente 2 — Diagnóstico de Atributos Específicos (Tab 2)")
@@ -464,8 +532,14 @@ body(doc, "Recomendaciones de lectura:", bold=True, after=4)
 for txt, pfx in [
     ("no acepte una valoración sin contrastarla con el texto citado. La evidencia es lo que hace auditable el resultado.",
      "Verifique siempre la evidencia: "),
-    ("son aquellos donde el juicio depende del contexto institucional; el asistente los señala explícitamente.",
-     "Priorice los criterios de alta subjetividad: "),
+    ("en Valoración de Calidad, la hoja «Revisión prioritaria» reúne los criterios que deben revisarse "
+     "obligatoriamente. Después, a su criterio, los de alta subjetividad, donde el juicio depende del "
+     "contexto institucional.",
+     "Empiece por la revisión obligatoria: "),
+    ("indica que las corridas coincidieron, no que el veredicto sea correcto. Un error sistemático de "
+     "lectura se repite igual en todas las corridas. Por eso un criterio estable sigue requiriendo "
+     "contrastar la evidencia.",
+     "Una estabilidad alta no garantiza un acierto: "),
     ("un criterio valorado «No» puede reflejar una omisión real del documento o una redacción que el modelo no reconoció. Ambas cosas son información útil.",
      "Distinga ausencia de redacción deficiente: "),
     ("los resultados son un insumo de trabajo, no un dictamen. La decisión final es siempre humana.",
@@ -481,6 +555,8 @@ table(doc,
         "Valoración de Calidad (Tab 1)", "Rúbrica completa"],
        ["Verificar un aspecto concreto del diseño (p. ej. marco de resultados)",
         "Valoración de Calidad (Tab 1)", "Sólo la sección correspondiente"],
+       ["Revisar criterios concretos que señaló un revisor",
+        "Valoración de Calidad (Tab 1)", "Lista de criterios (p. ej. 1.1.1, 3.1.1)"],
        ["Saber si el proyecto integra el enfoque de género",
         "Atributos Específicos (Tab 2)", "Rúbrica de género"],
        ["Evaluar participación o Transición Justa",
@@ -522,9 +598,23 @@ table(doc,
       ["Situación", "Qué hacer"],
       [["El asistente no responde al abrir el chat",
         "Escriba «hola» o pulse uno de los botones de inicio; se presentará y explicará qué puede evaluar"],
+       ["Valoración de Calidad lanzó la evaluación y no dice nada más",
+        "Es el comportamiento esperado: escriba «estado» para conocer el avance. El asistente no "
+        "informa por su cuenta"],
        ["La evaluación tarda mucho",
         "Es normal en documentos extensos o rúbricas completas. Si supera lo razonable, reintente "
         "acotando el alcance a una sola sección o dimensión"],
+       ["El alcance anunciado no coincide con el que pedí",
+        "No continúe: el filtro no se aplicó y la evaluación consumirá más de lo previsto. Avise al "
+        "soporte técnico antes de repetirla"],
+       ["Un código de criterio que indiqué no existe",
+        "El asistente lo señalará antes de empezar. Revise el código: los criterios tienen tres niveles "
+        "(1.1.1); los de dos niveles (1.1) son subsecciones"],
+       ["El asistente dice que perdió el identificador del trabajo",
+        "Pídale que lo busque en su primer mensaje, en la línea «ID del trabajo». No relance la "
+        "evaluación: la anterior sigue en curso"],
+       ["El enlace de descarga no funciona o caducó",
+        "Pida al asistente que vuelva a adjuntar el resultado. No use enlaces escritos a mano en el chat"],
        ["La evaluación falla",
         "El asistente mostrará el mensaje de error. Reintente con un alcance más acotado; si persiste, "
         "reporte el mensaje al soporte técnico"],
