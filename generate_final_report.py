@@ -230,7 +230,7 @@ add_table_header_row(rub_table, ["Versión", "Archivo", "Cambios principales"])
 rub_rows = [
     ("v1 (base)", "Rubrica_Tab1_Detallada_Full.xlsx", "Rúbrica original con 76 criterios, estructura de secciones 1–5, escala SI/PARCIAL/NO/NA"),
     ("v2 (revisión cliente)", "Rubrica_Tab1_Detallada_Full_v2.xlsx", "Aplicación de 30+ comentarios del equipo OIT: correcciones de redacción, ajuste de ejemplos orientadores, nuevas notas operativas, columna de trazabilidad de cambios"),
-    ("v3 (mecanizada)", "Rubrica_Tab1_Detallada_Full_v3.xlsx", "Versión final mecanizada: columna 'Pregunta orientadora' (no evaluada), definición DEDICADO/MARCO alineada con Tab 1, orden jerárquico explícito, tipos de criterio con descripciones enriquecidas"),
+    ("v3 (mecanizada)", "Rubrica_Tab1_Detallada_Full_v3.xlsx", "Versión final mecanizada: columna 'Pregunta orientadora' (no evaluada), definición DEDICADO/MARCO alineada con Tab 1, orden jerárquico explícito, tipos de criterio con descripciones enriquecidas. Revisada después de su puesta en marcha (sección 5.5): regla de piso en 1.5.6, precisión de T4 en 1.1.1 y traducción al inglés sólo para mostrar"),
 ]
 for i, row_data in enumerate(rub_rows):
     add_data_row(rub_table, row_data, i)
@@ -244,7 +244,7 @@ add_body(doc,
     "razonamiento diferenciado por nivel de subjetividad del criterio:")
 
 for item in [
-    ("Prompt de sistema (V3_SYSTEM_PROMPT):", " Define el rol del modelo como analista experto de PRODOCs OIT. Instruye al modelo a emitir exactamente uno de los veredictos aceptados (SI, PARCIAL, NO, NA), a fundamentar la evidencia en citas textuales del documento, y a evitar interpretaciones subjetivas no respaldadas en texto."),
+    ("Prompt de sistema (V3_SYSTEM_PROMPT):", " Define el rol del modelo como analista experto de PRODOCs OIT. Instruye al modelo a evaluar cada test de la rúbrica como verdadero o falso, a aplicar la regla de decisión del criterio y a emitir exactamente uno de los veredictos aceptados (Yes, Partial, No, Not Found, N/A), fundamentando la evidencia en citas textuales del documento."),
     ("Razonamiento adaptativo:", " Los criterios con subjetividad 'Alta' se procesan con reasoning_effort='medium', activando la capacidad de razonamiento extendido del modelo. Los criterios de subjetividad normal o baja usan reasoning_effort='minimal', optimizando costo y velocidad sin sacrificar calidad."),
     ("Columna 'Pregunta orientadora':", " Se añadió como guía de lectura para el evaluador humano, explícitamente excluida de la evaluación automática para no sesgar el criterio principal."),
     ("Esfuerzo paralelo controlado:", " Hasta 48 llamadas concurrentes mediante ThreadPoolExecutor, con callback de progreso en tiempo real en la interfaz Streamlit."),
@@ -256,20 +256,28 @@ doc.add_paragraph()
 add_heading(doc, "3.3 Estructura de la Salida XLSX", level=2)
 
 add_body(doc,
-    "La salida descargable fue rediseñada para servir dos audiencias diferenciadas dentro del mismo fichero:")
+    "El Excel que entrega el motor v3 tiene tres hojas, pensadas para que el archivo sea auditable por sí "
+    "solo y para que quien revisa sepa por dónde empezar:")
 
 out_table = doc.add_table(rows=1, cols=3)
 out_table.style = "Table Grid"
-add_table_header_row(out_table, ["Hoja", "Audiencia", "Columnas principales"])
+add_table_header_row(out_table, ["Hoja", "Uso", "Contenido"])
 out_rows = [
-    ("Lectura amigable", "Evaluadores y gestores de proyectos", "ID, Criterio, Resultado de valoración, Lectura rápida, Principal oportunidad de mejora, Evidencia clave, Revisión humana recomendada"),
-    ("Auditoría técnica", "Revisores técnicos y desarrolladores", "Respuesta interna, Razonamiento del modelo, Evidencia completa, Status de ejecución"),
-    ("Resumen", "Dirección / aprobadores", "Conteo por veredicto, criterios de alta subjetividad, tasa de error, nombre y extensión del documento"),
+    ("Resultado Diagnostico", "Registro auditable completo", "Una fila por criterio: veredicto, estabilidad, resultado alternativo, distribución de las corridas, razonamiento chequeo por chequeo, evidencia citada y revisión humana recomendada"),
+    ("Revisión prioritaria", "Revisión humana obligatoria", "Los criterios inestables (menos de 80% de coincidencia entre corridas) y los de veredicto «No», con el motivo de cada uno. En un PRODOC completo suele reunir entre 17 y 20 criterios"),
+    ("Rubrica aplicada", "Auditoría de la regla", "La definición de cada criterio evaluado: tests y reglas de decisión, para contrastar la regla con el veredicto sin abrir la rúbrica aparte"),
 ]
 for i, row_data in enumerate(out_rows):
     add_data_row(out_table, row_data, i)
 
 doc.add_paragraph()
+
+add_body(doc,
+    "El razonamiento de cada criterio se presenta en lenguaje llano, en cuatro bloques: POR QUÉ (veredicto y "
+    "chequeos cumplidos), VERIFICACIÓN (cada chequeo marcado ✓ o ✗, con su justificación), ESTABILIDAD "
+    "(cuántas de las diez corridas coincidieron) y REGLA (lo que exige la rúbrica). Las etiquetas internas "
+    "T1, T2… no aparecen en la lectura. El Excel puede generarse en español o en inglés, con veredictos "
+    "idénticos en ambos idiomas.")
 
 add_heading(doc, "3.4 Ajustes a los Criterios de Innovación", level=2)
 
@@ -390,10 +398,10 @@ add_body(doc,
 add_body(doc, "Arquitectura común de los GPTs:", bold=True)
 for item in [
     "El usuario sube un documento DOCX directamente en el chat de ChatGPT.",
-    "El GPT invoca el endpoint de inicio de trabajo (POST /v3/jobs o POST /sustainability/jobs) pasando la referencia del archivo.",
+    "El GPT invoca el endpoint de inicio de trabajo (POST /v3/jobs, /sustainability/jobs o /attributes/jobs) pasando la referencia del archivo y el alcance.",
     "El backend descarga el archivo desde los servidores de OpenAI, lo procesa con el motor de evaluación y ejecuta las llamadas al modelo en paralelo.",
-    "El GPT sondea el estado del trabajo hasta que el proceso finaliza (GET /jobs/{id}).",
-    "Una vez completado, el GPT recupera el resultado (GET /jobs/{id}/result) y presenta al usuario un resumen narrativo junto con el archivo XLSX descargable.",
+    "Se sigue el estado del trabajo (GET /{familia}/jobs/{id}). En valoración de calidad el usuario pide cada consulta escribiendo «estado»; los otros dos asistentes consultan por su cuenta hasta terminar.",
+    "Una vez completado, el GPT recupera el resultado (GET /{familia}/jobs/{id}/result) y presenta al usuario un resumen junto con el archivo XLSX, en un único enlace de descarga.",
 ]:
     add_bullet(doc, item)
 
@@ -406,7 +414,8 @@ for item in [
     ("Enlace:", " https://chatgpt.com/g/g-6a2643b11e708191adc1c03e64260a25-ilo-prodoc-quality-appraisal"),
     ("Endpoint:", " POST /v3/jobs → GET /v3/jobs/{id} → GET /v3/jobs/{id}/result"),
     ("Motor:", " tab1_v3_core.py + Rubrica_Tab1_Detallada_Full_v3.xlsx"),
-    ("Criterios:", " 76 criterios distribuidos en 5 secciones; evaluación completa o filtrada por sección/subsección"),
+    ("Criterios:", " 76 criterios distribuidos en 5 secciones; evaluación completa o filtrada por sección, subsección o lista de criterios concretos"),
+    ("Salida XLSX:", " Tres hojas: 'Resultado Diagnostico', 'Revisión prioritaria' y 'Rubrica aplicada', en español o en inglés"),
     ("Escala:", " Yes / Partial / No / Not Found / N/A por criterio"),
     ("Estabilidad:", " 10 corridas por criterio (STABILITY_REPEATS) consolidadas por moda, umbral de 80%; del orden de 760 llamadas al modelo en una valoración completa"),
     ("Modelo:", " gpt-5-mini con razonamiento adaptativo (effort medium/minimal según subjetividad del criterio)"),
@@ -457,14 +466,39 @@ infra_data = [
     ("Plataforma", "Render.com, free tier"),
     ("Runtime", "Docker, Python 3.10-slim"),
     ("Framework", "FastAPI + uvicorn[standard]"),
-    ("Autenticacion", "X-API-Key en cabecera; /health y /privacy sin autenticacion"),
-    ("Politica de privacidad", "/privacy HTML - requerido por ChatGPT para GPTs publicos"),
+    ("Autenticación", "X-API-Key en cabecera; /health y /privacy sin autenticación. La descarga del Excel de valoración se protege con un token aleatorio por trabajo. Si ILO_GPT_ACTION_API_KEY no está definida, el backend no exige clave: debe verificarse tras cada cambio de entorno"),
+    ("Política de privacidad", "/privacy HTML, requerido por ChatGPT para GPTs con Action"),
     ("Persistencia", "In-memory (pilot); migrar a Redis para uso institucional"),
-    ("Paralelismo", "Hasta 48 llamadas OpenAI concurrentes por evaluacion"),
-    ("Despliegue CI/CD", "render.yaml Blueprint; redespliegue automatico al hacer push a main"),
+    ("Paralelismo", "Hasta 48 llamadas OpenAI concurrentes por evaluación"),
+    ("Despliegue", "render.yaml Blueprint con autoDeployTrigger desactivado: cada cambio requiere Manual Deploy en Render. GET /health informa del commit desplegado"),
 ]
 for i, row_data in enumerate(infra_data):
     add_data_row(infra_table, row_data, i)
+
+doc.add_paragraph()
+
+add_heading(doc, "5.5 Evolución de la capa GPT tras su puesta en marcha", level=2)
+
+add_body(doc,
+    "Tras la puesta en marcha de los GPTs, el uso real motivó los siguientes ajustes, todos sobre el GPT de valoración de calidad y su rúbrica salvo indicación en contrario:")
+
+evo_table = doc.add_table(rows=1, cols=3)
+evo_table.style = "Table Grid"
+add_table_header_row(evo_table, ["Fecha", "Ajuste", "Motivo"])
+evo_data = [
+    ("24 ago 2026", "Regla de piso en el criterio 1.5.6: si hay acciones dedicadas a transformar relaciones de género (T3), el resultado es como mínimo «Parcial»", "La rúbrica permitía calificar «No» un PRODOC con acciones transformadoras por no usar la taxonomía sensible / responsivo / transformador"),
+    ("26 ago 2026", "Razonamiento en lenguaje llano (POR QUÉ / VERIFICACIÓN / ESTABILIDAD / REGLA)", "Las etiquetas T1, T2 y las fórmulas lógicas dificultaban la lectura sin restarle profundidad al análisis"),
+    ("27 ago 2026", "Hoja «Rubrica aplicada» en el Excel", "Hacer el archivo auditable por sí solo"),
+    ("27 ago 2026", "Hoja «Revisión prioritaria»: criterios inestables y con veredicto «No»", "Señalar de forma explícita qué criterios requieren revisión humana obligatoria"),
+    ("27 ago 2026", "Un único enlace de descarga y aviso de avance al iniciar el trabajo", "Aparecían tres enlaces, dos de ellos rotos, y el asistente quedaba en silencio durante la evaluación"),
+    ("3 sep 2026", "Informe en español o en inglés, con la rúbrica íntegramente traducida para su lectura", "Personas usuarias de habla inglesa. La evaluación sigue leyendo la rúbrica española, por lo que los veredictos no cambian con el idioma"),
+    ("3 sep 2026", "Precisión del test T4 en el criterio 1.1.1: los verbos de mera alineación («aligned with») no acreditan contribución", "Un PRODOC obtuvo «Yes» con 100% de estabilidad enlazando los resultados P&B sólo con «Aligned with»"),
+    ("3 sep 2026", "El identificador del trabajo queda escrito en la conversación", "Si ChatGPT lo perdía, el trabajo no podía recuperarse"),
+    ("21 sep 2026", "Filtro por lista de criterios concretos, de cualquier longitud", "Revisar los criterios señalados por un revisor sin evaluar subsecciones enteras"),
+    ("21 sep 2026", "Aviso cuando el servidor no reconoce un parámetro", "Un servidor desactualizado ignoró en silencio un filtro de 35 criterios y evaluó los 76"),
+]
+for i, row_data in enumerate(evo_data):
+    add_data_row(evo_table, row_data, i)
 
 doc.add_paragraph()
 
@@ -480,18 +514,18 @@ add_body(doc,
 doc_table = doc.add_table(rows=1, cols=3)
 doc_table.style = "Table Grid"
 add_table_header_row(doc_table, ["Documento", "Formato", "Contenido"])
-doc_table = doc.add_table(rows=1, cols=3)
-doc_table.style = "Table Grid"
-add_table_header_row(doc_table, ["Documento", "Formato", "Contenido"])
 doc_data = [
-    ("1_Documentacion_Tecnica.docx", "DOCX", "Arquitectura general, stack tecnologico, flujo de datos"),
-    ("2_Documentacion_Codigo_Fuente.docx", "DOCX", "Modulos, funciones principales y dependencias"),
-    ("3_Documentacion_Base_Datos.docx", "DOCX", "Ficheros de embeddings y bases de conocimiento"),
-    ("4_Documentacion_Configuracion_Seguridad.docx", "DOCX", "Variables de entorno, claves API, seguridad"),
-    ("5_Documentacion_Funcional_Operativa.docx", "DOCX", "Guia de uso para evaluadores y flujos de trabajo"),
-    ("6_Otros_Contacto_Recomendaciones.docx", "DOCX", "Recomendaciones de evolucion futura y contacto tecnico"),
-    ("docs/gpt_action_v3_setup.md", "Markdown", "Configuracion completa del GPT de valoracion v3"),
-    ("docs/gpt_action_sustainability_setup.md", "Markdown", "Configuracion completa del GPT de sostenibilidad"),
+    ("1_Documentacion_Tecnica.docx", "DOCX", "Arquitectura general, stack tecnológico, flujo de datos y despliegue"),
+    ("2_Documentacion_Codigo_Fuente.docx", "DOCX", "Módulos, funciones principales, dependencias y deuda técnica"),
+    ("3_Documentacion_Base_Datos.docx", "DOCX", "Ficheros de datos, rúbricas y modelo de estado de los trabajos"),
+    ("4_Documentacion_Configuracion_Seguridad.docx", "DOCX", "Variables de entorno, claves API, control de acceso y respuesta a incidentes"),
+    ("5_Documentacion_Funcional_Operativa.docx", "DOCX", "Guía de uso, problemas frecuentes y procedimiento para publicar cambios"),
+    ("6_Otros_Contacto_Recomendaciones.docx", "DOCX", "Mantenimiento, criterios de aceptación y recomendaciones de evolución"),
+    ("documentation/en/ (seis documentos)", "DOCX", "Versión en inglés de los seis documentos anteriores"),
+    ("Manual_Usuario_GPTs_OIT.docx", "DOCX", "Manual para personas usuarias de los tres GPTs, sin perfil técnico"),
+    ("docs/instrucciones_gpt/", "Texto", "Instrucciones y botones de inicio de los tres GPTs, listos para pegar en ChatGPT"),
+    ("docs/gpt_action_v3_setup.md", "Markdown", "Configuración completa del GPT de valoración v3"),
+    ("docs/gpt_action_sustainability_setup.md", "Markdown", "Configuración completa del GPT de sostenibilidad"),
 ]
 for i, row_data in enumerate(doc_data):
     add_data_row(doc_table, row_data, i)
@@ -515,15 +549,18 @@ doc.add_paragraph()
 add_body(doc, "B. Motores de Evaluación (sin Streamlit)", bold=True)
 for f in [
     "tab1_v3_core.py – Motor de evaluación v3: rúbrica Tab 1, 76 criterios",
+    "tab2_core.py – Motor de diagnóstico de atributos específicos",
     "sustainability_core.py – Motor de diagnóstico de sostenibilidad",
+    "stability.py – Repetición y consolidación compartida por los motores de Tab 2 y sostenibilidad",
 ]:
     add_bullet(doc, f)
 
 doc.add_paragraph()
 add_body(doc, "C. Backend GPT Actions", bold=True)
 for f in [
-    "gpt_action_api.py – FastAPI: endpoints /v3/ y /sustainability/ compartidos",
+    "gpt_action_api.py – FastAPI: endpoints /v3/, /attributes/ y /sustainability/ compartidos",
     "openapi_gpt_action_v3.yaml – Esquema OpenAPI para el GPT de valoración",
+    "openapi_gpt_action_tab2.yaml – Esquema OpenAPI para el GPT de atributos específicos",
     "openapi_gpt_action_sustainability.yaml – Esquema OpenAPI para el GPT de sostenibilidad",
     "Dockerfile.gpt-action – Imagen Docker de producción",
     "docker-compose.gpt-action.yml – Composición para pruebas locales",
@@ -535,15 +572,19 @@ for f in [
 doc.add_paragraph()
 add_body(doc, "D. Rúbricas", bold=True)
 for f in [
-    "Rubrica_Tab1_Detallada_Full_v3.xlsx – Rúbrica mecanizada final (76 criterios)",
+    "Rubrica_Tab1_Detallada_Full_v3.xlsx – Rúbrica mecanizada final (76 criterios), con columnas de traducción al inglés",
+    "Rubricas_6ago2025.xlsx – Rúbricas de atributos específicos (participación, género, transición justa)",
     "Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx – Rúbrica de sostenibilidad",
+    "rubrica_en/ – Fuentes de la traducción inglesa de la rúbrica v3 y el script que la aplica",
 ]:
     add_bullet(doc, f)
 
 doc.add_paragraph()
 add_body(doc, "E. Documentación", bold=True)
 for f in [
-    "documentation/ – Seis documentos técnicos de transferencia (DOCX)",
+    "documentation/ – Seis documentos técnicos de transferencia (DOCX), y su versión en inglés en documentation/en/",
+    "Manual_Usuario_GPTs_OIT.docx – Manual de usuario de los tres GPTs",
+    "docs/instrucciones_gpt/ – Instrucciones de los tres GPTs, listas para pegar",
     "docs/gpt_action_v3_setup.md – Guía de configuración GPT valoración v3",
     "docs/gpt_action_sustainability_setup.md – Guía de configuración GPT sostenibilidad",
     "Informe_Final_Consultoría_OIT_PO40551829.docx – Este documento",
@@ -564,13 +605,13 @@ comp_data = [
     ("Ajustes en lógica de outputs (coherencia, repeticiones, innovación, recomendaciones)",
      "tab1_v3_core.py, Rubrica_Tab1_Detallada_Full_v3.xlsx, oli_v6_deploy_recommendations.py",
      "✅ Completado",
-     "Tres versiones de rúbrica; razonamiento adaptativo; outputs con dos niveles de detalle"),
+     "Tres versiones de rúbrica; razonamiento adaptativo; Excel de tres hojas con revisión prioritaria"),
     ("Modularización del código fuente (módulo calidad + módulo recomendaciones)",
      "oli_v6_deploy_core.py, oli_v6_deploy_recommendations.py",
      "✅ Completado",
      "Separación completa; cada módulo ejecutable de forma independiente"),
     ("Documentación técnica para transferencia",
-     "documentation/ (6 docs), docs/ (2 guías Markdown)",
+     "documentation/ (6 docs en español y 6 en inglés), manual de usuario, docs/ (guías e instrucciones de los GPTs)",
      "✅ Completado",
      "Incluye guías de despliegue, configuración y uso de GPTs"),
     ("GPT Actions (valoración v3, sostenibilidad, atributos específicos) [valor añadido]",
@@ -618,11 +659,15 @@ recs = [
     ("Migrar el almacenamiento de jobs a Redis o base de datos",
      "El backend piloto guarda los trabajos en memoria. Para uso institucional con múltiples usuarios simultáneos, se recomienda reemplazar el dict JOBS por una capa de persistencia (Redis, PostgreSQL). Esfuerzo estimado: 1–2 días."),
     ("Establecer un límite de gasto en la API de OpenAI",
-     "Cada evaluación completa consume ~76 llamadas al modelo. Se recomienda configurar un límite mensual en la cuenta OpenAI para evitar gasto no controlado si el enlace del GPT se distribuye ampliamente."),
+     "Cada valoración completa de calidad consume del orden de 760 llamadas al modelo: 76 criterios por 10 corridas de estabilidad. Evaluar cinco criterios concretos son 50. Se recomienda configurar un límite mensual en la cuenta OpenAI para evitar gasto no controlado si el enlace del GPT se distribuye ampliamente."),
     ("Elevar el plan de Render a Starter si hay uso intensivo",
      "El free tier duerme tras 15 minutos de inactividad (inicio en frío ~30–60s). Para equipos que usen el GPT en horario laboral continuo, el plan Starter ($7/mes) elimina las esperas y garantiza disponibilidad 24/7."),
-    ("Migrar el repositorio GitHub a privado",
-     "El repositorio de despliegue actualmente es público y contiene ficheros de proyecto de la OIT. Se recomienda convertirlo a privado; Render soporta repositorios privados sin costo adicional."),
+    ("Migrar el repositorio GitHub a privado (prioritario)",
+     "El repositorio de despliegue sigue siendo público y contiene, además del código, bases de datos de recomendaciones y lecciones aprendidas de la OIT, rúbricas y documentos de la consultoría. Se recomienda convertirlo a privado cuanto antes, verificando primero que Render conserva acceso al repositorio para no interrumpir los despliegues."),
+    ("Hacer que la autenticación del backend falle cerrada",
+     "Hoy, si la variable ILO_GPT_ACTION_API_KEY falta, el backend acepta peticiones sin clave. Se recomienda que en ese caso rechace todas las peticiones, para que un error de configuración no deje la API abierta."),
+    ("Revisión bilingüe de la rúbrica en inglés",
+     "La traducción inglesa de la rúbrica v3 no altera veredictos, pero determina lo que el lector cree que se verificó. Debe revisarla una persona bilingüe antes de distribuir informes en inglés fuera del equipo."),
     ("Evaluar la incorporación de OAuth por usuario",
      "El esquema actual de clave compartida no permite distinguir qué usuario realizó cada evaluación. Para auditoría institucional, implementar OAuth (OpenID Connect con la cuenta ILO) permitiría registro por usuario."),
 ]
