@@ -11,8 +11,8 @@ from docx.shared import Inches, Pt, RGBColor
 
 BASE = Path(__file__).resolve().parent
 EN_DIR = BASE / "en"
-UPDATED = "15 de julio de 2026"
-UPDATED_EN = "July 15, 2026"
+UPDATED = "8 de octubre de 2026"
+UPDATED_EN = "October 8, 2026"
 APP = "oli_v6_deploy.py + gpt_action_api.py"
 
 # Asistentes GPT publicados en ChatGPT (backend FastAPI compartido).
@@ -329,12 +329,13 @@ def doc1(doc):
     h(doc, "9.2 Ciclo de vida de un trabajo de evaluación", 2)
     add_numbered(doc, [
         "El usuario sube un DOCX en el chat de ChatGPT y describe el alcance deseado.",
-        "El GPT llama al endpoint POST correspondiente, pasando la referencia del archivo alojado en los servidores de OpenAI y los filtros solicitados.",
-        "El backend descarga el archivo, extrae el texto, carga la rúbrica desde disco y lanza las llamadas al modelo en paralelo.",
-        "El GPT sondea GET /{familia}/jobs/{id} hasta que el estado pasa a succeeded o failed.",
-        "Con el trabajo terminado, el GPT llama a GET /{familia}/jobs/{id}/result y entrega al usuario un resumen narrativo más el XLSX en base64.",
+        "El GPT llama al endpoint POST correspondiente, pasando la referencia del archivo alojado en los servidores de OpenAI, los filtros solicitados y, en valoración de calidad, el idioma del informe.",
+        "El backend descarga el archivo, extrae el texto, carga la rúbrica desde disco y lanza las llamadas al modelo en paralelo. En valoración de calidad, la descarga, la extracción y el filtrado ocurren antes de que el POST responda: un archivo ilegible o un código de criterio inexistente devuelven un 400 inmediato, y la respuesta trae start_line con el documento recibido, el alcance aplicado, la estimación de tiempo y el ID del trabajo.",
+        "El seguimiento del estado difiere según el asistente. En valoración de calidad, el GPT termina el turno tras mostrar start_line y el usuario pide cada consulta de estado escribiendo «estado». Atributos y sostenibilidad sondean GET /{familia}/jobs/{id} por su cuenta hasta succeeded o failed. La consulta de estado espera hasta 3 segundos por defecto y devuelve progress_line ya redactado.",
+        "Con el trabajo terminado, el GPT llama a GET /{familia}/jobs/{id}/result y entrega un resumen más el XLSX. En valoración de calidad el archivo se entrega mediante una URL con token que ChatGPT descarga y adjunta como un único enlace. En atributos y sostenibilidad viaja en base64 dentro de la respuesta.",
     ])
     p(doc, "El estado de los trabajos vive en el diccionario JOBS de gpt_action_api.py, protegido por threading.Lock. Es almacenamiento en memoria del proceso: un reinicio o redespliegue del servicio pierde los trabajos en curso. Para uso institucional sostenido debe migrarse a Redis o equivalente.")
+    p(doc, "Parámetros desconocidos: EvaluationJobRequest conserva los campos que no reconoce (extra=\"allow\") y start_line avisa de ellos. Así un servidor desactualizado que recibe un filtro nuevo lo dice, en lugar de descartarlo y evaluar la rúbrica entera.")
 
     h(doc, "9.3 Paralelismo y esquema de estabilidad", 2)
     add_table(doc, ["Motor", "Modelo", "MAX_WORKERS", "Corridas por criterio"], [
@@ -352,7 +353,8 @@ def doc1(doc):
         ["Runtime", "Docker, imagen construida desde Dockerfile.gpt-action sobre Python 3.10-slim"],
         ["Framework", "FastAPI con uvicorn[standard]; dependencias en requirements.gpt-action.txt"],
         ["Health check", "GET /health, configurado como healthCheckPath en render.yaml"],
-        ["CI/CD", "Redespliegue automático al hacer push a la rama main"],
+        ["CI/CD", "Ninguno. render.yaml fija autoDeployTrigger: off, de modo que un push a main NO despliega: cada cambio exige Manual Deploy en el panel de Render"],
+        ["Verificación del despliegue", "GET /health devuelve el commit desplegado (RENDER_GIT_COMMIT) y los nombres de hoja del Excel; debe coincidir con git log -1"],
         ["Especificación para ChatGPT", "openapi_gpt_action_v3.yaml, openapi_gpt_action_tab2.yaml y openapi_gpt_action_sustainability.yaml"],
     ], widths=[2.0, 4.8])
     p(doc, "El plan free de Render suspende el servicio tras un período de inactividad; la primera petición después de la suspensión tarda más de lo habitual mientras el contenedor arranca. Es el comportamiento esperado, no una falla.")
@@ -364,6 +366,7 @@ def doc1(doc):
         "Los documentos suben primero a los servidores de OpenAI y luego los descarga el backend; ambos tránsitos deben considerarse en el análisis de confidencialidad.",
         "Las rúbricas viven en el sistema de archivos de la imagen Docker: actualizarlas exige reconstruir y redesplegar, no basta con reemplazar un archivo.",
         "Los tres GPTs comparten un único backend y una única clave de API: una interrupción afecta simultáneamente a los tres.",
+        "El esquema cargado en ChatGPT y el código desplegado evolucionan por separado. Si el esquema se adelanta al servidor, los parámetros nuevos llegan a un código que no los conoce; start_line lo avisa, pero la evaluación ya se lanzó y se cobra.",
     ])
 
 
@@ -472,8 +475,10 @@ def doc2(doc):
 
     h(doc, "9.1 Archivos del backend", 2)
     add_table(doc, ["Archivo", "Rol"], [
-        ["gpt_action_api.py", "Aplicación FastAPI: autenticación por cabecera, creación y sondeo de trabajos, descarga del DOCX desde OpenAI, endpoints /health y /privacy."],
-        ["tab1_v3_core.py", "Motor de valoración preliminar v3: carga la rúbrica de 76 criterios, construye prompts, ejecuta la evaluación y arma el XLSX."],
+        ["gpt_action_api.py", "Aplicación FastAPI: autenticación por cabecera, creación y sondeo de trabajos, descarga del DOCX desde OpenAI, entrega del Excel por URL con token, endpoints /health y /privacy."],
+        ["tab1_v3_core.py", "Motor de valoración preliminar v3: carga la rúbrica de 76 criterios, filtra por sección, subsección o criterio, construye prompts en español o inglés, ejecuta la evaluación, convierte el razonamiento en texto legible y arma el XLSX de tres hojas."],
+        ["rubrica_en/", "Traducción inglesa de la rúbrica v3, sólo para mostrar: un JSON por columna (los *_src.py los generan) y apply.py, que los escribe en las columnas «(EN)» del xlsx."],
+        ["docs/instrucciones_gpt/", "Instrucciones y botones de inicio de los tres GPTs, listos para pegar en el editor de ChatGPT."],
         ["tab1_v3.py", "Envoltura Streamlit del mismo motor, usada por el Tab 7 experimental de la app."],
         ["tab2_core.py", "Motor de atributos específicos: tres rúbricas seleccionables, escala 1-5, consolidación por estabilidad."],
         ["sustainability_core.py", "Motor de sostenibilidad: 28 indicadores en tres dimensiones, escala 0-3, consolidación por estabilidad."],
@@ -502,14 +507,20 @@ def doc2(doc):
     h(doc, "9.3 Mapa de funciones del backend", 2)
     add_table(doc, ["Función o endpoint", "Responsabilidad"], [
         ["require_api_key", "Compara la cabecera X-API-Key contra ILO_GPT_ACTION_API_KEY; protege todos los endpoints de trabajos."],
-        ["POST /v3/jobs, /attributes/jobs, /sustainability/jobs", "Registran un trabajo, devuelven su identificador y lanzan la evaluación en segundo plano."],
-        ["GET /{familia}/jobs/{id}", "Devuelve el estado del trabajo: queued, running, succeeded o failed, con progreso cuando está disponible."],
-        ["GET /{familia}/jobs/{id}/result", "Devuelve el resumen estructurado y el XLSX codificado en base64."],
-        ["GET /health", "Sonda de disponibilidad usada por Render. No requiere autenticación."],
+        ["POST /v3/jobs, /attributes/jobs, /sustainability/jobs", "Registran un trabajo, devuelven su identificador y lanzan la evaluación en segundo plano. POST /v3/jobs prepara el documento antes de responder (_prepare_v3_job) y acepta sections, subsections, criteria_ids y language."],
+        ["GET /{familia}/jobs/{id}", "Devuelve el estado del trabajo: queued, running, succeeded o failed, con progress_line, percent_complete y eta_seconds."],
+        ["GET /{familia}/jobs/{id}/result", "Devuelve el resumen estructurado y el XLSX: por URL con token en valoración de calidad, en base64 en las otras dos familias."],
+        ["GET /v3/jobs/{id}/file", "Sirve el XLSX de valoración a ChatGPT. Exige el token del trabajo, no X-API-Key."],
+        ["GET /{familia}/jobs", "Sin identificador: devuelve un 400 que explica el formato correcto. No existe listado de trabajos."],
+        ["GET /health", "Sonda de disponibilidad usada por Render; informa del commit desplegado y de los nombres de hoja. No requiere autenticación."],
         ["GET /privacy", "Política de privacidad en HTML. Requisito de ChatGPT para publicar un GPT con Action. No requiere autenticación."],
         ["stability.evaluate_with_stability", "Ejecuta cada ítem repeats veces en paralelo y delega la consolidación al agregador del motor."],
         ["stability.aggregate_runs", "Colapsa las corridas al valor modal y calcula estabilidad, distribución y deriva."],
-        ["results_to_xlsx_bytes", "Presente en los tres motores; construye el XLSX final con xlsxwriter."],
+        ["results_to_xlsx_bytes", "Presente en los tres motores; construye el XLSX final con xlsxwriter. En tab1_v3_core escribe las tres hojas y traduce cabeceras y valores según lang."],
+        ["tab1_v3_core.filter_rubric", "Aplica sections y subsections (intersección) y suma criteria_ids; lanza UnknownCriteriaError ante un código inexistente."],
+        ["tab1_v3_core.render_reasoning", "Reescribe el razonamiento del modelo en POR QUÉ / VERIFICACIÓN / ESTABILIDAD / REGLA, sin etiquetas T1/T2. Si el formato no se reconoce, devuelve el texto original."],
+        ["tab1_v3_core.priority_to_dataframe", "Selecciona la hoja «Revisión prioritaria»: criterios inestables (< 80%) o con veredicto No."],
+        ["tab1_v3_core.system_prompt / rubric_text", "Prompt según el idioma de salida; texto de la rúbrica a mostrar, con la columna «(EN)» y retorno al español si está vacía."],
     ], widths=[2.5, 4.3])
 
     h(doc, "9.4 Deuda técnica del backend", 2)
@@ -518,7 +529,10 @@ def doc2(doc):
         "No hay expiración de trabajos: un proceso de larga vida acumula resultados en memoria indefinidamente.",
         "Los tres motores duplican la función results_to_xlsx_bytes con variaciones menores; podrían converger si el formato de salida se unifica.",
         "Las rúbricas se resuelven por ruta relativa al directorio de ejecución, lo que acopla el proceso a su working directory.",
-        "stability.py incluye un _demo() ejecutable como autocomprobación; es el único código del backend con verificación automática.",
+        "stability.py y tab1_v3_core.py incluyen autocomprobaciones ejecutables (_demo). Las de tab1_v3_core cubren el renderizado del razonamiento, la hoja prioritaria, el idioma y los filtros: python3 tab1_v3_core.py debe terminar en «_demo OK». No hay pruebas sobre los endpoints de gpt_action_api.py.",
+        "La autenticación falla en abierto: sin ILO_GPT_ACTION_API_KEY, require_api_key no exige clave alguna.",
+        "Los GPTs de atributos y sostenibilidad siguen sondeando el estado en el mismo turno, el patrón que en valoración de calidad dejaba al usuario sin novedades. Además, sus instrucciones piden mostrar un start_line que sus endpoints no devuelven.",
+        "La traducción inglesa de la rúbrica no ha sido revisada por una persona bilingüe. No altera veredictos, porque la evaluación lee la columna española, pero sí lo que el lector cree que se verificó.",
     ])
 
 
@@ -592,7 +606,7 @@ def doc3(doc):
 
     h(doc, "7.1 Rúbricas consumidas por el backend", 2)
     add_table(doc, ["Archivo", "Motor que lo consume", "Contenido"], [
-        ["Rubrica_Tab1_Detallada_Full_v3.xlsx", "tab1_v3_core.py", "76 criterios de valoración preliminar en 5 secciones, con subsecciones 1.1 a 5.2 y metadatos de subjetividad por criterio."],
+        ["Rubrica_Tab1_Detallada_Full_v3.xlsx", "tab1_v3_core.py", "76 criterios de valoración preliminar en 5 secciones, con subsecciones 1.1 a 5.2 y metadatos de subjetividad por criterio. Las columnas españolas son las autoritativas y las únicas que lee la evaluación. Las columnas «… (EN)» son su traducción, sólo para mostrar. Los cambios se fechan en la columna Notas."],
         ["Rubricas_6ago2025.xlsx", "tab2_core.py", "Tres hojas de rúbrica: rubric_parteval (metodologías participativas), rubric_gender_ (género) y rubric_TJ_TJ (transición justa moderna)."],
         ["Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx", "sustainability_core.py", "28 indicadores en tres dimensiones del ciclo: Diseño (6), Implementación (10) y Pre-Cierre (12)."],
     ], widths=[2.3, 1.7, 2.8])
@@ -601,20 +615,25 @@ def doc3(doc):
     h(doc, "7.2 Modelo de estado de trabajos", 2)
     p(doc, "gpt_action_api.py mantiene un diccionario JOBS en memoria, con acceso serializado por threading.Lock. Cada entrada representa una evaluación en curso o terminada.")
     add_table(doc, ["Campo", "Contenido"], [
-        ["job_id", "Identificador generado al crear el trabajo; es la clave del diccionario."],
+        ["job_id", "Identificador UUID generado al crear el trabajo; es la clave del diccionario, no un campo de la entrada."],
         ["status", "queued, running, succeeded o failed."],
-        ["progress", "Avance informado por el motor durante la evaluación, cuando está disponible."],
-        ["result", "Resumen estructurado más el XLSX en base64, disponible sólo cuando status es succeeded."],
-        ["error", "Mensaje de fallo, disponible sólo cuando status es failed."],
-    ], widths=[1.6, 5.2])
+        ["message", "Texto de estado; cuando status es failed, contiene el mensaje de error."],
+        ["completed / total", "Llamadas al modelo terminadas y previstas; de ellas se derivan percent_complete, eta_seconds y progress_line."],
+        ["created_at, document_name, document_word_count", "Metadatos del trabajo y del documento recibido."],
+        ["summary", "Resumen estructurado (conteos por veredicto, estabilidad, priority_review_count…), presente cuando status es succeeded."],
+        ["result_filename", "Nombre del XLSX entregado."],
+        ["result_xlsx_bytes + download_token", "Sólo valoración de calidad: el XLSX en bytes y el token aleatorio que exige la URL de descarga."],
+        ["result_xlsx_b64 + result_preview", "Sólo atributos y sostenibilidad: el XLSX en base64 y una vista previa de las primeras filas."],
+    ], widths=[1.9, 4.9])
     p(doc, "Este estado es volátil por diseño: un reinicio o redespliegue del servicio lo borra por completo. No constituye un registro histórico y no debe usarse como fuente de auditoría. El registro auditable de una evaluación es el XLSX que descarga el usuario.")
 
     h(doc, "7.3 Actualización de rúbricas en el backend", 2)
     add_numbered(doc, [
         "Reemplazar el XLSX en el repositorio, conservando el nombre de archivo y la estructura de columnas y hojas.",
         "Verificar la carga localmente ejecutando el backend y lanzando una evaluación de prueba acotada.",
-        "Hacer push a la rama main: Render reconstruye la imagen y redespliega automáticamente.",
-        "Confirmar con GET /health que el servicio quedó disponible, y con una evaluación corta que la rúbrica nueva se aplica.",
+        "En la rúbrica de valoración, registrar el cambio con fecha en la columna Notas y, si cambia el texto mostrado, actualizar rubrica_en/*.json y ejecutar python3 rubrica_en/apply.py.",
+        "Hacer push a la rama main y lanzar Manual Deploy en Render: autoDeployTrigger está en off, así que el push por sí solo no despliega nada.",
+        "Confirmar que GET /health devuelve el commit nuevo, y con una evaluación corta que la rúbrica nueva se aplica. En valoración de calidad basta un criterio con criteria_ids.",
     ])
     p(doc, "No basta con subir el archivo al servidor: la rúbrica forma parte de la imagen Docker, de modo que cualquier cambio exige reconstrucción y redespliegue.")
 
@@ -707,16 +726,19 @@ def doc4(doc):
         ["ILO_GPT_ACTION_API_KEY", "Valor esperado de la cabecera X-API-Key; protege todos los endpoints de trabajos.", "Panel de Render, marcada como sync:false; el mismo valor se carga en la Action de cada GPT."],
     ], widths=[2.0, 2.8, 2.0])
     p(doc, "Ambas variables deben existir en el proceso runtime. render.yaml las declara sin valor, de modo que Render las solicita en el primer despliegue y nunca quedan en el repositorio.")
+    p(doc, "Advertencia: la autenticación falla en abierto. Si ILO_GPT_ACTION_API_KEY no está definida o está vacía, require_api_key deja pasar todas las peticiones sin clave, sin error ni aviso. El comportamiento facilita la ejecución local, pero un despliegue a un servicio nuevo de Render sin esa variable deja la API abierta a cualquiera que conozca la URL, con cargo al presupuesto de OpenAI. Verificarlo tras cualquier cambio de entorno: una petición con una clave falsa debe devolver 401.")
 
     h(doc, "8.2 Control de acceso en tres capas", 2)
     add_table(doc, ["Capa", "Mecanismo", "Qué protege"], [
         ["Acceso al GPT", "Enlace privado de ChatGPT: sólo abre quien tiene el enlace, y requiere cuenta de ChatGPT.", "Quién puede usar el asistente."],
         ["Acceso a la API", "Cabecera X-API-Key comparada contra ILO_GPT_ACTION_API_KEY en require_api_key.", "Quién puede lanzar evaluaciones contra el backend."],
-        ["Endpoints abiertos", "/health y /privacy no requieren autenticación, por requisito de Render y de ChatGPT respectivamente.", "No exponen datos: sólo estado del servicio y texto de política."],
+        ["Endpoints abiertos", "/health y /privacy no requieren autenticación, por requisito de Render y de ChatGPT respectivamente. Tampoco GET /v3/jobs, /sustainability/jobs y /attributes/jobs sin identificador: sólo devuelven un 400 que explica el formato correcto.", "No exponen datos de evaluaciones. /health informa del commit desplegado y de los nombres de hoja del Excel."],
+        ["Descarga del Excel de Valoración", "GET /v3/jobs/{id}/file no exige X-API-Key: lo protege un token aleatorio de 32 bytes, propio de cada trabajo y comparado en tiempo constante.", "El resultado. La URL funciona como credencial al portador hasta que el servicio se reinicia."],
     ], widths=[1.6, 3.0, 2.2])
     add_bullets(doc, [
         "La distribución de los enlaces de los GPTs es el control de acceso efectivo para las personas usuarias: debe gestionarse como se gestionaría una lista de distribución.",
         "ILO_GPT_ACTION_API_KEY es un secreto compartido entre el backend y las tres Actions; rotarla obliga a actualizar los tres GPTs.",
+        "Al reemplazar el esquema de una Action no hay que tocar la autenticación: se conserva. Reintroducir la clave a mano sin copiarla exactamente de Render provocó un incidente en el que todas las llamadas fallaban con ClientResponseError.",
         "No hay usuarios, roles ni auditoría por persona: el backend no distingue quién lanzó cada evaluación.",
     ])
 
@@ -727,6 +749,7 @@ def doc4(doc):
         "El backend no persiste el documento: lo procesa y lo descarta al terminar el trabajo.",
         "Los resultados viven en memoria del proceso hasta el reinicio; no hay base de datos ni registro histórico.",
         "El XLSX entregado contiene citas textuales del documento original y debe manejarse con la misma confidencialidad que el documento fuente.",
+        "En Valoración de Calidad, el Excel se entrega mediante una URL con token que ChatGPT descarga y adjunta. Quien disponga de esa URL puede descargar el resultado mientras el servicio no se reinicie.",
         "La conversación de ChatGPT queda en la cuenta del usuario, con el documento adjunto: la retención depende de la configuración de la cuenta y del plan de ChatGPT usado.",
     ])
 
@@ -740,12 +763,15 @@ def doc4(doc):
         ["STABILITY_THRESHOLD_PCT tab1_v3_core", "80.0", "Por debajo de ese porcentaje de coincidencia entre corridas, el criterio se marca como inestable y merece revisión humana."],
         ["Modelo de los tres motores", "gpt-5-mini", "Costo por evaluación dominado por este modelo y por el número de repeticiones; tab1_v3 varía el esfuerzo de razonamiento según la subjetividad del criterio."],
         ["Plan de Render", "free", "El servicio se suspende por inactividad; la primera petición tras la suspensión sufre latencia de arranque en frío."],
+        ["autoDeployTrigger en render.yaml", "off", "Un push a main NO despliega. Cada cambio exige Manual Deploy en el panel de Render; sin él, el servidor sigue con el código anterior sin dar señal alguna."],
     ], widths=[2.0, 1.2, 3.6])
 
     h(doc, "8.5 Lista de verificación del backend antes de producción", 2)
     add_bullets(doc, [
         "Confirmar que OPENAI_API_KEY e ILO_GPT_ACTION_API_KEY están cargadas en Render y que la cuenta OpenAI tiene presupuesto.",
-        "Confirmar que GET /health responde correctamente.",
+        "Confirmar que GET /health responde y que su campo commit coincide con el último commit de main. Si el campo commit falta, el servidor ejecuta código anterior al 27 de agosto de 2026.",
+        "Tras cada push a main, lanzar Manual Deploy en Render: el despliegue no es automático.",
+        "Confirmar que una petición con una X-API-Key falsa devuelve 401. Si no, ILO_GPT_ACTION_API_KEY no está definida y la API está abierta.",
         "Confirmar que los tres archivos de rúbrica están presentes en la imagen desplegada.",
         "Lanzar una evaluación corta por cada uno de los tres GPTs con un documento no sensible.",
         "Verificar que la Action de cada GPT tiene cargada la clave correcta y apunta al servidor correcto.",
@@ -759,7 +785,8 @@ def doc4(doc):
         "Si se sospecha exposición de la clave de OpenAI, rotarla en el panel de OpenAI y actualizarla en Render.",
         "Si el problema es de disponibilidad, revisar el estado del servicio en Render y los logs del contenedor.",
         "Si un enlace de GPT se difundió fuera del círculo previsto, republicar el GPT para generar un enlace nuevo y redistribuirlo.",
-        "Restaurar el servicio redesplegando desde la rama main y verificar con una evaluación de prueba por asistente.",
+        "Restaurar el servicio con Manual Deploy desde la rama main (el despliegue no es automático) y verificar con GET /health y una evaluación de prueba por asistente.",
+        "Si un GPT anuncia un alcance distinto del pedido, o un AVISO de parámetros no reconocidos, el servidor corre una versión anterior a la del esquema cargado en ChatGPT: comparar el commit de /health con main y desplegar antes de repetir. Ningún dato se pierde, pero cada evaluación lanzada mientras tanto se cobra completa.",
     ])
 
 
@@ -885,20 +912,23 @@ def doc5(doc):
     add_numbered(doc, [
         "Abrir el enlace del asistente. Al escribir un saludo o pulsar un botón de inicio, el asistente se presenta y explica qué puede evaluar, sin consumir una evaluación.",
         "Adjuntar un único archivo .docx. Si se suben varios, el asistente pide elegir uno.",
-        "Indicar el alcance en el mismo mensaje: sección o subsección para valoración de calidad, rúbrica temática para atributos específicos, dimensión del ciclo para sostenibilidad. Si no se indica, el asistente lo pregunta antes de empezar.",
-        "Esperar mientras el asistente lanza el trabajo y consulta su estado. Una evaluación completa puede tardar varios minutos.",
+        "Indicar el alcance en el mismo mensaje: sección, subsección o lista de criterios para valoración de calidad, rúbrica temática para atributos específicos, dimensión del ciclo para sostenibilidad. Si no se indica, el asistente lo pregunta y pide confirmación antes de empezar. En valoración de calidad se puede pedir además el informe en inglés.",
+        "Seguir el avance. Aquí los asistentes difieren. Valoración de Calidad muestra el documento recibido, el alcance aplicado, el tiempo estimado y el ID del trabajo, y se DETIENE: el usuario escribe «estado» para cada consulta de avance. Atributos Específicos y Sostenibilidad consultan el estado por su cuenta hasta terminar. Una evaluación completa puede tardar varios minutos.",
         "Revisar el resumen en pantalla y descargar el XLSX, que es el registro auditable de la evaluación.",
     ])
 
     h(doc, "11.3 Alcance y escalas por asistente", 2)
     add_table(doc, ["Asistente", "Alcance seleccionable", "Escala"], [
-        ["Valoración de Calidad (Tab 1 v3)", "Rúbrica completa, una o varias secciones (1 a 5), o subsecciones concretas (1.1 a 5.2)", "Yes / Partial / No / Not Found / N/A sobre 76 criterios"],
+        ["Valoración de Calidad (Tab 1 v3)", "Rúbrica completa, una o varias secciones (1 a 5), subsecciones concretas (1.1 a 5.2) o una lista de criterios de cualquier longitud (1.1.1, 2.1.2…). Informe en español o en inglés", "Yes / Partial / No / Not Found / N/A sobre 76 criterios"],
         ["Atributos Específicos (Tab 2)", "Una o varias de tres rúbricas: metodologías participativas, género, transición justa", "1 a 5 por criterio"],
         ["Sostenibilidad (Tab 3)", "Dimensión Diseño (PRODOCs), Implementación (informes de avance) o Pre-Cierre (cierre y evaluación final)", "0 a 3 por indicador"],
     ], widths=[1.8, 3.0, 2.0])
     p(doc, "Las escalas no son intercambiables: 0-3 en sostenibilidad y 1-5 en atributos específicos miden cosas distintas y no deben promediarse ni compararse directamente.")
     p(doc, "Los tres asistentes repiten cada evaluación y consolidan el resultado: 10 corridas por criterio en valoración de calidad, 5 en atributos específicos y 5 en sostenibilidad. El XLSX incluye el porcentaje de estabilidad, que indica cuántas de esas corridas coincidieron: un porcentaje bajo señala un criterio donde el modelo no fue consistente y la revisión humana es más necesaria.")
     p(doc, "El veredicto \"Not Found\" en valoración de calidad significa que el documento no contiene información suficiente para evaluar el criterio. Es distinto de \"No\": este último afirma que el criterio no se cumple, mientras que \"Not Found\" afirma que no se pudo determinar.")
+    p(doc, "Filtros de valoración de calidad: sections y subsections se combinan por intersección, como siempre. criteria_ids se suma a ellos: sólo, evalúa exactamente esos criterios; junto a una sección, añade los criterios indicados a esa sección. Un código que no existe en la rúbrica se rechaza nombrándolo, antes de lanzar el trabajo, en lugar de omitirse en silencio.")
+    p(doc, "El Excel de valoración de calidad tiene tres hojas: «Resultado Diagnostico» (una fila por criterio), «Revisión prioritaria» (revisión humana obligatoria) y «Rubrica aplicada» (la definición de cada criterio evaluado). «Revisión prioritaria» reúne los criterios inestables, con menos de 80% de coincidencia entre corridas, y los de veredicto «No». En PRODOCs completos suele reunir entre 17 y 20 criterios, y se escribe siempre, aunque esté vacía. La alta subjetividad no entra en ella: queda señalada en la hoja principal, a criterio de quien revisa.")
+    p(doc, "Idioma: con language=\"en\" el Excel sale íntegramente en inglés (hojas «Appraisal Result», «Priority Review» y «Rubric Applied»). Los veredictos son idénticos en ambos idiomas, porque la evaluación lee siempre la rúbrica española, que es la autoritativa; la versión inglesa sólo se muestra.")
 
     h(doc, "11.4 Botones de inicio configurados", 2)
     add_table(doc, ["Asistente", "Botones de inicio"], [
@@ -906,7 +936,8 @@ def doc5(doc):
         ["Atributos Específicos", "¿Qué rúbricas puedes aplicar? · Evalúa este documento con la rúbrica de género · Aplica la rúbrica de Transición Justa · Evalúa participación y género y compara resultados"],
         ["Sostenibilidad", "¿Qué dimensiones evalúas y cuál me corresponde? · Evalúa este PRODOC con la dimensión de Diseño · Es un informe de avance: aplica Implementación · Aplica la rúbrica completa de sostenibilidad"],
     ], widths=[1.7, 5.1])
-    p(doc, "El texto de las instrucciones y de estos botones se mantiene en docs/gpt_onboarding_es.md. Al modificarlos en el editor de ChatGPT debe actualizarse también ese archivo, para que documentación y asistentes no se separen.")
+    p(doc, "El texto de las instrucciones y de estos botones se mantiene en docs/gpt_onboarding_es.md, y en docs/instrucciones_gpt/ en archivos listos para pegar. Al modificarlos en el editor de ChatGPT deben actualizarse también esos archivos, para que documentación y asistentes no se separen.")
+    p(doc, "Límites de ChatGPT que hay que respetar al editar: las instrucciones de un GPT admiten como máximo 8.000 caracteres, y la descripción de cada operación del esquema OpenAPI, 300. Superar el primero hace que el texto no se guarde; superar el segundo hace que ChatGPT rechace el esquema completo.")
 
     h(doc, "11.5 Problemas frecuentes en los asistentes GPT", 2)
     add_table(doc, ["Síntoma", "Causa probable", "Acción"], [
@@ -916,7 +947,25 @@ def doc5(doc):
         ["El asistente pide subir la rúbrica", "Deriva del modelo respecto de sus instrucciones.", "Aclarar que use la rúbrica cargada en el servidor; si se repite, revisar las instrucciones del GPT."],
         ["Se perdió una evaluación en curso", "El servicio se reinició o redesplegó: el estado de trabajos vive en memoria.", "Volver a lanzar la evaluación. No hay recuperación posible del trabajo perdido."],
         ["Los tres asistentes fallan a la vez", "Interrupción del backend compartido.", "Verificar GET /health del servidor; es un problema de servicio, no del documento."],
+        ["Valoración de Calidad lanza el trabajo y no informa más", "Comportamiento esperado: este asistente se detiene tras lanzar.", "Escribir «estado» para cada consulta de avance."],
+        ["El alcance anunciado no coincide con el pedido, o aparece un AVISO de parámetros no reconocidos", "El servidor ejecuta una versión anterior a la del esquema cargado en ChatGPT.", "Comparar el commit de GET /health con main y hacer Manual Deploy antes de repetir."],
+        ["El GPT dice que sólo puede filtrar por sección o subsección", "El esquema cargado en la Action es anterior a criteria_ids.", "Reemplazar el esquema por openapi_gpt_action_v3.yaml, sin tocar la autenticación."],
+        ["Todas las llamadas fallan con ClientResponseError tras editar la Action", "Se reintrodujo la clave a mano y no coincide con la de Render.", "Copiar ILO_GPT_ACTION_API_KEY exactamente desde Render a la autenticación de la Action."],
+        ["Un cambio subido a main no se refleja", "autoDeployTrigger está en off: el push no despliega.", "Manual Deploy en Render y verificar el commit en GET /health."],
     ], widths=[2.0, 2.3, 2.5])
+
+    h(doc, "11.6 Publicar un cambio en la capa GPT", 2)
+    p(doc, "Secuencia completa. Saltarse un paso deja asistente y servidor desalineados sin que nada lo advierta:")
+    add_numbered(doc, [
+        "Verificar en local: python3 tab1_v3_core.py debe terminar en «_demo OK».",
+        "Hacer commit y push a main.",
+        "En Render, Manual Deploy → Deploy latest commit: el despliegue no es automático.",
+        "Comprobar que GET /health devuelve en commit el mismo hash que git log -1.",
+        "Si cambió openapi_gpt_action_v3.yaml: en el editor del GPT, Actions → reemplazar el esquema. No tocar la autenticación.",
+        "Si cambiaron las instrucciones: Configure → Instructions → reemplazar por el archivo de docs/instrucciones_gpt/, con un máximo de 8.000 caracteres.",
+        "Probar con la evaluación más barata posible: un solo criterio con criteria_ids, que son 10 llamadas al modelo frente a 760 de una rúbrica completa.",
+    ])
+    p(doc, "Cambios en la rúbrica de valoración: se editan en Rubrica_Tab1_Detallada_Full_v3.xlsx, la versión española y autoritativa, y se registran con fecha en la columna Notas. Si cambia el texto que se muestra, actualizar también rubrica_en/*.json y ejecutar python3 rubrica_en/apply.py, que reescribe las columnas «(EN)». Después, desplegar.")
 
 
 def doc6(doc):
@@ -1016,17 +1065,22 @@ def doc6(doc):
         ["Semanal durante operación activa", "Confirmar que GET /health responde y lanzar una evaluación corta en uno de los tres asistentes."],
         ["Mensual", "Probar los tres asistentes con un documento de prueba y verificar que el XLSX se descarga y abre correctamente."],
         ["Mensual durante la fase piloto", "Revisar el consumo en el tablero de OpenAI y proyectar la fecha de agotamiento del presupuesto."],
-        ["Al actualizar una rúbrica", "Reemplazar el XLSX, probar localmente, hacer push a main y verificar el redespliegue con una evaluación acotada."],
-        ["Al modificar instrucciones o botones de inicio", "Actualizar también docs/gpt_onboarding_es.md para que la documentación no se separe de los asistentes."],
+        ["Al actualizar una rúbrica", "Reemplazar el XLSX, probar localmente, hacer push a main, lanzar Manual Deploy en Render, comprobar el commit en GET /health y verificar con una evaluación acotada. El push por sí solo no despliega."],
+        ["Al modificar instrucciones o botones de inicio", "Actualizar también docs/gpt_onboarding_es.md y docs/instrucciones_gpt/ para que la documentación no se separe de los asistentes. Las instrucciones no pueden superar 8.000 caracteres."],
+        ["Al cambiar un esquema OpenAPI", "Desplegar primero el servidor y después reemplazar el esquema en la Action, sin tocar su autenticación. En orden inverso, los parámetros nuevos llegan a un servidor que no los conoce."],
         ["Cada 6-12 meses", "Revisar modelos disponibles, costos, límites de la API y vigencia del plan de Render."],
     ], widths=[2.2, 4.6])
 
     h(doc, "8.3 Criterios de aceptación de cambios en la capa GPT", 2)
     add_bullets(doc, [
-        "GET /health responde correctamente tras el despliegue.",
+        "GET /health responde tras el despliegue y su campo commit coincide con el último commit de main.",
+        "python3 tab1_v3_core.py termina en «_demo OK».",
         "GET /privacy responde: ChatGPT lo exige para mantener publicado un GPT con Action.",
         "Cada uno de los tres asistentes completa una evaluación acotada de prueba y entrega el XLSX.",
         "El XLSX de atributos específicos y el de sostenibilidad incluyen la columna de estabilidad.",
+        "El XLSX de valoración de calidad trae las tres hojas, «Revisión prioritaria» incluida.",
+        "En valoración de calidad, una prueba con criteria_ids de un solo criterio anuncia en start_line un alcance de un solo criterio y evalúa exactamente ese.",
+        "En valoración de calidad, una prueba con language=\"en\" produce el Excel en inglés con los mismos veredictos que en español.",
         "Las tres Actions apuntan al servidor correcto y autentican con la clave vigente.",
         "Al saludar sin adjuntar documento, cada asistente se presenta en lugar de esperar en silencio.",
     ])
@@ -1038,7 +1092,11 @@ def doc6(doc):
         "Evaluar el paso a un plan de pago en Render si la latencia de arranque en frío afecta la experiencia de uso.",
         "Vigilar el costo de las repeticiones de estabilidad: 10 corridas por criterio en valoración de calidad y 5 en los otros dos asistentes. Una valoración completa implica del orden de 760 llamadas al modelo y es, con diferencia, el flujo más caro. Reducir STABILITY_REPEATS es la palanca más directa si el presupuesto aprieta, a costa de fiabilidad; bajarlo en tab1_v3_core es donde más ahorra.",
         "Usar claves de API separadas por asistente si se necesita atribuir el consumo a cada uno: el tablero de OpenAI desagrega por clave, no por GPT.",
-        "Priorizar la evaluación por secciones o dimensiones frente a la rúbrica completa cuando el objetivo sea verificar un punto concreto: reduce costo y tiempo sin perder valor.",
+        "Priorizar la evaluación por secciones, dimensiones o criterios concretos frente a la rúbrica completa cuando el objetivo sea verificar un punto concreto. Cinco criterios son 50 llamadas al modelo frente a 760.",
+        "Hacer que la autenticación falle cerrada: hoy, si falta ILO_GPT_ACTION_API_KEY, el backend acepta peticiones sin clave.",
+        "Decidir sobre el despliegue: activar autoDeployTrigger en main, o mantenerlo en off y tratar el Manual Deploy y la comprobación de /health como parte obligatoria de cada cambio. Lo que no funciona es dar el despliegue por hecho tras el push.",
+        "Encargar la revisión bilingüe de la traducción inglesa de la rúbrica (rubrica_en/) antes de distribuir informes en inglés fuera del equipo.",
+        "Alinear los GPTs de atributos y sostenibilidad con el flujo de valoración de calidad (el usuario escribe «estado»): hoy sondean en el mismo turno, el patrón que dejaba al usuario sin novedades.",
         "Registrar el costo unitario observado durante el piloto para poder estimar un despliegue a mayor escala.",
     ])
 
@@ -1167,12 +1225,13 @@ def doc_en1(doc):
     h(doc, "9.2 Evaluation job lifecycle", 2)
     add_numbered(doc, [
         "The user uploads a DOCX in the ChatGPT conversation and describes the desired scope.",
-        "The GPT calls the matching POST endpoint, passing the reference to the file hosted on OpenAI servers plus any requested filters.",
-        "The backend downloads the file, extracts its text, loads the rubric from disk, and dispatches model calls in parallel.",
-        "The GPT polls GET /{family}/jobs/{id} until the status becomes succeeded or failed.",
-        "Once finished, the GPT calls GET /{family}/jobs/{id}/result and delivers a narrative summary plus the base64-encoded XLSX.",
+        "The GPT calls the matching POST endpoint, passing the reference to the file hosted on OpenAI servers, any requested filters and, for quality appraisal, the report language.",
+        "The backend downloads the file, extracts its text, loads the rubric from disk, and dispatches model calls in parallel. For quality appraisal, download, extraction and filtering happen before the POST returns: an unreadable file or an unknown criterion code yields an immediate 400, and the response carries start_line with the document received, the scope applied, the time estimate and the job ID.",
+        "Status tracking differs by assistant. In quality appraisal the GPT ends its turn after showing start_line, and the user requests each status check by typing «estado». Attributes and sustainability poll GET /{family}/jobs/{id} on their own until succeeded or failed. A status call waits up to 3 seconds by default and returns a pre-composed progress_line.",
+        "Once finished, the GPT calls GET /{family}/jobs/{id}/result and delivers a summary plus the XLSX. For quality appraisal the file is delivered through a tokenized URL that ChatGPT fetches and attaches as a single link. For attributes and sustainability it travels base64-encoded inside the response.",
     ])
     p(doc, "Job state lives in the JOBS dictionary in gpt_action_api.py, guarded by a threading.Lock. This is in-process memory: a restart or redeploy loses any job in flight. Sustained institutional use should migrate this to Redis or an equivalent store.")
+    p(doc, "Unknown parameters: EvaluationJobRequest keeps fields it does not recognise (extra=\"allow\") and start_line warns about them. An out-of-date server that receives a new filter therefore says so, instead of dropping it and evaluating the whole rubric.")
 
     h(doc, "9.3 Parallelism and the stability scheme", 2)
     add_table(doc, ["Engine", "Model", "MAX_WORKERS", "Runs per criterion"], [
@@ -1190,7 +1249,8 @@ def doc_en1(doc):
         ["Runtime", "Docker image built from Dockerfile.gpt-action on Python 3.10-slim"],
         ["Framework", "FastAPI with uvicorn[standard]; dependencies in requirements.gpt-action.txt"],
         ["Health check", "GET /health, set as healthCheckPath in render.yaml"],
-        ["CI/CD", "Automatic redeploy on push to the main branch"],
+        ["CI/CD", "None. render.yaml sets autoDeployTrigger: off, so a push to main does NOT deploy: every change needs a Manual Deploy in the Render dashboard"],
+        ["Deployment check", "GET /health returns the deployed commit (RENDER_GIT_COMMIT) and the workbook sheet names; it must match git log -1"],
         ["ChatGPT specifications", "openapi_gpt_action_v3.yaml, openapi_gpt_action_tab2.yaml, and openapi_gpt_action_sustainability.yaml"],
     ], widths=[2.0, 4.8])
     p(doc, "Render's free plan suspends the service after a period of inactivity; the first request after suspension takes noticeably longer while the container boots. This is expected behaviour, not a fault.")
@@ -1202,6 +1262,7 @@ def doc_en1(doc):
         "Documents are uploaded to OpenAI servers first and then downloaded by the backend; both transfers matter for confidentiality analysis.",
         "Rubrics live in the Docker image filesystem: updating one requires a rebuild and redeploy, not just replacing a file.",
         "All three GPTs share one backend and one API key, so an outage affects all three at once.",
+        "The schema loaded in ChatGPT and the deployed code evolve separately. If the schema gets ahead of the server, new parameters reach code that does not know them; start_line warns about it, but the evaluation has already started and is billed.",
     ])
 
 
@@ -1288,8 +1349,10 @@ def doc_en2(doc):
 
     h(doc, "8.1 Backend files", 2)
     add_table(doc, ["File", "Role"], [
-        ["gpt_action_api.py", "FastAPI application: header authentication, job creation and polling, DOCX download from OpenAI, /health and /privacy endpoints."],
-        ["tab1_v3_core.py", "Preliminary appraisal v3 engine: loads the 76-criterion rubric, builds prompts, runs the evaluation, assembles the XLSX."],
+        ["gpt_action_api.py", "FastAPI application: header authentication, job creation and polling, DOCX download from OpenAI, workbook delivery by tokenized URL, /health and /privacy endpoints."],
+        ["tab1_v3_core.py", "Preliminary appraisal v3 engine: loads the 76-criterion rubric, filters by section, subsection or criterion, builds prompts in Spanish or English, runs the evaluation, turns the reasoning into readable text, and assembles the three-sheet XLSX."],
+        ["rubrica_en/", "English translation of the v3 rubric, display-only: one JSON per column (generated by the *_src.py files) and apply.py, which writes them into the «(EN)» columns of the xlsx."],
+        ["docs/instrucciones_gpt/", "Instructions and conversation starters for the three GPTs, ready to paste into the ChatGPT editor."],
         ["tab1_v3.py", "Streamlit wrapper around the same engine, used by the experimental Tab 7 of the app."],
         ["tab2_core.py", "Specific-attributes engine: three selectable rubrics, 1-5 scale, stability consolidation."],
         ["sustainability_core.py", "Sustainability engine: 28 indicators across three dimensions, 0-3 scale, stability consolidation."],
@@ -1318,14 +1381,20 @@ def doc_en2(doc):
     h(doc, "8.3 Backend function map", 2)
     add_table(doc, ["Function or endpoint", "Responsibility"], [
         ["require_api_key", "Compares the X-API-Key header against ILO_GPT_ACTION_API_KEY; guards every job endpoint."],
-        ["POST /v3/jobs, /attributes/jobs, /sustainability/jobs", "Register a job, return its identifier, and start the evaluation in the background."],
-        ["GET /{family}/jobs/{id}", "Returns job status: queued, running, succeeded, or failed, with progress when available."],
-        ["GET /{family}/jobs/{id}/result", "Returns the structured summary and the base64-encoded XLSX."],
-        ["GET /health", "Availability probe used by Render. Unauthenticated."],
+        ["POST /v3/jobs, /attributes/jobs, /sustainability/jobs", "Register a job, return its identifier, and start the evaluation in the background. POST /v3/jobs prepares the document before responding (_prepare_v3_job) and accepts sections, subsections, criteria_ids and language."],
+        ["GET /{family}/jobs/{id}", "Returns job status: queued, running, succeeded, or failed, with progress_line, percent_complete and eta_seconds."],
+        ["GET /{family}/jobs/{id}/result", "Returns the structured summary and the XLSX: by tokenized URL for quality appraisal, base64-encoded for the other two families."],
+        ["GET /v3/jobs/{id}/file", "Serves the appraisal XLSX to ChatGPT. Requires the job token, not X-API-Key."],
+        ["GET /{family}/jobs", "Without an identifier: returns a 400 explaining the correct format. There is no job listing."],
+        ["GET /health", "Availability probe used by Render; reports the deployed commit and sheet names. Unauthenticated."],
         ["GET /privacy", "HTML privacy policy. Required by ChatGPT to publish a GPT with an Action. Unauthenticated."],
         ["stability.evaluate_with_stability", "Runs each item `repeats` times in parallel and delegates consolidation to the engine's aggregator."],
         ["stability.aggregate_runs", "Collapses runs to the modal value and computes stability, distribution, and drift."],
-        ["results_to_xlsx_bytes", "Present in all three engines; builds the final XLSX with xlsxwriter."],
+        ["results_to_xlsx_bytes", "Present in all three engines; builds the final XLSX with xlsxwriter. In tab1_v3_core it writes the three sheets and translates headers and values according to lang."],
+        ["tab1_v3_core.filter_rubric", "Applies sections and subsections (intersection) and adds criteria_ids; raises UnknownCriteriaError on an unknown code."],
+        ["tab1_v3_core.render_reasoning", "Rewrites the model's reasoning as WHY / VERIFICATION / STABILITY / RULE, without T1/T2 labels. If the format is not recognised, it returns the original text."],
+        ["tab1_v3_core.priority_to_dataframe", "Selects the «Revisión prioritaria» sheet: unstable criteria (< 80%) or those with a No verdict."],
+        ["tab1_v3_core.system_prompt / rubric_text", "Prompt for the output language; rubric text to display, using the «(EN)» column and falling back to Spanish when it is empty."],
     ], widths=[2.5, 4.3])
 
     h(doc, "8.4 Backend technical debt", 2)
@@ -1334,7 +1403,10 @@ def doc_en2(doc):
         "Jobs never expire: a long-lived process accumulates results in memory indefinitely.",
         "All three engines duplicate results_to_xlsx_bytes with minor variations; these could converge if the output format is unified.",
         "Rubrics resolve by path relative to the working directory, coupling the process to where it is launched.",
-        "stability.py ships a runnable _demo() self-check; it is the only backend code with automated verification.",
+        "stability.py and tab1_v3_core.py ship runnable self-checks (_demo). Those in tab1_v3_core cover reasoning rendering, the priority sheet, language and filters: python3 tab1_v3_core.py must end with «_demo OK». There are no tests on the gpt_action_api.py endpoints.",
+        "Authentication fails open: without ILO_GPT_ACTION_API_KEY, require_api_key demands no key at all.",
+        "The attributes and sustainability GPTs still poll status within the same turn, the pattern that left quality appraisal users without updates. Their instructions also ask them to show a start_line their endpoints never return.",
+        "The English translation of the rubric has not been reviewed by a bilingual person. It cannot change verdicts, because evaluation reads the Spanish column, but it does shape what the reader believes was checked.",
     ])
 
 
@@ -1404,7 +1476,7 @@ def doc_en3(doc):
 
     h(doc, "7.1 Rubrics consumed by the backend", 2)
     add_table(doc, ["File", "Consuming engine", "Contents"], [
-        ["Rubrica_Tab1_Detallada_Full_v3.xlsx", "tab1_v3_core.py", "76 preliminary appraisal criteria across 5 sections, subsections 1.1 to 5.2, with per-criterion subjectivity metadata."],
+        ["Rubrica_Tab1_Detallada_Full_v3.xlsx", "tab1_v3_core.py", "76 preliminary appraisal criteria across 5 sections, subsections 1.1 to 5.2, with per-criterion subjectivity metadata. The Spanish columns are authoritative and the only ones the evaluation reads. The «… (EN)» columns are their translation, display-only. Changes are dated in the Notas column."],
         ["Rubricas_6ago2025.xlsx", "tab2_core.py", "Three rubric sheets: rubric_parteval (participatory methods), rubric_gender_ (gender), rubric_TJ_TJ (modern just transition)."],
         ["Evaluación de sostenibilidad del proyecto_rubric_9feb26.xlsx", "sustainability_core.py", "28 indicators across three project-cycle dimensions: Design (6), Implementation (10), Pre-Closure (12)."],
     ], widths=[2.3, 1.7, 2.8])
@@ -1413,20 +1485,25 @@ def doc_en3(doc):
     h(doc, "7.2 Job state model", 2)
     p(doc, "gpt_action_api.py keeps an in-memory JOBS dictionary, serialised by a threading.Lock. Each entry represents one evaluation in flight or finished.")
     add_table(doc, ["Field", "Contents"], [
-        ["job_id", "Identifier generated on job creation; the dictionary key."],
+        ["job_id", "UUID generated on job creation; it is the dictionary key, not a field of the entry."],
         ["status", "queued, running, succeeded, or failed."],
-        ["progress", "Progress reported by the engine during evaluation, when available."],
-        ["result", "Structured summary plus base64 XLSX, present only when status is succeeded."],
-        ["error", "Failure message, present only when status is failed."],
-    ], widths=[1.6, 5.2])
+        ["message", "Status text; when status is failed, it carries the error message."],
+        ["completed / total", "Model calls finished and expected; percent_complete, eta_seconds and progress_line are derived from them."],
+        ["created_at, document_name, document_word_count", "Metadata about the job and the document received."],
+        ["summary", "Structured summary (verdict counts, stability, priority_review_count…), present when status is succeeded."],
+        ["result_filename", "Name of the delivered XLSX."],
+        ["result_xlsx_bytes + download_token", "Quality appraisal only: the XLSX bytes and the random token the download URL requires."],
+        ["result_xlsx_b64 + result_preview", "Attributes and sustainability only: the base64 XLSX and a preview of the first rows."],
+    ], widths=[1.9, 4.9])
     p(doc, "This state is volatile by design: a restart or redeploy erases it entirely. It is not a historical record and must not be used for audit. The auditable record of an evaluation is the XLSX the user downloads.")
 
     h(doc, "7.3 Updating a rubric in the backend", 2)
     add_numbered(doc, [
         "Replace the XLSX in the repository, preserving the filename and the column and sheet structure.",
         "Verify loading locally by running the backend and launching a small scoped test evaluation.",
-        "Push to the main branch: Render rebuilds the image and redeploys automatically.",
-        "Confirm with GET /health that the service is back, and with a short evaluation that the new rubric applies.",
+        "For the appraisal rubric, log the change with a date in the Notas column and, if the displayed text changes, update rubrica_en/*.json and run python3 rubrica_en/apply.py.",
+        "Push to the main branch and trigger a Manual Deploy in Render: autoDeployTrigger is off, so a push alone deploys nothing.",
+        "Confirm that GET /health returns the new commit, and with a short evaluation that the new rubric applies. For quality appraisal, one criterion via criteria_ids is enough.",
     ])
     p(doc, "Uploading the file to the server is not enough: the rubric is part of the Docker image, so any change requires a rebuild and redeploy.")
 
@@ -1519,16 +1596,19 @@ def doc_en4(doc):
         ["ILO_GPT_ACTION_API_KEY", "Expected value of the X-API-Key header; guards every job endpoint.", "Render dashboard, marked sync:false; the same value is loaded into each GPT's Action."],
     ], widths=[2.0, 2.8, 2.0])
     p(doc, "Both variables must exist in the runtime process. render.yaml declares them without values, so Render prompts for them on first deploy and they never reach the repository.")
+    p(doc, "Warning: authentication fails open. If ILO_GPT_ACTION_API_KEY is unset or empty, require_api_key lets every request through without a key, with no error or warning. This eases local runs, but deploying to a new Render service without that variable leaves the API open to anyone who knows the URL, charged to the OpenAI budget. Check it after any environment change: a request with a fake key must return 401.")
 
     h(doc, "8.2 Three layers of access control", 2)
     add_table(doc, ["Layer", "Mechanism", "What it protects"], [
         ["GPT access", "ChatGPT private link: only link holders can open it, and a ChatGPT account is required.", "Who can use the assistant."],
         ["API access", "X-API-Key header compared against ILO_GPT_ACTION_API_KEY in require_api_key.", "Who can launch evaluations against the backend."],
-        ["Open endpoints", "/health and /privacy are unauthenticated, required by Render and ChatGPT respectively.", "They expose no data: only service status and policy text."],
+        ["Open endpoints", "/health and /privacy are unauthenticated, required by Render and ChatGPT respectively. So are GET /v3/jobs, /sustainability/jobs and /attributes/jobs without an identifier: they only return a 400 explaining the correct format.", "No evaluation data. /health reports the deployed commit and the workbook sheet names."],
+        ["Quality appraisal workbook download", "GET /v3/jobs/{id}/file does not require X-API-Key: it is guarded by a random 32-byte token, unique to each job and compared in constant time.", "The result. The URL acts as a bearer credential until the service restarts."],
     ], widths=[1.6, 3.0, 2.2])
     add_bullets(doc, [
         "Distribution of the GPT links is the effective access control for end users and should be managed like a distribution list.",
         "ILO_GPT_ACTION_API_KEY is a shared secret between the backend and all three Actions; rotating it requires updating all three GPTs.",
+        "Replacing an Action's schema does not require touching its authentication, which is preserved. Re-entering the key by hand without copying it exactly from Render caused an incident in which every call failed with ClientResponseError.",
         "There are no users, roles, or per-person audit trails: the backend cannot tell who launched an evaluation.",
     ])
 
@@ -1539,6 +1619,7 @@ def doc_en4(doc):
         "The backend does not persist the document: it processes and discards it when the job ends.",
         "Results live in process memory until restart; there is no database and no historical record.",
         "The delivered XLSX contains verbatim quotations from the source document and must be handled with the same confidentiality.",
+        "For the quality appraisal, the workbook is delivered through a tokenized URL that ChatGPT fetches and attaches. Anyone holding that URL can download the result until the service restarts.",
         "The ChatGPT conversation, with the attached document, remains in the user's account: retention depends on that account's settings and ChatGPT plan.",
     ])
 
@@ -1552,12 +1633,15 @@ def doc_en4(doc):
         ["STABILITY_THRESHOLD_PCT tab1_v3_core", "80.0", "Below that agreement rate across runs, a criterion is flagged unstable and warrants human review."],
         ["Model across all three engines", "gpt-5-mini", "Dominates per-evaluation cost together with the repeat count; tab1_v3 varies reasoning effort by criterion subjectivity."],
         ["Render plan", "free", "The service suspends on inactivity; the first request after suspension pays a cold-start delay."],
+        ["autoDeployTrigger in render.yaml", "off", "A push to main does NOT deploy. Every change needs a Manual Deploy in the Render dashboard; without it the server keeps running the previous code with no signal at all."],
     ], widths=[2.0, 1.2, 3.6])
 
     h(doc, "8.5 Backend production checklist", 2)
     add_bullets(doc, [
         "Confirm OPENAI_API_KEY and ILO_GPT_ACTION_API_KEY are set in Render and that the OpenAI account has budget.",
-        "Confirm GET /health responds.",
+        "Confirm GET /health responds and that its commit field matches the latest commit on main. If the commit field is missing, the server is running code from before 27 August 2026.",
+        "After every push to main, trigger a Manual Deploy in Render: deployment is not automatic.",
+        "Confirm that a request with a fake X-API-Key returns 401. If it does not, ILO_GPT_ACTION_API_KEY is unset and the API is open.",
         "Confirm all three rubric files are present in the deployed image.",
         "Run a short evaluation through each of the three GPTs with a non-sensitive document.",
         "Verify each GPT's Action holds the correct key and points at the correct server.",
@@ -1571,7 +1655,8 @@ def doc_en4(doc):
         "On suspected exposure of the OpenAI key, rotate it in the OpenAI dashboard and update it in Render.",
         "For availability problems, check the Render service status and container logs.",
         "If a GPT link spread beyond the intended circle, republish the GPT to mint a new link and redistribute it.",
-        "Restore service by redeploying from the main branch and verify with one test evaluation per assistant.",
+        "Restore service with a Manual Deploy from the main branch (deployment is not automatic) and verify with GET /health and one test evaluation per assistant.",
+        "If a GPT announces a scope different from the one requested, or a WARNING about unrecognised parameters, the server is running a version older than the schema loaded in ChatGPT: compare the /health commit with main and deploy before retrying. No data is lost, but every evaluation launched in the meantime is billed in full.",
     ])
 
 
@@ -1689,20 +1774,23 @@ def doc_en5(doc):
     add_numbered(doc, [
         "Open the assistant link. Typing a greeting or pressing a starter button makes the assistant introduce itself and explain what it evaluates, without spending an evaluation.",
         "Attach a single .docx file. If several are uploaded, the assistant asks which one to use.",
-        "State the scope in the same message: section or subsection for quality appraisal, thematic rubric for specific attributes, cycle dimension for sustainability. If omitted, the assistant asks before starting.",
-        "Wait while the assistant launches the job and polls its status. A full evaluation can take several minutes.",
+        "State the scope in the same message: section, subsection or a list of criteria for quality appraisal, thematic rubric for specific attributes, cycle dimension for sustainability. If omitted, the assistant asks and requests confirmation before starting. For quality appraisal the report can also be requested in English.",
+        "Follow progress. This is where the assistants differ. Quality Appraisal reports the document received, the scope applied, the estimated time and the job ID, then STOPS: the user types «estado» for each progress check. Specific Attributes and Sustainability poll the status on their own until done. A full evaluation can take several minutes.",
         "Review the on-screen summary and download the XLSX, which is the auditable record of the evaluation.",
     ])
 
     h(doc, "10.3 Scope and scales per assistant", 2)
     add_table(doc, ["Assistant", "Selectable scope", "Scale"], [
-        ["Quality Appraisal (Tab 1 v3)", "Full rubric, one or more sections (1 to 5), or specific subsections (1.1 to 5.2)", "Yes / Partial / No / Not Found / N/A across 76 criteria"],
+        ["Quality Appraisal (Tab 1 v3)", "Full rubric, one or more sections (1 to 5), specific subsections (1.1 to 5.2), or a list of criteria of any length (1.1.1, 2.1.2…). Report in Spanish or English", "Yes / Partial / No / Not Found / N/A across 76 criteria"],
         ["Specific Attributes (Tab 2)", "One or more of three rubrics: participatory methods, gender, just transition", "1 to 5 per criterion"],
         ["Sustainability (Tab 3)", "Design dimension (PRODOCs), Implementation (progress reports), or Pre-Closure (closure and final evaluation)", "0 to 3 per indicator"],
     ], widths=[1.8, 3.0, 2.0])
     p(doc, "The scales are not interchangeable: 0-3 in sustainability and 1-5 in specific attributes measure different things and must not be averaged or compared directly.")
     p(doc, "All three assistants repeat each evaluation and consolidate the result: 10 runs per criterion in quality appraisal, 5 in specific attributes, and 5 in sustainability. The XLSX carries the stability percentage, showing how many of those runs agreed: a low percentage flags a criterion where the model was inconsistent and human review matters more.")
     p(doc, "A \"Not Found\" verdict in quality appraisal means the document lacks the information needed to assess the criterion. It differs from \"No\": the latter asserts the criterion is not met, while \"Not Found\" asserts it could not be determined.")
+    p(doc, "Quality appraisal filters: sections and subsections combine by intersection, as before. criteria_ids adds to them: on its own it evaluates exactly those criteria; alongside a section it adds the listed criteria to that section. A code not in the rubric is rejected by name before the job starts, rather than silently dropped.")
+    p(doc, "The quality appraisal workbook has three sheets: «Resultado Diagnostico» (one row per criterion), «Revisión prioritaria» (mandatory human review) and «Rubrica aplicada» (the definition of each criterion evaluated). «Revisión prioritaria» collects the unstable criteria, below 80% agreement across runs, and those with a «No» verdict. On full PRODOCs it typically holds 17 to 20 criteria, and it is always written, even when empty. High subjectivity does not qualify: it stays flagged in the main sheet, at the reviewer's discretion.")
+    p(doc, "Language: with language=\"en\" the workbook is produced entirely in English (sheets «Appraisal Result», «Priority Review» and «Rubric Applied»). Verdicts are identical in both languages, because the evaluation always reads the Spanish rubric, which is authoritative; the English version is display-only.")
 
     h(doc, "10.4 Configured conversation starters", 2)
     add_table(doc, ["Assistant", "Starter buttons"], [
@@ -1710,7 +1798,8 @@ def doc_en5(doc):
         ["Specific Attributes", "¿Qué rúbricas puedes aplicar? · Evalúa este documento con la rúbrica de género · Aplica la rúbrica de Transición Justa · Evalúa participación y género y compara resultados"],
         ["Sustainability", "¿Qué dimensiones evalúas y cuál me corresponde? · Evalúa este PRODOC con la dimensión de Diseño · Es un informe de avance: aplica Implementación · Aplica la rúbrica completa de sostenibilidad"],
     ], widths=[1.7, 5.1])
-    p(doc, "Instruction text and starter buttons are maintained in docs/gpt_onboarding_es.md. When they are edited in the ChatGPT editor, that file must be updated too so documentation and assistants do not drift apart.")
+    p(doc, "Instruction text and starter buttons are maintained in docs/gpt_onboarding_es.md, and as paste-ready files in docs/instrucciones_gpt/. When they are edited in the ChatGPT editor, those files must be updated too so documentation and assistants do not drift apart.")
+    p(doc, "ChatGPT limits to respect when editing: a GPT's instructions accept at most 8,000 characters, and each operation description in the OpenAPI schema at most 300. Exceeding the first means the text is not saved; exceeding the second makes ChatGPT reject the whole schema.")
 
     h(doc, "10.5 Common problems with the GPT assistants", 2)
     add_table(doc, ["Symptom", "Likely cause", "Action"], [
@@ -1720,7 +1809,25 @@ def doc_en5(doc):
         ["The assistant asks the user to upload the rubric", "Model drift from its instructions.", "Clarify that it should use the server-side rubric; if it recurs, review the GPT instructions."],
         ["An in-flight evaluation was lost", "The service restarted or redeployed: job state lives in memory.", "Relaunch the evaluation. The lost job cannot be recovered."],
         ["All three assistants fail at once", "Shared backend outage.", "Check GET /health on the server; this is a service problem, not a document problem."],
+        ["Quality Appraisal launches the job and says nothing more", "Expected behaviour: this assistant stops after launching.", "Type «estado» for each progress check."],
+        ["The announced scope differs from the one requested, or a WARNING about unrecognised parameters appears", "The server runs a version older than the schema loaded in ChatGPT.", "Compare the GET /health commit with main and Manual Deploy before retrying."],
+        ["The GPT says it can only filter by section or subsection", "The schema loaded in the Action predates criteria_ids.", "Replace the schema with openapi_gpt_action_v3.yaml, without touching authentication."],
+        ["Every call fails with ClientResponseError after editing the Action", "The key was re-entered by hand and does not match Render's.", "Copy ILO_GPT_ACTION_API_KEY exactly from Render into the Action's authentication."],
+        ["A change pushed to main is not reflected", "autoDeployTrigger is off: a push does not deploy.", "Manual Deploy in Render and verify the commit in GET /health."],
     ], widths=[2.0, 2.3, 2.5])
+
+    h(doc, "10.6 Publishing a change to the GPT layer", 2)
+    p(doc, "The full sequence. Skipping a step leaves assistant and server out of step with nothing to signal it:")
+    add_numbered(doc, [
+        "Verify locally: python3 tab1_v3_core.py must end with «_demo OK».",
+        "Commit and push to main.",
+        "In Render, Manual Deploy → Deploy latest commit: deployment is not automatic.",
+        "Check that GET /health returns the same hash in commit as git log -1.",
+        "If openapi_gpt_action_v3.yaml changed: in the GPT editor, Actions → replace the schema. Do not touch authentication.",
+        "If the instructions changed: Configure → Instructions → replace with the file in docs/instrucciones_gpt/, at most 8,000 characters.",
+        "Test with the cheapest possible evaluation: a single criterion via criteria_ids, which is 10 model calls against 760 for a full rubric.",
+    ])
+    p(doc, "Changes to the appraisal rubric are made in Rubrica_Tab1_Detallada_Full_v3.xlsx, the authoritative Spanish version, and logged with a date in the Notas column. If the displayed text changes, also update rubrica_en/*.json and run python3 rubrica_en/apply.py, which rewrites the «(EN)» columns. Then deploy.")
 
 
 def doc_en6(doc):
@@ -1818,17 +1925,22 @@ def doc_en6(doc):
         ["Weekly during active operation", "Confirm GET /health responds and run a short evaluation on one of the three assistants."],
         ["Monthly", "Test all three assistants with a sample document and confirm the XLSX downloads and opens."],
         ["Monthly during the pilot phase", "Review consumption in the OpenAI dashboard and project the budget exhaustion date."],
-        ["When updating a rubric", "Replace the XLSX, test locally, push to main, and verify the redeploy with a scoped evaluation."],
-        ["When editing instructions or starter buttons", "Update docs/gpt_onboarding_es.md too, so documentation does not drift from the assistants."],
+        ["When updating a rubric", "Replace the XLSX, test locally, push to main, trigger a Manual Deploy in Render, check the commit in GET /health, and verify with a scoped evaluation. A push alone does not deploy."],
+        ["When editing instructions or starter buttons", "Update docs/gpt_onboarding_es.md and docs/instrucciones_gpt/ too, so documentation does not drift from the assistants. Instructions cannot exceed 8,000 characters."],
+        ["When changing an OpenAPI schema", "Deploy the server first, then replace the schema in the Action without touching its authentication. The other way round, new parameters reach a server that does not know them."],
         ["Every 6-12 months", "Review available models, costs, API limits, and the Render plan."],
     ], widths=[2.2, 4.6])
 
     h(doc, "8.3 Change acceptance criteria for the GPT layer", 2)
     add_bullets(doc, [
-        "GET /health responds after deployment.",
+        "GET /health responds after deployment and its commit field matches the latest commit on main.",
+        "python3 tab1_v3_core.py ends with «_demo OK».",
         "GET /privacy responds: ChatGPT requires it to keep a GPT with an Action published.",
         "Each of the three assistants completes a scoped test evaluation and delivers its XLSX.",
         "The specific-attributes and sustainability XLSX outputs include the stability column.",
+        "The quality appraisal XLSX has all three sheets, «Revisión prioritaria» included.",
+        "In quality appraisal, a test with criteria_ids set to a single criterion announces a single-criterion scope in start_line and evaluates exactly that one.",
+        "In quality appraisal, a test with language=\"en\" produces the workbook in English with the same verdicts as in Spanish.",
         "All three Actions point at the correct server and authenticate with the current key.",
         "Greeting an assistant with no attachment makes it introduce itself rather than wait in silence.",
     ])
@@ -1840,7 +1952,11 @@ def doc_en6(doc):
         "Consider a paid Render plan if cold-start latency degrades the user experience.",
         "Watch the cost of the stability repeats: 10 runs per criterion in quality appraisal and 5 in the other two assistants. A full appraisal issues on the order of 760 model calls and is by far the most expensive workflow. Lowering STABILITY_REPEATS is the most direct lever if budget tightens, at the cost of reliability; lowering it in tab1_v3_core saves the most.",
         "Use separate API keys per assistant if consumption must be attributed to each: the OpenAI dashboard breaks down by key, not by GPT.",
-        "Prefer section- or dimension-scoped evaluations over the full rubric when verifying a specific point: it cuts cost and time without losing value.",
+        "Prefer section-, dimension- or criterion-scoped evaluations over the full rubric when verifying a specific point. Five criteria are 50 model calls against 760.",
+        "Make authentication fail closed: today, if ILO_GPT_ACTION_API_KEY is missing, the backend accepts requests without a key.",
+        "Decide on deployment: enable autoDeployTrigger on main, or keep it off and treat the Manual Deploy and the /health check as a mandatory part of every change. What does not work is assuming the push deployed.",
+        "Commission a bilingual review of the rubric's English translation (rubrica_en/) before distributing English reports outside the team.",
+        "Align the attributes and sustainability GPTs with the quality appraisal flow (the user types «estado»): today they poll within the same turn, the pattern that left users without updates.",
         "Record the observed unit cost during the pilot so a larger deployment can be estimated.",
     ])
 
