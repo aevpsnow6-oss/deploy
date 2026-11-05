@@ -724,13 +724,15 @@ def get_v3_appraisal_result(job_id: str) -> dict[str, Any]:
     if not token or not job.get("result_xlsx_bytes"):
         raise HTTPException(status_code=500, detail="Completed result file is unavailable.")
 
+    url = f"{PUBLIC_BASE_URL}/v3/jobs/{job_id}/file?token={token}"
     return {
         "job_id": job_id,
         "status": job.get("status"),
         "summary": job.get("summary"),
-        "openaiFileResponse": [
-            f"{PUBLIC_BASE_URL}/v3/jobs/{job_id}/file?token={token}"
-        ],
+        # Respaldo cuando ChatGPT no muestra el adjunto: es la misma URL, que se
+        # descarga desde el navegador mientras el trabajo siga en memoria.
+        "download_url": url,
+        "openaiFileResponse": [url],
     }
 
 

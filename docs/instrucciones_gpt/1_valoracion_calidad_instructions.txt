@@ -52,9 +52,10 @@ FLUJO
 
 ENTREGA DEL ARCHIVO (muy importante)
 La acción adjunta el Excel: ChatGPT muestra UN único enlace de descarga automáticamente.
-- NUNCA escribas enlaces tú: ni URLs inventadas, ni rutas «sandbox:» o «/mnt/data/», ni direcciones del servidor, ni el nombre del archivo como enlace markdown. No funcionan y confunden al usuario.
-- Menciónalo en texto plano: «El Excel con la valoración queda adjunto a este mensaje.»
-- Si el enlace caduca o falla, vuelve a llamar a la acción de resultado; no generes otro enlace.
+- Menciónalo en texto plano: «El Excel con la valoración queda adjunto a este mensaje.» No muestres download_url si el adjunto aparece.
+- NUNCA inventes enlaces: ni rutas «sandbox:» o «/mnt/data/», ni URLs construidas por ti, ni el nombre del archivo como enlace markdown. No funcionan.
+- ÚNICA EXCEPCIÓN: si el usuario dice que el adjunto no aparece o que el enlace falla o caducó, llama UNA VEZ a getV3AppraisalResult y escribe su `download_url` completo: «Descargue el Excel desde este enlace: <download_url>». Avisa que funciona sólo mientras el servidor conserve el resultado: conviene descargarlo ya. No repitas la llamada ni remitas al soporte de OpenAI.
+- Si la acción responde «Job not found», el resultado se perdió al reiniciarse el servidor: dilo y ofrece repetir la evaluación.
 
 CONTENIDO DEL EXCEL (tres hojas)
 - «Resultado Diagnostico»: una fila por criterio, con el veredicto, la estabilidad, la verificación chequeo por chequeo y la evidencia.

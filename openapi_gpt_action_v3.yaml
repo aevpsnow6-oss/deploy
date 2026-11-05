@@ -177,9 +177,9 @@ paths:
       operationId: getV3AppraisalResult
       summary: Get v3 appraisal XLSX result
       description: >
-        Returns a compact summary and the XLSX via an openaiFileResponse URL.
-        The workbook includes the user view and technical audit. Call only
-        after status is succeeded.
+        Returns a compact summary and the three-sheet XLSX via openaiFileResponse,
+        plus download_url as a fallback if the attachment does not appear. Call
+        only after status is succeeded.
       x-openai-isConsequential: false
       parameters:
         - in: path
@@ -201,6 +201,13 @@ paths:
                     type: string
                   summary:
                     type: object
+                  download_url:
+                    type: string
+                    format: uri
+                    description: >-
+                      Same file as openaiFileResponse, as a plain link. Show it
+                      only if the user says the attachment did not appear or
+                      the link failed. Works while the result is in server memory.
                   openaiFileResponse:
                     type: array
                     items:

@@ -509,7 +509,7 @@ def doc2(doc):
         ["require_api_key", "Compara la cabecera X-API-Key contra ILO_GPT_ACTION_API_KEY; protege todos los endpoints de trabajos."],
         ["POST /v3/jobs, /attributes/jobs, /sustainability/jobs", "Registran un trabajo, devuelven su identificador y lanzan la evaluación en segundo plano. POST /v3/jobs prepara el documento antes de responder (_prepare_v3_job) y acepta sections, subsections, criteria_ids y language."],
         ["GET /{familia}/jobs/{id}", "Devuelve el estado del trabajo: queued, running, succeeded o failed, con progress_line, percent_complete y eta_seconds."],
-        ["GET /{familia}/jobs/{id}/result", "Devuelve el resumen estructurado y el XLSX: por URL con token en valoración de calidad, en base64 en las otras dos familias."],
+        ["GET /{familia}/jobs/{id}/result", "Devuelve el resumen estructurado y el XLSX: por URL con token en valoración de calidad (openaiFileResponse, y la misma URL en download_url como respaldo si ChatGPT no muestra el adjunto), en base64 en las otras dos familias."],
         ["GET /v3/jobs/{id}/file", "Sirve el XLSX de valoración a ChatGPT. Exige el token del trabajo, no X-API-Key."],
         ["GET /{familia}/jobs", "Sin identificador: devuelve un 400 que explica el formato correcto. No existe listado de trabajos."],
         ["GET /health", "Sonda de disponibilidad usada por Render; informa del commit desplegado y de los nombres de hoja. No requiere autenticación."],
@@ -952,6 +952,7 @@ def doc5(doc):
         ["El GPT dice que sólo puede filtrar por sección o subsección", "El esquema cargado en la Action es anterior a criteria_ids.", "Reemplazar el esquema por openapi_gpt_action_v3.yaml, sin tocar la autenticación."],
         ["Todas las llamadas fallan con ClientResponseError tras editar la Action", "Se reintrodujo la clave a mano y no coincide con la de Render.", "Copiar ILO_GPT_ACTION_API_KEY exactamente desde Render a la autenticación de la Action."],
         ["Un cambio subido a main no se refleja", "autoDeployTrigger está en off: el push no despliega.", "Manual Deploy en Render y verificar el commit en GET /health."],
+        ["En valoración de calidad, el Excel no aparece adjunto", "ChatGPT no mostró el archivo que la acción le entregó; el servidor sí lo tiene.", "Decírselo al asistente: responde con download_url, el mismo archivo como enlace directo. Funciona mientras el trabajo siga en memoria."],
     ], widths=[2.0, 2.3, 2.5])
 
     h(doc, "11.6 Publicar un cambio en la capa GPT", 2)
@@ -1383,7 +1384,7 @@ def doc_en2(doc):
         ["require_api_key", "Compares the X-API-Key header against ILO_GPT_ACTION_API_KEY; guards every job endpoint."],
         ["POST /v3/jobs, /attributes/jobs, /sustainability/jobs", "Register a job, return its identifier, and start the evaluation in the background. POST /v3/jobs prepares the document before responding (_prepare_v3_job) and accepts sections, subsections, criteria_ids and language."],
         ["GET /{family}/jobs/{id}", "Returns job status: queued, running, succeeded, or failed, with progress_line, percent_complete and eta_seconds."],
-        ["GET /{family}/jobs/{id}/result", "Returns the structured summary and the XLSX: by tokenized URL for quality appraisal, base64-encoded for the other two families."],
+        ["GET /{family}/jobs/{id}/result", "Returns the structured summary and the XLSX: by tokenized URL for quality appraisal (openaiFileResponse, plus the same URL in download_url as a fallback when ChatGPT does not show the attachment), base64-encoded for the other two families."],
         ["GET /v3/jobs/{id}/file", "Serves the appraisal XLSX to ChatGPT. Requires the job token, not X-API-Key."],
         ["GET /{family}/jobs", "Without an identifier: returns a 400 explaining the correct format. There is no job listing."],
         ["GET /health", "Availability probe used by Render; reports the deployed commit and sheet names. Unauthenticated."],
@@ -1814,6 +1815,7 @@ def doc_en5(doc):
         ["The GPT says it can only filter by section or subsection", "The schema loaded in the Action predates criteria_ids.", "Replace the schema with openapi_gpt_action_v3.yaml, without touching authentication."],
         ["Every call fails with ClientResponseError after editing the Action", "The key was re-entered by hand and does not match Render's.", "Copy ILO_GPT_ACTION_API_KEY exactly from Render into the Action's authentication."],
         ["A change pushed to main is not reflected", "autoDeployTrigger is off: a push does not deploy.", "Manual Deploy in Render and verify the commit in GET /health."],
+        ["In quality appraisal, the Excel attachment does not appear", "ChatGPT did not display the file the action returned; the server still holds it.", "Tell the assistant: it replies with download_url, the same file as a direct link. It works while the job is still in memory."],
     ], widths=[2.0, 2.3, 2.5])
 
     h(doc, "10.6 Publishing a change to the GPT layer", 2)

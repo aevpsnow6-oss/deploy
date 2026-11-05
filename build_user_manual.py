@@ -613,8 +613,9 @@ table(doc,
        ["El asistente dice que perdió el identificador del trabajo",
         "Pídale que lo busque en su primer mensaje, en la línea «ID del trabajo». No relance la "
         "evaluación: la anterior sigue en curso"],
-       ["El enlace de descarga no funciona o caducó",
-        "Pida al asistente que vuelva a adjuntar el resultado. No use enlaces escritos a mano en el chat"],
+       ["El Excel no aparece adjunto, o el enlace no funciona o caducó",
+        "Dígaselo al asistente: le dará un enlace directo de descarga desde el servidor. Descárguelo "
+        "enseguida, porque deja de funcionar si el servicio se reinicia. No repita la evaluación"],
        ["La evaluación falla",
         "El asistente mostrará el mensaje de error. Reintente con un alcance más acotado; si persiste, "
         "reporte el mensaje al soporte técnico"],
