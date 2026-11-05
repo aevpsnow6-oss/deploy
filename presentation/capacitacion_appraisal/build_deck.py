@@ -113,7 +113,7 @@ table(s, ["Sección", "Contenido", "Criterios", "Subsecciones"],
        [("4", BLUE, True), "Implementación", ("14", RED, True), "4.1 – 4.4"],
        [("5", BLUE, True), "Presentación", ("2", RED, True), "5.1 – 5.2"]],
       CL, CT, CW, [1.1, 4.0, 1.2, 1.9], fsize=20, header_fs=19, fill_to=Inches(6.22))
-band(s, [B("Se puede filtrar:  "), N("rúbrica completa, una sección («solo la sección 3») o subsecciones concretas («solo 1.1 y 2.3»). Filtrar reduce tiempo y costo.")])
+band(s, [B("Se puede filtrar:  "), N("rúbrica completa, una sección («solo la sección 3»), subsecciones («solo 1.1 y 2.3») o criterios concretos («solo 1.1.1 y 3.1.1»).")])
 
 # ═══ 8 · ANATOMÍA DE UN CRITERIO ═══════════════════════════════════════
 s = slide_new("De criterio a tests: cómo «entiende» un criterio")
@@ -220,7 +220,7 @@ bullets(s, [
     ([B("Solución: repetir y consolidar."), N("  Cada criterio se evalúa 10 veces de forma independiente y se toma el resultado más frecuente (la moda).")], 0, BLUEMD),
     ([B("El desacuerdo es información, no ruido."), N("  Cuántas de las 10 corridas coincidieron es un dato que se reporta y que usted debe leer.")], 0, BLUEMD),
 ], size=22, gap=20)
-band(s, [B("Una valoración completa "), N("son 76 criterios × 10 corridas ≈ "), R("760 consultas al modelo"), N(". Por eso tarda y por eso conviene filtrar por sección.")])
+band(s, [B("Una valoración completa "), N("son 76 criterios × 10 corridas ≈ "), R("760 consultas al modelo"), N(". Por eso tarda y por eso conviene filtrar por sección o por criterio.")])
 
 # ═══ 11 · DE DÓNDE VIENE LA ALEATORIEDAD ═══════════════════════════════
 s = slide_new("De dónde procede la aleatoriedad")
@@ -244,17 +244,18 @@ table(s, ["Estabilidad", "Lectura", "Qué hacer"],
        [("79 – 50%", RED, True), "Hubo desacuerdo entre corridas", "Revisión humana obligatoria; leer el Resultado Alternativo"],
        [("< 50%", RED, True), "No hubo consenso real", "El criterio es ambiguo o la evidencia insuficiente: decida usted"]],
       CL, Inches(3.05), CW, [1.6, 2.8, 4.0], fsize=19, header_fs=18, fill_to=Inches(6.22))
-band(s, [B("La estabilidad no mide si el Agente acertó. "), N("Mide cuánta confianza interna tuvo. Un 100% equivocado es posible: por eso siempre se verifica la evidencia.")])
+band(s, [B("La estabilidad no mide si el Agente acertó. "), N("Mide cuánto coincidieron las corridas. Un 100% equivocado es posible: en 1.1.1, diez de diez dieron «Yes» leyendo «aligned with» como contribución.")])
 
 # ═══ 13 · SUBJETIVIDAD ═════════════════════════════════════════════════
 s = slide_new("Criterios subjetivos y revisión humana")
 bullets(s, [
     ([B("Cada criterio trae una etiqueta de subjetividad: "), R("Alta · Media · Baja"), N(".")], 0, BLUEMD),
     ([B("Alta subjetividad"), N(" = el juicio depende del contexto institucional, no solo del texto. Ejemplo: si un enfoque de género es «transformador».")], 0, BLUEMD),
-    ([B("Estos criterios reciben más razonamiento"), N(" del modelo y se marcan automáticamente en la columna «Revisión humana recomendada».")], 0, BLUEMD),
-    ([B("Dos disparadores de esa marca:"), N("  subjetividad alta, o estabilidad por debajo de 80%.")], 0, BLUEMD),
-], size=22, gap=18)
-band(s, [R("Úsela como cola de trabajo:  "), N("empiece por los criterios marcados. Ahí es donde su juicio profesional aporta más valor.")])
+    ([B("Reciben más razonamiento"), N(" del modelo y quedan marcados en la columna «Revisión humana recomendada».")], 0, BLUEMD),
+    ([B("La hoja «Revisión prioritaria» es otra cosa: "), N("lo que hay que revisar sí o sí. Criterios inestables (<80%) y veredictos «No»; unos 17–20 en un PRODOC completo.")], 0, BLUEMD),
+    ([B("La alta subjetividad no entra en esa hoja:"), N("  se revisa a criterio suyo.")], 0, BLUEMD),
+], size=21, gap=15)
+band(s, [R("El orden de trabajo:  "), N("primero «Revisión prioritaria», obligatoria; después la alta subjetividad, donde su juicio aporta más valor.")])
 
 divider("Parte 4", "Límites y comparación", "Qué cuesta, qué no hace, y en qué se diferencia del GPT Empresarial")
 
@@ -267,7 +268,7 @@ table(s, ["", "Ventaja", "Desventaja / costo"],
        [("Consistencia", BLUE, True), "Aplica la misma rúbrica a todos los proyectos", "No es determinista: por eso repetimos"],
        [("Costo", BLUE, True), "Bajo por documento frente al tiempo humano equivalente", "Se paga por consulta: el presupuesto es finito"]],
       CL, CT, CW, [1.5, 3.5, 3.3], fsize=18, header_fs=18, fill_to=Inches(6.22))
-band(s, [B("Tokens y presupuesto:  "), N("el costo depende del tamaño del PRODOC y de cuántos criterios se evalúen. Filtrar por sección es la palanca directa de ahorro.")])
+band(s, [B("Tokens y presupuesto:  "), N("el costo depende del tamaño del PRODOC y de cuántos criterios se evalúen. Completo: ~760 consultas; cinco criterios concretos: 50.")])
 
 # ═══ 15 · GPT EMPRESARIAL ══════════════════════════════════════════════
 s = slide_new("¿Y si uso el GPT Empresarial de la OIT?")
@@ -297,8 +298,8 @@ divider("Parte 5", "La herramienta en uso", "Cargar · acotar · ejecutar · des
 s = slide_new("El flujo completo, en cinco pasos")
 steps(s, [
     ("1", "Cargar el PRODOC", "un único archivo .docx por evaluación"),
-    ("2", "Seleccionar el alcance", "rúbrica completa, una sección o subsecciones concretas"),
-    ("3", "Ejecutar", "el Agente lanza el trabajo y consulta su avance hasta terminar"),
+    ("2", "Seleccionar el alcance", "rúbrica completa, secciones, subsecciones o criterios concretos"),
+    ("3", "Ejecutar", "el Agente lanza el trabajo; usted escribe «estado» para ver el avance"),
     ("4", "Descargar el Excel", "es el registro auditable de la evaluación"),
     ("5", "Interpretar", "localizar evidencia y priorizar los criterios marcados"),
 ], size=21)
@@ -312,7 +313,7 @@ bullets(s, [
     ([B("Diga qué quiere evaluar."), N("  Ejemplos de instrucción:")], 0, BLUEMD),
     ([I("«Evalúa este PRODOC con la rúbrica completa»")], 1, None),
     ([I("«Evalúa solo la sección 3 (Marco de resultados) y resume las brechas»")], 1, None),
-    ([I("«Evalúa solo 1.1 y 2.3»")], 1, None),
+    ([I("«Evalúa solo 1.1.1, 2.1.2 y 3.1.1, con el informe en inglés»")], 1, None),
 ], size=21, gap=13)
 band(s, [R("Recomendación para empezar:  "), N("una sección primero. Llega antes, cuesta menos y permite calibrar la lectura antes de una corrida completa.")])
 
@@ -320,27 +321,28 @@ band(s, [R("Recomendación para empezar:  "), N("una sección primero. Llega ant
 s = slide_new("Paso 3 · Qué ocurre mientras se ejecuta")
 steps(s, [
     ("1", "El Agente descarga el documento", "y extrae su texto por secciones"),
-    ("2", "Carga la rúbrica del servidor", "y filtra los criterios que usted pidió"),
+    ("2", "Carga la rúbrica y filtra lo que usted pidió", "y le confirma el alcance: compruebe que coincide"),
     ("3", "Lanza las evaluaciones en paralelo", "cada criterio, 10 veces, hasta 48 consultas simultáneas"),
     ("4", "Consolida cada criterio", "resultado modal + porcentaje de estabilidad"),
     ("5", "Construye el Excel", "y lo adjunta a la conversación"),
 ], size=20)
-band(s, [B("No hay que preguntar «¿ya terminó?»:  "), N("el Agente informa el avance solo — «180/760 (24%), quedan unos 3 minutos» — hasta entregar el archivo.")])
+band(s, [B("Escriba «estado» para ver el avance:  "), N("«Evaluando: 180 de 760 consultas (24%). Quedan unos 3 minutos.» El Agente no informa por su cuenta.")])
 
 # ═══ 21 · EL EXCEL ═════════════════════════════════════════════════════
 s = slide_new("Paso 4 · El Excel de resultados")
 bullets(s, [
-    ([B("Hoja 1 · «Resultado Diagnostico»"), N("  — una fila por criterio evaluado. Es el registro auditable: consérvelo.")], 0, None),
-    ([B("Hoja 2 · «Rubrica aplicada»"), N("  — la definición de cada criterio evaluado: sus chequeos y sus reglas de decisión.")], 0, None),
-], t=CT, h=Inches(1.15), size=20, gap=6)
+    ([B("1 · «Resultado Diagnostico»"), N("  — una fila por criterio. El registro auditable: consérvelo.")], 0, None),
+    ([B("2 · «Revisión prioritaria»"), N("  — inestables y «No», con su motivo. "), R("Revisión obligatoria.")], 0, None),
+    ([B("3 · «Rubrica aplicada»"), N("  — los chequeos y la regla de cada criterio evaluado.")], 0, None),
+], t=CT, h=Inches(1.55), size=19, gap=4)
 table(s, ["Grupo de columnas", "Qué contiene", "Para qué sirve"],
       [[("Identificación", BLUE, True), "ID · Subsección · Criterio · Transversales", "Ubicar el criterio en el Checklist"],
        [("Resultado", BLUE, True), "Respuesta (Yes / Partial / No / Not Found / N/A)", "El diagnóstico del criterio"],
        [("Confianza", BLUE, True), "Estabilidad (%) · Estable (≥80%) · Resultado Alternativo", "Cuánto coincidieron las 10 corridas"],
        [("Sustento", BLUE, True), "Razonamiento (chequeo por chequeo) · Evidencia citada", "Verificar por qué llegó a ese resultado"],
-       [("Prioridad", BLUE, True), ("Revisión humana recomendada", RED, True), "Su cola de trabajo"]],
-      CL, Inches(2.42), CW, [2.0, 3.7, 2.6], fsize=18, header_fs=18, fill_to=Inches(6.22))
-band(s, [B("La hoja 2 hace el archivo autocontenido:  "), N("quien audite ve la regla junto al veredicto, sin abrir la rúbrica por separado. Sólo incluye los criterios evaluados.")])
+       [("Prioridad", BLUE, True), ("Revisión humana recomendada", RED, True), "Marca también la alta subjetividad"]],
+      CL, Inches(2.82), CW, [2.0, 3.7, 2.6], fsize=16, header_fs=16, fill_to=Inches(6.22))
+band(s, [B("Empiece por la hoja 2.  "), N("La 3 hace el archivo autocontenido: quien audite ve la regla junto al veredicto. En inglés: «Appraisal Result», «Priority Review», «Rubric Applied».")])
 
 # ═══ 22 · ANATOMÍA DE UNA FILA ═════════════════════════════════════════
 s = slide_new("Cómo leer una fila, en orden")
@@ -436,7 +438,7 @@ table(s, ["Pregunta", "Respuesta breve"],
        ["¿Qué significa una estabilidad de 50–70%?", "Las corridas no coincidieron: criterio ambiguo o evidencia insuficiente. Revisión humana."],
        ["¿Por qué no encontró algo que yo sé que existe?", "Solo lee el documento. Si está y no lo vio, verifíquelo y descarte el diagnóstico."],
        ["¿Por qué no me da recomendaciones de mejora?", "No incorpora conocimiento externo al documento. Las recomendaciones salen de su lectura."],
-       ["¿Cuánto cuesta evaluar un PRODOC?", "Depende del tamaño del documento y de cuántos criterios se evalúen. Filtrar reduce el costo."],
+       ["¿Cuánto cuesta evaluar un PRODOC?", "Depende del tamaño y del alcance: completo, ~760 consultas al modelo; cinco criterios concretos, 50."],
        ["¿Puedo evaluar otros documentos?", "Para género, participación, transición justa y sostenibilidad existen agentes específicos."]],
       CL, CT, CW, [3.4, 6.0], fsize=17, header_fs=17, fill_to=Inches(7.05))
 
@@ -448,7 +450,7 @@ bullets(s, [
     ([B("El Agente lee el documento, no el proyecto."), N("  Un «No» puede ser una brecha de diseño o simplemente algo no documentado. Distinguirlo es trabajo suyo.")], 0, RED),
     ([B("Repite 10 veces y le dice cuánto coincidió."), N("  La estabilidad es una medida de confianza interna, no de acierto.")], 0, RED),
     ([B("Todo resultado viene con su evidencia."), N("  Verifíquela siempre: es lo que hace el diagnóstico defendible ante el equipo formulador.")], 0, RED),
-    ([B("La columna «Revisión humana recomendada» es su cola de trabajo."), N("  Empiece por ahí.")], 0, RED),
+    ([B("La hoja «Revisión prioritaria» es su punto de partida."), N("  Inestables y «No»: revisión obligatoria.")], 0, RED),
 ], size=22, gap=20)
 band(s, [B("El valor de la herramienta depende de la calidad de la revisión humana posterior."), N("")], bg=BLUELT)
 
